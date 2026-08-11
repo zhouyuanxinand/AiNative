@@ -1,0 +1,42 @@
+application:
+  name: agent-develop-task-doc-service
+
+server:
+  host: 0.0.0.0
+  port: 18130
+
+cors:
+  origins:
+    - "http://127.0.0.1:18130"
+    - "http://localhost:18130"
+
+uploads:
+  max_mb: 100
+
+jobs:
+  max_concurrent: 2
+  ttl_hours: 24
+  max_records: 100
+
+storage:
+  upload_dir: uploads
+  output_dir: 正式输出
+
+security:
+  allow_local_paths: false
+  allow_remote_llm_config: false
+
+semantic:
+  retrieval: true
+  rerank: true
+  timeout_seconds: 60
+
+logging:
+  format: json
+  level: INFO
+
+llm:
+  credentials_source: environment
+  temperature: 0.2
+  timeout_seconds: 90
+  max_tokens: 8192

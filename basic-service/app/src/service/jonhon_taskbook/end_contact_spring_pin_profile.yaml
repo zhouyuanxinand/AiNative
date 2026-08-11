@@ -1,0 +1,120 @@
+schema_version: "3.1"
+profile_id: end_contact_spring_pin
+product_type: 端面接触-弹针连接器
+
+# 本 Profile 只保存产品族语义词表和质量策略。不得保存来源/模板章节号、
+# 固定型号、固定试验值、某个验收项目名或某份验收文档的图号。
+# 具体项目代号仅属于验收矩阵输入，不是本 Profile 的规则真源。
+semantic_routing:
+  category_mapping: connector_requirement_categories.yaml
+  chapter_numbers_are_identity: false
+  source_order_is_identity: false
+  copy_source_text_only: true
+
+semantic_structures:
+  performance_indicator:
+    mode: indicator_table
+
+indicator_excluded_names: [互换性, 互配性]
+indicator_excluded_routes: {}
+
+delivery_gate:
+  # 数量不是跨产品真值；完整性由设计输入指标账本、覆盖率和语义证据证明。
+  min_indicator_rows: 0
+  min_interface_fills: 0
+  required_headings:
+    - 来源和功能
+    - 使用环境和部位
+    - 产品组成
+    - 适用的法律法规要求
+    - 技术指标
+    - 接口尺寸要求
+    - 通用质量特性要求
+    - 任务进度要求
+    - 任务书编制依据
+
+std_sort_order:
+  - [GB/T, GB]
+  - [GJB]
+  - [GJB/Z]
+  - [KJB]
+  - [Q/]
+  - [TE-]
+  - [AS9]
+  - [MIL]
+  - [SAE]
+  - [国务院]
+
+# table_index 只是封面读取的快速路径；代码会在失效时扫描表头语义。
+cover_map:
+  product:
+    table_index: 0
+    row_keywords: [名称]
+    value_col: 1
+  user:
+    table_index: 0
+    row_keywords: [使用单位]
+    value_col: 1
+
+# 指标名称及同义词用于语义检索。数值、适用型号、条件和依据必须在
+# 本次技术要求/产品规范中实时命中，不能从 Profile 生成。
+indicator_map:
+  电性能:
+    - name: 工作电压
+      tech_kws: [工作电压, 额定工作电压, 工作电压范围]
+      std_kws: [工作电压, 额定工作电压, 工作电压范围]
+      related_kws: [额定电压, 电压范围]
+    - name: 工作电流
+      tech_kws: [工作电流, 工作载流]
+      std_kws: [工作电流, 工作载流]
+      related_kws: [额定电流, 载流量]
+    - name: 额定电流
+      tech_kws: [额定电流, 额定载流量]
+      std_kws: [额定电流, 额定载流量]
+      related_kws: [载流量]
+    - name: 绝缘电阻
+      tech_kws: [绝缘电阻, 绝缘阻抗]
+      std_kws: [绝缘电阻, 绝缘阻抗]
+      # 技术要求常把试验方法与判定值写在同一段。指标表只搬运其中
+      # 原文真实存在的判定值；完整方法仍保留在原章节和证据链中。
+      value_patterns:
+        - '绝缘电阻(?:应)?\s*[≥≤><]\s*\d+(?:\.\d+)?\s*(?:MΩ|GΩ|kΩ|Ω)'
+    - name: 接触电阻
+      tech_kws: [接触电阻, 接触阻抗, 导通电阻]
+      std_kws: [接触电阻, 接触阻抗, 导通电阻]
+      value_patterns:
+        - '(?:单芯)?接触件接触电阻(?:应)?\s*[≥≤><]\s*\d+(?:\.\d+)?\s*(?:mΩ|Ω)'
+    - name: 介质耐电压
+      tech_kws: [介质耐电压, 耐电压, 耐压]
+      std_kws: [介质耐电压, 耐电压, 耐压]
+      value_patterns:
+        - '施加电压[：:]\s*\d+(?:\.\d+)?\s*V\s*(?:DC|AC)'
+        - '持续时间为\s*\d+(?:\.\d+)?\s*s'
+        - '应无击穿现象发生'
+        - '漏电流不大于\s*\d+(?:\.\d+)?\s*mA'
+  机械性能:
+    - name: 机械寿命
+      tech_kws: [机械寿命, 使用寿命, 工作耐久度]
+      std_kws: [机械寿命, 使用寿命, 工作耐久度]
+      value_patterns:
+        - '连接器应能承受\s*\d+\s*次的压缩和回弹'
+    - name: 接触件弹力
+      tech_kws: [接触件弹力, 弹力]
+      std_kws: [接触件弹力, 弹力]
+      value_patterns:
+        - '接触件压缩\s*\d+(?:\.\d+)?\s*mm时[，,]?\s*弹力应为\s*\d+(?:\.\d+)?\s*N\s*[~～至-]\s*\d+(?:\.\d+)?\s*N'
+  环境性能:
+    - name: 工作温度
+      tech_kws: [工作温度, 环境温度, 使用温度, 温度范围]
+      std_kws: [工作温度, 环境温度, 使用温度, 温度范围]
+
+# 这些词用于防止不同产品资料串入；不要求某个具体型号必须出现。
+qa_profile:
+  forbidden_phrases:
+    - 电池包
+    - 快充
+    - USCAR
+    - IP68
+    - IP6K9K
+    - 350A
+    - 1000V

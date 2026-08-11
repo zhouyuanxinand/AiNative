@@ -1,0 +1,238 @@
+version: "2.1"
+
+# 产品类型与模板的对应关系来自本地受控《研制任务书生成规则7-22.xlsx》。
+# 只有已经取得真实模板的类型才允许生成；没有模板的选项仍在网页显示，
+# 但保持 disabled，禁止拿低频模板冒充别的模板。
+aliases:
+  connector/general: low_frequency_rectangular/military
+  connector/low_frequency: low_frequency_rectangular/military
+  low_frequency_connector/military: low_frequency_rectangular/military
+  low_frequency_connector/airworthiness: low_frequency_rectangular/airworthiness
+  low_frequency_connector/civil_aviation: low_frequency_rectangular/civil_aviation
+  low_frequency_connector/as9100: low_frequency_rectangular/as9100
+  rf_connector/military: rf_contact/military
+  filter_connector_legacy/military: filter_connector/military
+  cable_assembly_legacy/military: cable_assembly/military
+  fluid_connector/military: liquid_cooling_connector/military
+  indoor_fiber_connector/military: high_speed_io/military
+  outdoor_fiber_connector/military: high_speed_backplane/military
+  civil_aircraft_product/civil_aviation: high_speed_io/civil_aviation
+
+product_types:
+  low_frequency_rectangular:
+    label: 低频连接器-矩形低频
+    enabled: true
+    template_label: 研制任务书（低频）
+    domains:
+      military: &low_frequency_domain
+        label: 军品
+        template: connector_taskbook.docx
+        profile: connector_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
+      airworthiness:
+        <<: *low_frequency_domain
+        label: 适航
+      civil_aviation:
+        <<: *low_frequency_domain
+        label: 民机
+      as9100:
+        <<: *low_frequency_domain
+        label: AS9100
+
+  low_frequency_circular:
+    label: 低频连接器-圆形低频
+    enabled: false
+    template_label: 研制任务书（低频）
+    unavailable_reason: 尚未配置并验收圆形低频独立 Profile 与真实回归样例
+    domains:
+      military: *low_frequency_domain
+      airworthiness:
+        <<: *low_frequency_domain
+        label: 适航
+      civil_aviation:
+        <<: *low_frequency_domain
+        label: 民机
+      as9100:
+        <<: *low_frequency_domain
+        label: AS9100
+
+  low_frequency_twist_pin:
+    label: 低频连接器-绞针低频
+    enabled: false
+    template_label: 研制任务书（低频）
+    unavailable_reason: 尚未配置并验收绞针低频独立 Profile 与真实回归样例
+    domains:
+      military: *low_frequency_domain
+      airworthiness:
+        <<: *low_frequency_domain
+        label: 适航
+      civil_aviation:
+        <<: *low_frequency_domain
+        label: 民机
+      as9100:
+        <<: *low_frequency_domain
+        label: AS9100
+
+  rf_contact:
+    label: 射频连接器-射频接触件
+    enabled: false
+    template_label: 研制任务书（射频）
+    unavailable_reason: 尚未配置并验收射频连接器真实模板
+    domains: {}
+  rf_hybrid:
+    label: 射频连接器-高低频混装连接器
+    enabled: false
+    template_label: 研制任务书（射频）
+    unavailable_reason: 尚未配置并验收射频连接器真实模板
+    domains: {}
+  rf_standard_interface:
+    label: 射频连接器-标准界面射频连接器
+    enabled: false
+    template_label: 研制任务书（射频）
+    unavailable_reason: 尚未配置并验收射频连接器真实模板
+    domains: {}
+  filter_connector:
+    label: 滤波连接器
+    enabled: false
+    template_label: 研制任务书（滤波）
+    unavailable_reason: 尚未配置并验收滤波连接器真实模板
+    domains: {}
+  cable_assembly:
+    label: 线缆组件
+    enabled: false
+    template_label: 研制任务书（线缆组件）
+    unavailable_reason: 尚未配置并验收线缆组件真实模板
+    domains: {}
+  liquid_cooling_connector:
+    label: 液冷产品-液冷连接器
+    enabled: false
+    template_label: 研制任务书（流体）
+    unavailable_reason: 尚未配置并验收液冷连接器真实模板
+    domains: {}
+  liquid_cooling_pipeline:
+    label: 液冷产品-液冷管路
+    enabled: false
+    template_label: 研制任务书（液冷管路）
+    unavailable_reason: 尚未配置并验收液冷管路真实模板
+    domains: {}
+  liquid_cooling_chassis:
+    label: 液冷产品-液冷机箱、冷板
+    enabled: false
+    template_label: 研制任务书（机箱和冷板）
+    unavailable_reason: 尚未配置并验收液冷机箱、冷板真实模板
+    domains: {}
+
+  high_speed_backplane:
+    label: 高速连接器-高速背板连接器
+    enabled: false
+    template_label: 研制任务书（低频）
+    unavailable_reason: 尚未配置并验收高速背板独立模板、Profile 与回归样例
+    domains:
+      military: *low_frequency_domain
+      airworthiness:
+        <<: *low_frequency_domain
+        label: 适航
+      civil_aviation:
+        <<: *low_frequency_domain
+        label: 民机
+      as9100:
+        <<: *low_frequency_domain
+        label: AS9100
+  high_speed_io:
+    label: 高速连接器-高速I/O连接器
+    enabled: false
+    template_label: 研制任务书（低频）
+    unavailable_reason: 尚未配置并验收高速I/O独立模板、Profile 与回归样例
+    domains:
+      military: *low_frequency_domain
+      airworthiness:
+        <<: *low_frequency_domain
+        label: 适航
+      civil_aviation:
+        <<: *low_frequency_domain
+        label: 民机
+      as9100:
+        <<: *low_frequency_domain
+        label: AS9100
+  end_contact_spring_pin:
+    label: 端面接触-弹针连接器
+    enabled: true
+    template_label: 研制任务书（低频）
+    domains:
+      military: &end_contact_spring_pin_domain
+        <<: *low_frequency_domain
+        profile: end_contact_spring_pin_profile.yaml
+      airworthiness:
+        <<: *end_contact_spring_pin_domain
+        label: 适航
+      civil_aviation:
+        <<: *end_contact_spring_pin_domain
+        label: 民机
+      as9100:
+        <<: *end_contact_spring_pin_domain
+        label: AS9100
+  end_contact_pogo:
+    label: 端面接触-毛纽扣连接器
+    enabled: false
+    template_label: 研制任务书（低频）
+    unavailable_reason: 尚未配置并验收毛纽扣连接器独立 Profile 与真实回归样例
+    domains:
+      military: *low_frequency_domain
+      airworthiness:
+        <<: *low_frequency_domain
+        label: 适航
+      civil_aviation:
+        <<: *low_frequency_domain
+        label: 民机
+      as9100:
+        <<: *low_frequency_domain
+        label: AS9100
+  end_contact_finger:
+    label: 端面接触-表带触指
+    enabled: false
+    template_label: 研制任务书（低频）
+    unavailable_reason: 尚未配置并验收表带触指独立 Profile 与真实回归样例
+    domains:
+      military: *low_frequency_domain
+      airworthiness:
+        <<: *low_frequency_domain
+        label: 适航
+      civil_aviation:
+        <<: *low_frequency_domain
+        label: 民机
+      as9100:
+        <<: *low_frequency_domain
+        label: AS9100
+  separation_connector:
+    label: 分离脱落连接器
+    enabled: false
+    template_label: 研制任务书（低频）
+    unavailable_reason: 尚未配置并验收分离脱落连接器独立 Profile 与真实回归样例
+    domains:
+      military: *low_frequency_domain
+      airworthiness:
+        <<: *low_frequency_domain
+        label: 适航
+      civil_aviation:
+        <<: *low_frequency_domain
+        label: 民机
+      as9100:
+        <<: *low_frequency_domain
+        label: AS9100
+  watertight_connector:
+    label: 水密连接器
+    enabled: false
+    template_label: 研制任务书（低频）
+    unavailable_reason: 尚未配置并验收水密连接器独立 Profile 与真实回归样例
+    domains:
+      military: *low_frequency_domain
+      airworthiness:
+        <<: *low_frequency_domain
+        label: 适航
+      civil_aviation:
+        <<: *low_frequency_domain
+        label: 民机
+      as9100:
+        <<: *low_frequency_domain
+        label: AS9100

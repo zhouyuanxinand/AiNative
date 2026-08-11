@@ -1,0 +1,51 @@
+# 质量门禁规则
+# block_if 中任一条件触发 → 阻断输出，不生成最终 docx
+# warn_if 中条件触发 → 写入审查报告，但不阻断
+# ============================================================
+
+block_if:
+
+  # 格式类
+  red_text_count_gt: 0          # 残余红字 run 数 > 0
+  highlight_count_gt: 0         # 残余高亮数 > 0
+
+  # 模板词类
+  template_phrases_exist:
+    - "F/C/S/D"
+    - "20xx年"
+    - "20XX年"
+    - "（型号名称）"
+    - "适用时保留"
+    - "不适用请删除"
+    - "根据具体情况增减"
+    - "XXX产品"
+
+  # 表格类
+  as9100_table_exists: true           # AS9100 相关表格残留
+  civil_aircraft_table_exists: true   # 民机进度表残留
+  appendix_a_empty_table_exists: true # 附录A 大空表残留（超过3行的空表）
+
+  # 结构类
+  change_record_data_rows_gt: 1       # 变更记录数据行 > 1（只允许 A版新发）
+  indicator_table_missing: true       # 技术指标表缺失
+  indicator_table_no_basis_col: true  # 技术指标表缺少"依据"列
+  duplicate_body_image_relationship: true
+  figure_caption_sequence_wrong: true # 图题必须按最终文档顺序连续编号
+
+warn_if:
+
+  # 内容类（需人工确认，不阻断）
+  standard_version_conflict: true     # 法规版本冲突（同一标准号 A/B 版并存）
+  standard_sort_wrong: true           # 法规排序不符合规则（国标在前，GJB 按编号升序）
+  cover_phase_empty: true             # 封面研制阶段为空
+  cover_doc_number_empty: true        # 封面文件编号为空
+  failure_mode_table_empty: true      # 失效模式表全空（无内容也无说明）
+  section_8_to_11_all_empty: true     # 第8~11章全部为空（可能漏填）
+  progress_table_missing: true        # 任务进度表缺失
+
+  # 指标类
+  indicator_shock_current_mixed: true # 冲击电流与额定电流合并在同一行
+  indicator_vibration_acceptance_only: true  # 振动行只写验收级，未写鉴定级
+
+  # 图片类
+  figure_in_wrong_section: true       # 结构示意图出现在非"产品组成"章节

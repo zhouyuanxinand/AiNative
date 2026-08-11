@@ -1,0 +1,35 @@
+version: "1.0"
+
+# 标准适用性只依据用户在界面选择的产品领域判断，不依赖章节号、模板顺序、
+# 产品型号或文件名。新增领域/标准族时只修改本文件。
+domain_aliases:
+  军品: military
+  适航: airworthiness
+  民机: civil_aviation
+  AS9100: as9100
+
+prefix_allowed_domains:
+  CCAR: [airworthiness, civil_aviation]
+  RTCA: [airworthiness, civil_aviation]
+  DO-178: [airworthiness, civil_aviation]
+  DO-254: [airworthiness, civil_aviation]
+  SAE: [airworthiness, civil_aviation]
+  AS9100: [airworthiness, civil_aviation, as9100]
+
+marker_allowed_domains:
+  民机项目保留: [civil_aviation, airworthiness]
+  航空军品保留: [military]
+  所有军品均保留: [military]
+  AS9100产品适用: [as9100, civil_aviation, airworthiness]
+
+marker_excluded_domains:
+  军品删除: [military]
+
+# 条件性标准必须在本次设计输入正文中找到业务证据；仅仅在“引用标准”
+# 清单里出现该标准号，不能反过来自证适用。
+condition_marker_evidence:
+  无大型试验要求删除: [大型试验]
+  无交互式电子技术手册要求删除: [交互式电子技术手册]
+  无电磁兼容性要求删除: [电磁兼容, 电磁兼容性, 电磁环境]
+  适用于开展状态鉴定: [状态鉴定]
+  适用于开展环境应力筛选: [环境应力筛选]

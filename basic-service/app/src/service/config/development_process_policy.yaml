@@ -1,0 +1,98 @@
+# 研制流程分类与模板治理规则。
+# 只使用稳定的业务语义标题，不使用可能随模板变化的显示章节号。
+
+canonical_processes:
+  - 全新
+  - 改型I
+  - 改型II
+  - 改型III
+
+aliases:
+  新研: 全新
+  新研制: 全新
+  改型派生I: 改型I
+  改型派生II: 改型II
+  改型派生III: 改型III
+  改型一: 改型I
+  改型二: 改型II
+  改型三: 改型III
+
+non_new_remove_sections:
+  - id: product_operation_scenario
+    semantic_titles:
+      - 产品运行场景识别
+    reason: 非全新流程删除产品运行场景识别
+
+  - id: product_requirement_decomposition
+    semantic_titles:
+      - 产品需求分解
+      - QFD质量功能分解
+    reason: 非全新流程删除产品需求分解
+
+  - id: appendix_a
+    semantic_titles:
+      - 附录A
+    reason: 非全新流程删除附录A
+
+# 《研制任务书的运行逻辑》要求全新项目保留“产品运行场景识别”和
+# “产品需求分解（QFD）”，但它们由设计员补充，模板示例不能作为正式内容。
+# 输出标题及提示语都受本配置治理，避免在填充器内固化章节号或模板文字。
+new_process_manual_sections:
+  - id: product_operation_scenario
+    semantic_titles:
+      - 产品运行场景识别
+    output_title: 产品运行场景识别
+    note: 需设计员编辑。
+
+  - id: product_requirement_decomposition
+    semantic_titles:
+      - 产品需求分解
+      - QFD质量功能分解
+    output_title: 产品需求分解（QFD质量功能分解）
+    note: 需设计员编辑。
+
+# 非全新流程的六性章节只有在本次设计输入存在对应证据时保留。
+# evidence_roles 是分类器的稳定语义类别；indicator_signals 用于处理同一
+# 原文既是 4.1 指标、又是六性章节证据的情况。不得使用显示章节号。
+quality_section_evidence:
+  - id: reliability
+    semantic_title: 可靠性要求
+    evidence_roles: [reliability]
+    indicator_signals: [MTBF, 平均无故障工作时间, 可靠度, 故障率, 寿命周期可靠性]
+
+  - id: maintainability
+    semantic_title: 维修性要求
+    evidence_roles: [maintainability]
+    indicator_signals: [MTTR, 平均修复时间, 可维修性, 维修时限]
+
+  - id: testability
+    semantic_title: 测试性要求
+    evidence_roles: [testability]
+    indicator_signals: [BIT, 故障检测率, 故障隔离率, 虚警率, 测试覆盖率]
+
+  - id: supportability
+    semantic_title: 保障性要求
+    evidence_roles: [supportability]
+    indicator_signals: [保障资源, 备件储备, 保障流程, 保障成本]
+
+  - id: safety
+    semantic_title: 安全性定性要求
+    evidence_roles: [safety]
+    indicator_signals: [电气安全, 机械安全, 防火防爆, 防误操作, 安全防护]
+
+  - id: environmental_adaptability
+    semantic_title: 环境适应性要求
+    evidence_roles: [environmental_adaptability]
+    indicator_signals:
+      - 工作温度
+      - 环境温度
+      - 使用温度
+      - 温度冲击
+      - 湿热
+      - 盐雾
+      - 霉菌
+      - 淋雨
+      - 沙尘
+      - 振动
+      - 冲击
+      - 低气压

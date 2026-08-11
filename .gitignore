@@ -1,0 +1,45 @@
+# 环境与密钥
+.env
+.env.*
+!/.env.example
+*.secret
+credentials*.json
+secrets*.json
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage/
+
+# 运行期数据与日志
+basic-service/app/logs/
+basic-service/app/uploads/
+basic-service/app/正式输出/
+basic-service/app/最终输出/
+basic-service/app/input_docs/
+basic-service/app/runtime/
+basic-service/app/data/uploads/
+basic-service/app/data/outputs/
+runtime-*.log
+*.log
+*.stackdump
+
+# Docker 构建产物
+*.tar
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

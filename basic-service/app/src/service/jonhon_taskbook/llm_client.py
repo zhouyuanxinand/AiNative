@@ -339,7 +339,7 @@ def _smartvision_config_from_environment() -> LLMConfig | None:
         tenant_id_header=os.getenv("MODEL_TENANT_ID_HEADER", "Tenant-Id"),
         model=os.getenv("MODEL_NAME", _DEFAULT_MAAS_MODEL),
         model_id=os.getenv("MODEL_ID", ""),
-        timeout_seconds=float(os.getenv("AI_TIMEOUT", "90")),
+        timeout_seconds=float(os.getenv("AI_TIMEOUT", "600")),
         max_tokens=int(os.getenv("MODEL_MAX_TOKENS", "8192")),
         source="environment",
     )
@@ -406,7 +406,7 @@ def _dashscope_config_from_environment() -> LLMConfig | None:
         api_key=api_key,
         endpoint=os.getenv("AI_API_URL", _DEFAULT_DASHSCOPE_ENDPOINT),
         model=os.getenv("AI_MODEL", _DEFAULT_DASHSCOPE_MODEL),
-        timeout_seconds=float(os.getenv("AI_TIMEOUT", "90")),
+        timeout_seconds=float(os.getenv("AI_TIMEOUT", "600")),
         max_tokens=int(os.getenv("AI_MAX_TOKENS", "30000")),
         source="environment",
     )
@@ -659,7 +659,7 @@ def list_available_models() -> list[dict[str, Any]]:
             response = httpx.get(
                 _catalog_url(smartvision),
                 headers={key: value for key, value in _compatible_headers(smartvision).items() if key != "Content-Type"},
-                timeout=httpx.Timeout(3.0, connect=1.5),
+                timeout=httpx.Timeout(7.0, connect=3.0),
                 follow_redirects=False,
             )
             response.raise_for_status()
@@ -981,16 +981,11 @@ def chat(
     system: str,
     user: str,
     deployment: str = _DEFAULT_DEPLOYMENT,
-    temperature: float = 0.5,
-    max_tokens: int = 8192,
+    temperature: float = 0.2,
+    max_tokens: int = 4096,
     retries: int = 3,
 ) -> str:
-    """单次受控对话，返回文本。
-
-    默认值与参考服务（auto_input_audit_service）对齐：temperature=0.5、
-    max_tokens=8192，直接透传不做 clamp（clamp 仍由 _request_compatible 保留
-    作为安全边界）。
-    """
+    """单次受控对话，返回文本。"""
     config = _active_config()
     return _request_with_retry(
         config,

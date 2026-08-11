@@ -49,10 +49,6 @@ common:
       exact_aliases: [锁紧按压力]
       related_terms: [分离按压力, 按钮力]
       target_role: performance_indicator.mechanical
-    - name: 重量
-      exact_aliases: [产品重量, 整机重量, 总重量]
-      related_terms: [质量]
-      target_role: performance_indicator.mechanical
   environmental:
     - name: 工作温度
       exact_aliases: [使用温度, 环境温度, 工作温度范围]
@@ -78,6 +74,13 @@ common:
     - name: 霉菌
       exact_aliases: [防霉]
       target_role: performance_indicator.environmental
+  other:
+    # 7-22 明确要求“重量”写入 4.1 技术指标的“其他”子表，不能按
+    # 物理量直觉并入机械性能。
+    - name: 重量
+      exact_aliases: [产品重量, 整机重量, 总重量]
+      related_terms: [质量]
+      target_role: performance_indicator.other
   quality_traits:
     - name: MTBF
       exact_aliases: [平均故障间隔时间]

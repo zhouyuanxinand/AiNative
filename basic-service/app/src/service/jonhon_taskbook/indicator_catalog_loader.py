@@ -27,6 +27,7 @@ _ROLE_CATEGORY = {
     "environmental": "环境性能",
     "high_frequency": "高频性能",
     "optical": "光性能",
+    "other": "其他",
 }
 
 

@@ -234,10 +234,29 @@ categories:
     target_integrity: exact
   other:
     label: 其他要求
-    definition: 无法归入以上类别、或来源明确标为“其他要求”的正式设计输入
+    definition: 无法归入以上类别、来源明确标为“其他要求”，或按 7-22 指定进入顾客特殊要求的完整设计输入模块
     # 7-22“其它要求”规则写入“顾客的特殊要求/其他要求”。外观、验收、
     # 交付分别由 appearance_requirement 和 technical_support 承接。
-    source_heading_keywords: [其他要求]
+    # “安装使用注意事项”“元器件和原材料选用要求”“研制批产品数量要求”
+    # 均是用户侧完整模块。即使其中的条目同时带有工艺、采购或进度语义，
+    # 也必须整章复制到本槽位，不得再由段落级语义路由拆散。
+    source_heading_keywords:
+      - 其他要求
+      - 安装使用注意事项
+      - 元器件和原材料选用要求
+      - 元器件和材料选用要求
+      - 原材料和元器件选用要求
+      - 研制批产品数量要求
+      - 研制批产品数量
+      - 研制批数量要求
+    atomic_source_heading_keywords:
+      - 安装使用注意事项
+      - 元器件和原材料选用要求
+      - 元器件和材料选用要求
+      - 原材料和元器件选用要求
+      - 研制批产品数量要求
+      - 研制批产品数量
+      - 研制批数量要求
     target_heading_keywords: [其他要求]
     target_parent_heading: 顾客的特殊要求
     preserve_child_headings: true

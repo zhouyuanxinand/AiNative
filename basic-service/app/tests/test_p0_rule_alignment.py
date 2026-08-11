@@ -13,9 +13,11 @@ from jonhon_taskbook.fill import (
     _collect_standards,
     _fill_indicator_table,
     _match_spec_table_indicator,
+    _runtime_indicator_map,
 )
 from jonhon_taskbook.requirement_classifier import (
     _apply_configured_heading_constraints,
+    _partition_mixed_blocks_with_llm,
     load_category_mapping,
 )
 from jonhon_taskbook.semantic_orchestrator import _configured_category_slots
@@ -89,6 +91,205 @@ class P0RuleAlignmentTests(unittest.TestCase):
             "其他",
             slot_by_id[resolved_slots["appearance_requirement"]]["title"],
         )
+
+    def test_installation_usage_notes_remain_one_atomic_other_module(self) -> None:
+        mapping_path = ROOT / "config" / "connector_requirement_categories.yaml"
+        mapping = load_category_mapping(str(mapping_path))
+        categories = mapping["categories"]
+        chapter = {
+            "id": "installation_notes",
+            "heading_text": "安装使用注意事项",
+            "parent_headings": ["技术要求"],
+        }
+        resolved = _apply_configured_heading_constraints(
+            [chapter],
+            {
+                "installation_notes": {
+                    "source_id": "installation_notes",
+                    "category": "safety",
+                    "confidence": 0.88,
+                    "method": "llm",
+                    "reason": "mixed safety and installation semantics",
+                }
+            },
+            categories,
+        )
+        self.assertEqual("other", resolved["installation_notes"]["category"])
+
+        text = (
+            "2）使用期间，应保持连接器插头与连接器插座合面清洁、无油污，"
+            "每次连接前，应确认无凝露及污物后方可连接。"
+        )
+        blocks = [
+            {
+                "id": "installation-note-2",
+                "chapter_id": "installation_notes",
+                "type": "paragraph",
+                "heading_text": "安装使用注意事项",
+                "section": "安装使用注意事项：",
+                "text": text,
+                "has_drawing": False,
+            }
+        ]
+        assignments = [
+            {
+                "source_id": "installation-note-2",
+                "chapter_id": "installation_notes",
+                "category": "other",
+                "confidence": 0.95,
+                "method": "llm+configured_heading_constraint",
+                "reason": "controlled source heading",
+            }
+        ]
+
+        def unexpected_llm_call(_system: str, _user: str) -> dict:
+            self.fail("atomic installation notes must not invoke fragment routing")
+
+        routed_blocks, routed_assignments, audit = _partition_mixed_blocks_with_llm(
+            blocks,
+            assignments,
+            categories,
+            mapping["exact_fragment_routing"],
+            unexpected_llm_call,
+        )
+
+        self.assertEqual(text, routed_blocks[0]["text"])
+        self.assertEqual("other", routed_assignments[0]["category"])
+        self.assertEqual([], audit)
+
+    def test_material_and_batch_quantity_modules_are_atomic_other_requirements(self) -> None:
+        mapping_path = ROOT / "config" / "connector_requirement_categories.yaml"
+        mapping = load_category_mapping(str(mapping_path))
+        categories = mapping["categories"]
+        cases = (
+            (
+                "material_selection",
+                "元器件和原材料选用要求",
+                "元器件和原材料应优先选用成熟、稳定且满足受控标准的产品。",
+                "process_requirement",
+            ),
+            (
+                "development_batch_quantity",
+                "研制批产品数量要求",
+                "研制批产品数量为3套，按任务书约定完成交付。",
+                "schedule",
+            ),
+        )
+        chapters = [
+            {"id": source_id, "heading_text": heading, "parent_headings": ["技术要求"]}
+            for source_id, heading, _text, _wrong_category in cases
+        ]
+        initial = {
+            source_id: {
+                "source_id": source_id,
+                "category": wrong_category,
+                "confidence": 0.92,
+                "method": "llm",
+                "reason": "plausible but rule-inconsistent semantic guess",
+            }
+            for source_id, _heading, _text, wrong_category in cases
+        }
+        resolved = _apply_configured_heading_constraints(chapters, initial, categories)
+        for source_id, _heading, _text, _wrong_category in cases:
+            self.assertEqual("other", resolved[source_id]["category"])
+
+        slots = scan_template_tree(
+            str(
+                ROOT
+                / "jonhon_taskbook"
+                / "resources"
+                / "templates"
+                / "connector_taskbook.docx"
+            )
+        )
+        resolved_slots = _configured_category_slots(slots, str(mapping_path))
+        other_slot = next(slot for slot in slots if slot["id"] == resolved_slots["other"])
+        self.assertEqual("其他要求", other_slot["title"])
+        self.assertEqual("顾客的特殊要求 / 其他要求", other_slot["semantic_path"])
+
+        blocks = [
+            {
+                "id": source_id,
+                "chapter_id": source_id,
+                "type": "paragraph",
+                "heading_text": heading,
+                "section": heading,
+                "text": text,
+                "has_drawing": False,
+            }
+            for source_id, heading, text, _wrong_category in cases
+        ]
+        assignments = [resolved[source_id] for source_id, *_rest in cases]
+
+        def unexpected_llm_call(_system: str, _user: str) -> dict:
+            self.fail("7-22 atomic other modules must not invoke fragment routing")
+
+        routed_blocks, routed_assignments, audit = _partition_mixed_blocks_with_llm(
+            blocks,
+            assignments,
+            categories,
+            mapping["exact_fragment_routing"],
+            unexpected_llm_call,
+        )
+
+        self.assertEqual(
+            [case[2] for case in cases],
+            [block["text"] for block in routed_blocks],
+        )
+        self.assertTrue(all(item["category"] == "other" for item in routed_assignments))
+        self.assertEqual([], audit)
+
+    def test_weight_is_routed_to_the_other_indicator_subtable(self) -> None:
+        profile = yaml.safe_load(
+            (ROOT / "jonhon_taskbook" / "connector_profile.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        classification = {
+            "source_blocks": [
+                {
+                    "id": "weight",
+                    "heading_text": "重量",
+                    "section": "重量",
+                    "text": "产品重量不大于50 g。",
+                }
+            ],
+            "classifications": [
+                {"source_id": "weight", "category": "performance_indicator"}
+            ],
+        }
+        indicator_map = _runtime_indicator_map(profile, [], classification)
+        other_names = {item.get("name") for item in indicator_map.get("其他", [])}
+        mechanical_names = {
+            item.get("name") for item in indicator_map.get("机械性能", [])
+        }
+        self.assertIn("重量", other_names)
+        self.assertNotIn("重量", mechanical_names)
+
+        document = Document()
+        table = document.add_table(rows=1, cols=5)
+        for cell, text in zip(
+            table.rows[0].cells, ["项目", "用户要求", "标准要求", "拟采用", "依据"]
+        ):
+            cell.text = text
+        category = table.add_row()
+        category.cells[0].merge(category.cells[-1]).text = "机械性能"
+        item = table.add_row()
+        item.cells[0].text = "插拔力"
+
+        written = _fill_indicator_table(
+            document,
+            [
+                ("【其他】", "", "", "", ""),
+                ("重量", "≤50 g", "", "≤50 g", "技术要求"),
+            ],
+        )
+        rows = [row.cells[0].text for row in table.rows]
+
+        self.assertEqual(1, written)
+        self.assertIn("其他", rows)
+        self.assertIn("重量", rows)
+        self.assertGreater(rows.index("重量"), rows.index("其他"))
 
     def test_scoped_specification_requires_an_exact_controlled_match(self) -> None:
         ledger = {

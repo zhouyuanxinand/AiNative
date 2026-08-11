@@ -372,11 +372,37 @@ def _partition_mixed_blocks_with_llm(
     assignment_by_id = {
         str(item.get("source_id")): item for item in assignments if item.get("source_id")
     }
+
+    def _preserve_source_chapter_atomic(block: dict[str, Any]) -> bool:
+        """Return whether external policy forbids fragmenting this module.
+
+        Some source headings describe one user-facing procedure whose numbered
+        clauses must stay together even when individual clauses have different
+        low-level semantics.  The boundary is declared in the category rule;
+        no product model, chapter number or source order is hard-coded here.
+        """
+        assignment = assignment_by_id.get(str(block.get("id", "")), {})
+        category = str(assignment.get("category", ""))
+        category_rule = categories.get(category, {})
+        if not isinstance(category_rule, dict):
+            return False
+        phrases = category_rule.get("atomic_source_heading_keywords", []) or []
+        if isinstance(phrases, str):
+            phrases = [phrases]
+        semantic_heading = " ".join(
+            str(block.get(key, "")) for key in ("heading_text", "section")
+        )
+        return any(
+            str(phrase).strip() and str(phrase).strip() in semantic_heading
+            for phrase in phrases
+        )
+
     candidates = [
         block for block in blocks
         if block.get("type") == "paragraph"
         and not block.get("has_drawing")
         and len(str(block.get("text", ""))) >= min_length
+        and not _preserve_source_chapter_atomic(block)
         and str(assignment_by_id.get(str(block.get("id")), {}).get("category", ""))
         in source_categories
     ]

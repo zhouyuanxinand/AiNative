@@ -38,6 +38,11 @@ runtime-*.log
 # Docker 构建产物
 *.tar
 
+# 前端依赖、构建产物与迁移备份
+web/node_modules/
+web/dist/
+web/index.html.bak
+
 # IDE / OS
 .idea/
 .vscode/

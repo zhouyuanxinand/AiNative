@@ -1,6 +1,20 @@
 # 研制任务书受控生成服务
-# 单镜像：Python 3.13 后端 + nginx 提供单文件 SPA 并反代 /api
-# 前端无构建阶段（templates/index.html 为内联 CSS/JS 的 SPA）。
+# 多阶段构建：Stage 1 Node 构建前端 → Stage 2 Python+nginx 运行时
+# 前端使用 React 18 + Vite + TypeScript，构建产物 dist/ 由 nginx 提供。
+
+# ── Stage 1: 前端构建 ──────────────────────────────────
+FROM node:20-slim AS frontend
+WORKDIR /build
+
+# 先复制依赖文件以利用层缓存
+COPY web/package.json web/package-lock.json* web/pnpm-lock.yaml* ./
+RUN npm install --frozen-lockfile 2>/dev/null || npm install
+
+# 复制源码并构建
+COPY web/ .
+RUN npm run build  # 产出 dist/
+
+# ── Stage 2: 运行时（Python 3.13 + nginx） ────────────
 FROM python:3.13-slim
 
 ENV PYTHONUNBUFFERED=1 \
@@ -38,8 +52,8 @@ COPY basic-service/app/resources /opt/local/agent-develop-task-doc/basic-service
 # 运行期数据目录（首次建卷时由 entrypoint 创建子目录）。
 COPY basic-service/app/data /opt/local/agent-develop-task-doc/basic-service/app/data
 
-# 前端单文件 SPA。
-COPY web /opt/local/agent-develop-task-doc/basic-service/app/web
+# 前端构建产物（从 Stage 1 复制 dist/）。
+COPY --from=frontend /build/dist /opt/local/agent-develop-task-doc/basic-service/app/web/dist
 
 # nginx 配置与入口脚本。
 COPY web/nginx/nginx.conf /etc/nginx/conf.d/default.conf
@@ -59,7 +73,7 @@ RUN mkdir -p \
 
 EXPOSE 80
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -fsS http://127.0.0.1:18130/api/health || exit 1
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

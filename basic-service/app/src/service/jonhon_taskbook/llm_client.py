@@ -104,15 +104,14 @@ _LOCAL_ENV_KEYS = {
 }
 
 # The customer deployment uses this MaaS-compatible endpoint by default.
-# These values are routing defaults, not credentials.  The API key remains
-# an environment/deployment secret so the same packaged code can be shipped
-# to multiple customers without embedding a secret in source.
+# 默认值与 agent_auto_input_audit_service 的 application.yml 保持一致，
+# 指向神州问学内网部署。API Key 仍只由环境变量注入，不写入源码。
 _DEFAULT_MAAS_ENDPOINT = (
-    "https://sv.dcsmartvision.com/open/opi-maas/v1/chat/completions"
+    "http://172.23.255.36/open/opi-maas/v1/chat/completions"
 )
-_DEFAULT_MAAS_APP_ID = "1000000122"
-_DEFAULT_MAAS_MODEL = "dashscope/qwen3.5-plus"
-_DEFAULT_MAAS_MODEL_ID = "5506"
+_DEFAULT_MAAS_APP_ID = "1000000007"
+_DEFAULT_MAAS_MODEL = "openai/qwen3.6"
+_DEFAULT_MAAS_MODEL_ID = ""
 _DEFAULT_DASHSCOPE_ENDPOINT = (
     "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 )

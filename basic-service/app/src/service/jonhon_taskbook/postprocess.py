@@ -546,6 +546,63 @@ def _normalize_budget_table_widths(root, stats: dict) -> None:
         stats["section_table_reference_width_dxa"] = reference_width
 
 
+def _is_run_italic(r) -> bool:
+    """Return True when the run carries an explicit italic attribute that is ON."""
+    rpr = r.find(f"{_W}rPr")
+    if rpr is None:
+        return False
+    for tag in ("i", "iCs"):
+        node = rpr.find(f"{_W}{tag}")
+        if node is not None:
+            val = (node.get(f"{_W}val") or "").strip().lower()
+            if val not in ("0", "false", "off", "no"):
+                return True
+    return False
+
+
+def _mark_italic_runs_with_annotation(body, stats: dict) -> None:
+    """在每个斜体 run 的文本前面插入标红的【请人工标注】前缀。
+
+    仅处理含实际文字的斜体 run；连续的斜体 run 合并为一次标注，
+    避免同一段落出现多个重复标记。指标表内部的斜体已在格式归一化
+    阶段被移除，不会进入此逻辑。
+    """
+    if body is None:
+        return
+    count = 0
+    for paragraph in body.findall(f".//{_W}p"):
+        runs = list(paragraph.findall(f"{_W}r"))
+        if not runs:
+            continue
+        # 找到第一个含可见文字的斜体 run，在其前面插入标注 run。
+        # 同一段落只在首个斜体文字前标注一次。
+        first_italic = None
+        for r in runs:
+            text = "".join(t.text or "" for t in r.findall(f"{_W}t"))
+            if text.strip() and _is_run_italic(r):
+                first_italic = r
+                break
+        if first_italic is None:
+            continue
+        # 构造标红的【请人工标注】run，插入到斜体 run 前面
+        marker_run = etree.SubElement(paragraph, f"{_W}r")
+        marker_rpr = etree.SubElement(marker_run, f"{_W}rPr")
+        color_el = etree.SubElement(marker_rpr, f"{_W}color")
+        color_el.set(f"{_W}val", "FF0000")
+        bold_el = etree.SubElement(marker_rpr, f"{_W}b")
+        bold_el.set(f"{_W}val", "1")
+        t_el = etree.SubElement(marker_run, f"{_W}t")
+        t_el.text = "【请人工标注】"
+        t_el.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+        # 将 marker_run 移到 first_italic 前面（SubElement 追加到末尾了）
+        paragraph.remove(marker_run)
+        idx = list(paragraph).index(first_italic)
+        paragraph.insert(idx, marker_run)
+        count += 1
+    if count:
+        stats["italic_annotations_added"] = count
+
+
 def _replace_paragraph_text(p, new_text: str) -> None:
     """Replace paragraph text while retaining its existing run properties.
 
@@ -815,6 +872,9 @@ def clean_doc_xml(
         parent = p.getparent()
         if parent is not None:
             parent.remove(p)
+
+    # ── 步骤2B：斜体文字标注【请人工标注】（标红加粗）─────────────────────────────
+    _mark_italic_runs_with_annotation(body, stats)
 
     # ── 步骤3：整节删除（适航/AS9100/QFD 等无用分支）──────────────────────────
     if body is not None and not preserve_template_guidance:

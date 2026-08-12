@@ -11,6 +11,7 @@ W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _W = f"{{{W}}}"
 _W_DRAW = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
 MANUAL_FILL_MARKER = "【人工填写】"
+ITALIC_ANNOTATION_MARKER = "【请人工标注】"
 _RED_VALUES = {"FF0000", "C00000", "E00000", "D00000"}
 
 
@@ -81,7 +82,7 @@ class QAGate:
             text = "".join(
                 node.text or "" for node in run.findall(f".//{_W}t")
             ).strip()
-            if text == MANUAL_FILL_MARKER:
+            if text == MANUAL_FILL_MARKER or text == ITALIC_ANNOTATION_MARKER:
                 continue
             count += 1
         return count

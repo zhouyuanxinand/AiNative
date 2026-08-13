@@ -641,14 +641,26 @@ def _parse_catalog_response(payload: Any) -> list[dict[str, Any]]:
 
 
 def list_available_models() -> list[dict[str, Any]]:
-    """按参考服务协议返回模型目录，并保留配置模型作为可靠兜底。"""
+    """返回模型目录。
+
+    神州问学：只有目录接口成功返回模型才展示，请求失败则不展示。
+    DashScope / Azure / OpenAI 兼容接口：展示已配置的模型。
+    """
     configured: list[LLMConfig] = []
     base = _base_config()
     if base is not None:
         configured.append(base)
     configured.extend(_environment_configs())
 
+    vendor_labels = {
+        "smartvision": "神州问学",
+        "dashscope": "阿里云 DashScope",
+        "azure": "微软 Azure",
+        "openai_compatible": "OpenAI 兼容接口",
+    }
     models: list[dict[str, Any]] = []
+
+    # 神州问学：只有目录接口成功返回模型才展示。
     smartvision = next(
         (item for item in configured if _provider_kind(item) == "smartvision"),
         None,
@@ -664,17 +676,14 @@ def list_available_models() -> list[dict[str, Any]]:
             response.raise_for_status()
             models.extend(_parse_catalog_response(response.json()))
         except (httpx.HTTPError, ValueError, json.JSONDecodeError):
-            # 目录服务不可达时仍返回配置中的默认模型，与参考服务保持降级行为。
+            # 目录服务不可达时不展示神州问学模型。
             pass
 
-    vendor_labels = {
-        "smartvision": "神州问学",
-        "dashscope": "阿里云 DashScope",
-        "azure": "微软 Azure",
-        "openai_compatible": "OpenAI 兼容接口",
-    }
+    # 非神州问学的已配置模型直接展示。
     for config in configured:
         provider = _provider_kind(config)
+        if provider == "smartvision":
+            continue
         models.append(
             {
                 "model": config.model,
@@ -685,17 +694,8 @@ def list_available_models() -> list[dict[str, Any]]:
             }
         )
 
+    # DashScope 未配置时展示默认值。
     configured_providers = {_provider_kind(item) for item in configured}
-    if "smartvision" not in configured_providers:
-        models.append(
-            {
-                "model": os.getenv("MODEL_NAME", _DEFAULT_MAAS_MODEL),
-                "vendor": "神州问学",
-                "id": os.getenv("MODEL_ID", _DEFAULT_MAAS_MODEL_ID),
-                "provider": "smartvision",
-                "configured": False,
-            }
-        )
     if "dashscope" not in configured_providers:
         models.append(
             {

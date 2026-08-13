@@ -49,6 +49,9 @@ RUN pip install --no-cache-dir -r /opt/local/agent-develop-task-doc/basic-servic
 # 含包内种子资源 templates/mappings）。
 COPY basic-service/app/src /opt/local/agent-develop-task-doc/basic-service/app/src
 COPY basic-service/app/resources /opt/local/agent-develop-task-doc/basic-service/app/resources
+# 按交付要求将服务根 .env 固化进镜像。llm_client 会从该固定位置读取，
+# 无需依赖容器编排平台额外注入；文件权限在后续 RUN 中收紧为 0600。
+COPY .env /opt/local/agent-develop-task-doc/basic-service/app/src/service/.env
 # 运行期数据目录（首次建卷时由 entrypoint 创建子目录）。
 COPY basic-service/app/data /opt/local/agent-develop-task-doc/basic-service/app/data
 
@@ -67,6 +70,7 @@ RUN mkdir -p \
         /opt/local/agent-develop-task-doc/basic-service/app/runtime/template_candidates \
         /opt/local/agent-develop-task-doc/basic-service/app/runtime/template_releases \
     && chown -R agent-taskbook:agent-taskbook /opt/local/agent-develop-task-doc \
+    && chmod 600 /opt/local/agent-develop-task-doc/basic-service/app/src/service/.env \
     && chmod +x /usr/local/bin/entrypoint.sh \
     && find /opt/local/agent-develop-task-doc -type d -name __pycache__ -prune -exec rm -rf {} + \
     && nginx -t

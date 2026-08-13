@@ -1,0 +1,122 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agent-develop-task-doc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-develop-task-doc
+  namespace: agent-develop-task-doc
+  labels:
+    app: agent-develop-task-doc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-develop-task-doc
+  template:
+    metadata:
+      labels:
+        app: agent-develop-task-doc
+    spec:
+      containers:
+        - name: agent-develop-task-doc
+          # 离线镜像由 k8s-import.sh 预先导入每个节点的容器运行时。
+          # 标签必须与 agent-develop-task-doc-service-1.0.1.tar 的 RepoTags 完全一致。
+          image: agent-develop-task-doc-service:1.0.1
+          # 内网无镜像仓库时禁止远程拉取，避免回退到 Docker Hub 后 ImagePullBackOff。
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 80
+              protocol: TCP
+          env:
+            - name: APP_ENV
+              value: "prod"
+            - name: API_HOST
+              value: "127.0.0.1"
+            - name: API_PORT
+              value: "18130"
+            - name: JTB_HOST
+              value: "127.0.0.1"
+            - name: JTB_PORT
+              value: "18130"
+            - name: JTB_MAX_UPLOAD_MB
+              value: "100"
+            - name: JTB_MAX_CONCURRENT_JOBS
+              value: "1"
+            - name: MODEL_GENERATE_PATH
+              value: "opi-maas/v1/chat/completions"
+            - name: MODEL_APP_ID_HEADER
+              value: "App-Id"
+            - name: MODEL_API_KEY_HEADER
+              value: "Api-Key"
+            - name: MODEL_TENANT_ID_HEADER
+              value: "Tenant-Id"
+            # LLM 凭据——请根据内网实际填写
+            # - name: MODEL_API_KEY
+            #   value: "your-key"
+            # - name: MODEL_BASE_URL
+            #   value: "http://172.23.255.36/open/"
+            # - name: MODEL_APP_ID
+            #   value: "1000000007"
+            # - name: MODEL_TENANT_ID
+            #   value: "370"
+            # - name: MODEL_NAME
+            #   value: "openai/qwen3.6"
+            # - name: AI_API_KEY
+            #   value: "your-dashscope-key"
+            # - name: AI_API_URL
+            #   value: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+            # - name: AI_MODEL
+            #   value: "qwen-plus"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "2000m"
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-develop-task-doc
+  namespace: agent-develop-task-doc
+spec:
+  type: NodePort
+  selector:
+    app: agent-develop-task-doc
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30130
+      protocol: TCP
+---
+# 持久化存储（可选：保留生成结果和日志）
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: taskbook-data
+  namespace: agent-develop-task-doc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi

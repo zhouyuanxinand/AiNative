@@ -1,8 +1,8 @@
 # 不进入镜像的内容
 .git
 .gitignore
-.env
 .env.*
+!/.env
 !/.env.example
 .venv/
 venv/

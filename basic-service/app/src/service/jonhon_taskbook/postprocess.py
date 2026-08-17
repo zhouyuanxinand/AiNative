@@ -39,6 +39,17 @@ _PHASE_PLACEHOLDER_RE = re.compile(
 _FIGURE_CAPTION_RE = re.compile(r'^(\s*图\s*)(\d+)(?=\D|$)')
 _FIGURE_REFERENCE_RE = re.compile(r'图\s*(\d+)')
 _STANDALONE_PLACEHOLDER_RE = re.compile(r'^(?:[.．·•]{3,}|…{2,})$')
+_BODY_CAPTION_RE = re.compile(r'^\s*(?:图|表)\s*\d+(?=\D|$)', re.I)
+_ITALIC_ANNOTATION_MARKER = "【请人工标注】"
+_ITALIC_ANNOTATION_ALIASES = (_ITALIC_ANNOTATION_MARKER, "【人工标注】")
+_ANNOTATION_EXEMPT_HEADING_MARKERS = (
+    "相似失效问题规避",
+    "适用于非中央研究院产品",
+    "适用于中央研究院产品",
+)
+_ANNOTATION_REQUIRED_HEADING_MARKERS = ("潜在失效模式",)
+_BODY_FONT = "宋体"
+_BODY_SIZE_HALF_POINTS = "21"  # 五号 = 10.5 pt = 21 half-points
 
 # 整段话术删除（段落内容匹配到任一条则删除该段）
 _JUNK_PATTERNS = [
@@ -560,47 +571,356 @@ def _is_run_italic(r) -> bool:
     return False
 
 
-def _mark_italic_runs_with_annotation(body, stats: dict) -> None:
-    """在每个斜体 run 的文本前面插入标红的【请人工标注】前缀。
+def _run_text(r) -> str:
+    return "".join(t.text or "" for t in r.findall(f".//{_W}t"))
 
-    仅处理含实际文字的斜体 run；连续的斜体 run 合并为一次标注，
-    避免同一段落出现多个重复标记。指标表内部的斜体已在格式归一化
-    阶段被移除，不会进入此逻辑。
+
+def _contains_visible_italic(element) -> bool:
+    return any(
+        _run_text(run).strip() and _is_run_italic(run)
+        for run in element.findall(f".//{_W}r")
+    )
+
+
+def _iter_body_blocks(container):
+    """Yield body paragraphs/tables in visual order, including SDT wrappers."""
+    for child in container:
+        if child.tag in {f"{_W}p", f"{_W}tbl"}:
+            yield child
+            continue
+        if child.tag == f"{_W}sdt":
+            content = child.find(f"{_W}sdtContent")
+            if content is not None:
+                yield from _iter_body_blocks(content)
+
+
+def _style_italic_annotation_run(marker_run) -> None:
+    marker_rpr = marker_run.find(f"{_W}rPr")
+    if marker_rpr is None:
+        marker_rpr = etree.Element(f"{_W}rPr")
+        marker_run.insert(0, marker_rpr)
+    color_el = marker_rpr.find(f"{_W}color")
+    if color_el is None:
+        color_el = etree.SubElement(marker_rpr, f"{_W}color")
+    color_el.set(f"{_W}val", "FF0000")
+    bold_el = marker_rpr.find(f"{_W}b")
+    if bold_el is None:
+        bold_el = etree.SubElement(marker_rpr, f"{_W}b")
+    bold_el.set(f"{_W}val", "1")
+
+
+def _append_italic_annotation_to_heading(heading) -> None:
+    marker_run = etree.SubElement(heading, f"{_W}r")
+    _style_italic_annotation_run(marker_run)
+    marker_text = etree.SubElement(marker_run, f"{_W}t")
+    marker_text.text = _ITALIC_ANNOTATION_MARKER
+    marker_text.set(
+        "{http://www.w3.org/XML/1998/namespace}space",
+        "preserve",
+    )
+
+
+def _remove_annotation_aliases_from_run(run) -> int:
+    """Remove legacy annotation labels while preserving the run's remaining text."""
+    text_nodes = list(run.findall(f".//{_W}t"))
+    full_text = "".join(node.text or "" for node in text_nodes)
+    if not full_text:
+        return 0
+
+    removed_chars = [False] * len(full_text)
+    removed_count = 0
+    for marker in _ITALIC_ANNOTATION_ALIASES:
+        start = 0
+        while True:
+            start = full_text.find(marker, start)
+            if start < 0:
+                break
+            end = start + len(marker)
+            if not any(removed_chars[start:end]):
+                removed_chars[start:end] = [True] * len(marker)
+                removed_count += 1
+            start = end
+
+    if not removed_count:
+        return 0
+
+    cursor = 0
+    for node in text_nodes:
+        original = node.text or ""
+        node.text = "".join(
+            char
+            for offset, char in enumerate(original)
+            if not removed_chars[cursor + offset]
+        )
+        if node.text[:1].isspace() or node.text[-1:].isspace():
+            node.set(
+                "{http://www.w3.org/XML/1998/namespace}space",
+                "preserve",
+            )
+        cursor += len(original)
+
+    if not _run_text(run):
+        non_text_payload = any(
+            child.tag not in {f"{_W}rPr", f"{_W}t"}
+            for child in run
+        )
+        parent = run.getparent()
+        if not non_text_payload and parent is not None:
+            parent.remove(run)
+    return removed_count
+
+
+def _annotation_heading_policy(heading) -> str:
+    text = re.sub(r"\s+", "", _para_text(heading))
+    if any(marker in text for marker in _ANNOTATION_EXEMPT_HEADING_MARKERS):
+        return "exempt"
+    if "分析" in text and any(
+        marker in text for marker in _ANNOTATION_REQUIRED_HEADING_MARKERS
+    ):
+        return "required"
+    return "auto"
+
+
+def _remove_visible_italic_text(element) -> tuple[int, int]:
+    removed_runs = 0
+    removed_chars = 0
+    for run in list(element.findall(f".//{_W}r")):
+        if not _is_run_italic(run):
+            continue
+        text_nodes = list(run.findall(f".//{_W}t"))
+        text = "".join(node.text or "" for node in text_nodes)
+        if not text:
+            continue
+        removed_runs += 1
+        removed_chars += len(text)
+        for node in text_nodes:
+            node.text = ""
+        non_text_payload = any(
+            child.tag not in {f"{_W}rPr", f"{_W}t"}
+            for child in run
+        )
+        parent = run.getparent()
+        if not non_text_payload and parent is not None:
+            parent.remove(run)
+    return removed_runs, removed_chars
+
+
+def _strip_similar_failure_italic_text(body, stats: dict) -> None:
+    """Delete italic guidance/content only inside the 5.1 semantic section."""
+    if body is None:
+        return
+
+    active_depth = 0
+    removed_runs = 0
+    removed_chars = 0
+    for block in _iter_body_blocks(body):
+        if block.tag == f"{_W}p":
+            depth = _heading_depth(block)
+            if depth > 0:
+                if active_depth and depth <= active_depth:
+                    active_depth = 0
+                heading_text = re.sub(r"\s+", "", _para_text(block))
+                if "相似失效问题规避" in heading_text:
+                    active_depth = depth
+                continue
+        if not active_depth:
+            continue
+        run_count, char_count = _remove_visible_italic_text(block)
+        removed_runs += run_count
+        removed_chars += char_count
+
+    if removed_runs:
+        stats["similar_failure_italic_runs_removed"] = removed_runs
+        stats["similar_failure_italic_chars_removed"] = removed_chars
+
+
+def _mark_italic_runs_with_annotation(body, stats: dict) -> None:
+    """每个含斜体正文的章节只在最近章节标题上标注一次。
+
+    旧逻辑按段落插入标记，会使同一章节的多段斜体重复显示。这里先
+    移除正文/表格内旧的两种标记，再按文档顺序把斜体内容或旧标记
+    归属到最近的标题。标题本身的斜体版式不触发标注；模板标题已有
+    【人工标注】时也不会重复追加。
     """
     if body is None:
         return
-    count = 0
+
+    exempt_markers_removed = 0
     for paragraph in body.findall(f".//{_W}p"):
-        runs = list(paragraph.findall(f"{_W}r"))
-        if not runs:
+        if _heading_depth(paragraph) <= 0:
             continue
-        # 找到第一个含可见文字的斜体 run，在其前面插入标注 run。
-        # 同一段落只在首个斜体文字前标注一次。
-        first_italic = None
-        for r in runs:
-            text = "".join(t.text or "" for t in r.findall(f"{_W}t"))
-            if text.strip() and _is_run_italic(r):
-                first_italic = r
-                break
-        if first_italic is None:
+        if _annotation_heading_policy(paragraph) != "exempt":
             continue
-        # 构造标红的【请人工标注】run，插入到斜体 run 前面
-        marker_run = etree.SubElement(paragraph, f"{_W}r")
-        marker_rpr = etree.SubElement(marker_run, f"{_W}rPr")
-        color_el = etree.SubElement(marker_rpr, f"{_W}color")
-        color_el.set(f"{_W}val", "FF0000")
-        bold_el = etree.SubElement(marker_rpr, f"{_W}b")
-        bold_el.set(f"{_W}val", "1")
-        t_el = etree.SubElement(marker_run, f"{_W}t")
-        t_el.text = "【请人工标注】"
-        t_el.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
-        # 将 marker_run 移到 first_italic 前面（SubElement 追加到末尾了）
-        paragraph.remove(marker_run)
-        idx = list(paragraph).index(first_italic)
-        paragraph.insert(idx, marker_run)
-        count += 1
-    if count:
-        stats["italic_annotations_added"] = count
+        for run in list(paragraph.findall(f".//{_W}r")):
+            exempt_markers_removed += _remove_annotation_aliases_from_run(run)
+
+    relocated = 0
+    relocated_paragraph_ids: set[int] = set()
+    for paragraph in body.findall(f".//{_W}p"):
+        if _heading_depth(paragraph) > 0:
+            continue
+        for run in list(paragraph.findall(f".//{_W}r")):
+            removed = _remove_annotation_aliases_from_run(run)
+            if removed:
+                relocated += removed
+                relocated_paragraph_ids.add(id(paragraph))
+
+    current_heading = None
+    current_heading_policy = "auto"
+    target_headings = []
+    target_ids: set[int] = set()
+    italic_without_heading = 0
+
+    def queue_heading(heading) -> None:
+        heading_id = id(heading)
+        if heading_id not in target_ids:
+            target_ids.add(heading_id)
+            target_headings.append(heading)
+
+    for block in _iter_body_blocks(body):
+        if block.tag == f"{_W}p" and _heading_depth(block) > 0:
+            if _para_text(block).strip():
+                current_heading = block
+                current_heading_policy = _annotation_heading_policy(block)
+                if current_heading_policy == "required":
+                    queue_heading(block)
+            continue
+        if block.tag == f"{_W}p":
+            had_relocated_marker = id(block) in relocated_paragraph_ids
+        else:
+            had_relocated_marker = any(
+                id(paragraph) in relocated_paragraph_ids
+                for paragraph in block.findall(f".//{_W}p")
+            )
+        if not had_relocated_marker and not _contains_visible_italic(block):
+            continue
+        if current_heading is None:
+            italic_without_heading += 1
+            continue
+        if current_heading_policy == "exempt":
+            continue
+        queue_heading(current_heading)
+
+    added = 0
+    for heading in target_headings:
+        heading_text = _para_text(heading)
+        exact_marker_run_found = False
+        for run in heading.findall(f".//{_W}r"):
+            if _run_text(run).strip() in _ITALIC_ANNOTATION_ALIASES:
+                _style_italic_annotation_run(run)
+                exact_marker_run_found = True
+        if exact_marker_run_found:
+            continue
+        if any(marker in heading_text for marker in _ITALIC_ANNOTATION_ALIASES):
+            continue
+        _append_italic_annotation_to_heading(heading)
+        added += 1
+
+    stats["italic_annotation_chapters"] = len(target_headings)
+    if added:
+        stats["italic_annotations_added"] = added
+    if relocated:
+        stats["italic_annotations_relocated"] = relocated
+    if exempt_markers_removed:
+        stats["annotation_exempt_markers_removed"] = exempt_markers_removed
+    if italic_without_heading:
+        stats["italic_without_heading"] = italic_without_heading
+
+
+def _set_body_run_typography(run) -> None:
+    rpr = run.find(f"{_W}rPr")
+    if rpr is None:
+        rpr = etree.Element(f"{_W}rPr")
+        run.insert(0, rpr)
+
+    fonts = rpr.find(f"{_W}rFonts")
+    if fonts is None:
+        fonts = etree.Element(f"{_W}rFonts")
+        rpr.insert(0, fonts)
+    for key in ("ascii", "hAnsi", "eastAsia", "cs"):
+        fonts.set(f"{_W}{key}", _BODY_FONT)
+    fonts.set(f"{_W}hint", "eastAsia")
+
+    size = rpr.find(f"{_W}sz")
+    if size is None:
+        size = etree.SubElement(rpr, f"{_W}sz")
+    size.set(f"{_W}val", _BODY_SIZE_HALF_POINTS)
+    size_cs = rpr.find(f"{_W}szCs")
+    if size_cs is None:
+        size_cs = etree.SubElement(rpr, f"{_W}szCs")
+    size_cs.set(f"{_W}val", _BODY_SIZE_HALF_POINTS)
+
+
+def _normalize_body_text_formatting(body, stats: dict) -> None:
+    """Normalize chapter prose to 宋体五号 without changing other roles.
+
+    Cover/front matter before the first heading, heading runs, figure/table
+    captions and all table-cell text retain their template-controlled sizes.
+    Only visible runs in direct chapter prose paragraphs are normalized.
+    """
+    if body is None:
+        return
+    seen_heading = False
+    paragraph_count = 0
+    run_count = 0
+    for block in _iter_body_blocks(body):
+        if block.tag != f"{_W}p":
+            continue
+        if _heading_depth(block) > 0:
+            seen_heading = True
+            continue
+        if not seen_heading:
+            continue
+        text = _para_text(block).strip()
+        if not text or _BODY_CAPTION_RE.match(text):
+            continue
+        changed = False
+        for run in block.findall(f".//{_W}r"):
+            if not _run_text(run).strip():
+                continue
+            _set_body_run_typography(run)
+            changed = True
+            run_count += 1
+        if changed:
+            paragraph_count += 1
+    if paragraph_count:
+        stats["body_paragraphs_normalized"] = paragraph_count
+        stats["body_runs_normalized"] = run_count
+
+
+def _clear_potential_failure_analysis_table_content(body, stats: dict) -> None:
+    """Leave the 5.2 analysis table body blank for designer input."""
+    if body is None:
+        return
+
+    cleared_cells = 0
+    for table in body.findall(f".//{_W}tbl"):
+        rows = table.findall(f"./{_W}tr")
+        if not rows:
+            continue
+        header_text = re.sub(
+            r"\s+",
+            "",
+            "".join(
+                node.text or ""
+                for node in rows[0].findall(f".//{_W}t")
+            ),
+        )
+        if "可能发生的失效模式" not in header_text:
+            continue
+        for row in rows[1:]:
+            for cell in row.findall(f"./{_W}tc"):
+                cell_text = "".join(
+                    node.text or ""
+                    for node in cell.findall(f".//{_W}t")
+                )
+                if cell_text.strip():
+                    cleared_cells += 1
+                for paragraph in list(cell.findall(f"./{_W}p")):
+                    cell.remove(paragraph)
+                cell.append(etree.Element(f"{_W}p"))
+    if cleared_cells:
+        stats["potential_failure_analysis_cells_cleared"] = cleared_cells
 
 
 def _replace_paragraph_text(p, new_text: str) -> None:
@@ -873,6 +1193,11 @@ def clean_doc_xml(
         if parent is not None:
             parent.remove(p)
 
+    _clear_potential_failure_analysis_table_content(body, stats)
+
+    # 5.1 的斜体模板说明不是交付内容，先删除后再执行章节级标注。
+    _strip_similar_failure_italic_text(body, stats)
+
     # ── 步骤2B：斜体文字标注【请人工标注】（标红加粗）─────────────────────────────
     _mark_italic_runs_with_annotation(body, stats)
 
@@ -1088,6 +1413,11 @@ def clean_doc_xml(
     # Run after width scaling and all paragraph cleanup so a template table
     # cannot reintroduce mixed fonts in the final deliverable.
     _normalize_controlled_table_formatting(root, stats)
+
+    # Source paragraphs can carry direct 小四 formatting into the template.
+    # Final chapter prose is controlled as 宋体五号 while headings, captions,
+    # cover/front matter and table-specific typography remain untouched.
+    _normalize_body_text_formatting(body, stats)
 
     return (
         etree.tostring(root, xml_declaration=True,

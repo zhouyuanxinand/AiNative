@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import logging
 import os
 import re
 from collections import Counter
@@ -17,6 +18,13 @@ from jonhon_taskbook.semantic_orchestrator import (
 
 
 ChatJSON = Callable[[str, str], dict]
+logger = logging.getLogger(__name__)
+
+_CLASSIFICATION_MAX_ATTEMPTS = 3
+_EXPLICIT_EMPTY_REQUIREMENT_RE = re.compile(
+    r"^(?:无|无要求|暂无|不适用|不涉及|none|n/?a|[-—/]+)[。．.!！;；、]*$",
+    re.IGNORECASE,
+)
 
 
 def _file_sha256(path: str | Path) -> str:
@@ -96,44 +104,102 @@ def _classify_with_llm(
     # “整块语义分类”，但降低单次正文负载，避免连接层失败。
     for start in range(0, len(blocks), 20):
         batch = blocks[start : start + 20]
-        payload = {
-            "node": "requirement_classification",
-            "blocks": [
-                {
-                    "source_id": block["id"],
-                    "heading_text": block.get("heading_text", ""),
-                    "parent_headings": block.get("parent_headings", []),
-                    "previous_heading": block.get("previous_heading", ""),
-                    "next_heading": block.get("next_heading", ""),
-                    "type": block["type"],
-                    "text": block["text"][:2000],
-                }
-                for block in batch
-            ],
-        }
-        raw = chat_json_fn(system, json.dumps(payload, ensure_ascii=False))
-        valid_ids = {block["id"] for block in batch}
-        for item in raw.get("classifications", []) if isinstance(raw, dict) else []:
-            if not isinstance(item, dict):
-                continue
-            source_id = item.get("source_id")
-            category = item.get("category")
-            if source_id not in valid_ids or source_id in result:
-                continue
-            try:
-                confidence = max(0.0, min(1.0, float(item.get("confidence", 0.0))))
-            except (TypeError, ValueError):
-                confidence = 0.0
-            if category not in categories or confidence < 0.60:
-                category = "other"
-            result[source_id] = {
-                "source_id": source_id,
-                "category": category,
-                "confidence": confidence,
-                "method": "llm",
-                "reason": str(item.get("reason", ""))[:240],
+        pending = list(batch)
+        for attempt in range(1, _CLASSIFICATION_MAX_ATTEMPTS + 1):
+            payload: dict[str, Any] = {
+                "node": "requirement_classification",
+                "blocks": [
+                    {
+                        "source_id": block["id"],
+                        "heading_text": block.get("heading_text", ""),
+                        "parent_headings": block.get("parent_headings", []),
+                        "previous_heading": block.get("previous_heading", ""),
+                        "next_heading": block.get("next_heading", ""),
+                        "type": block["type"],
+                        "text": block["text"][:2000],
+                    }
+                    for block in pending
+                ],
             }
+            if attempt > 1:
+                payload["completion_retry"] = {
+                    "attempt": attempt,
+                    "required_source_ids": [block["id"] for block in pending],
+                    "instruction": (
+                        "上一次响应遗漏了这些来源章节。即使正文为“无。”或“不适用”，"
+                        "也必须逐项返回，并将明确空内容归入 other。"
+                    ),
+                }
+            raw = chat_json_fn(system, json.dumps(payload, ensure_ascii=False))
+            valid_ids = {block["id"] for block in pending}
+            for item in raw.get("classifications", []) if isinstance(raw, dict) else []:
+                if not isinstance(item, dict):
+                    continue
+                source_id = item.get("source_id")
+                category = item.get("category")
+                if source_id not in valid_ids or source_id in result:
+                    continue
+                try:
+                    confidence = max(0.0, min(1.0, float(item.get("confidence", 0.0))))
+                except (TypeError, ValueError):
+                    confidence = 0.0
+                if category not in categories or confidence < 0.60:
+                    category = "other"
+                result[source_id] = {
+                    "source_id": source_id,
+                    "category": category,
+                    "confidence": confidence,
+                    "method": "llm" if attempt == 1 else f"llm_retry_{attempt}",
+                    "reason": str(item.get("reason", ""))[:240],
+                }
+            pending = [block for block in pending if block["id"] not in result]
+            if not pending:
+                break
+            if attempt < _CLASSIFICATION_MAX_ATTEMPTS:
+                logger.warning(
+                    "requirement_classification_missing_retry",
+                    extra={
+                        "attempt": attempt,
+                        "missing_source_ids": [block["id"] for block in pending],
+                    },
+                )
     return result
+
+
+def _apply_explicit_empty_content_fallback(
+    chapters: list[dict[str, Any]],
+    classifications: dict[str, dict],
+    categories: dict[str, Any],
+) -> dict[str, dict]:
+    """Recover only LLM-omitted chapters whose source explicitly says no requirement.
+
+    This is deliberately narrower than a keyword classifier: it does not infer a
+    business category, inspect chapter numbers, or use source order.  It only maps
+    an exact empty-value statement such as ``无。`` to the mandatory ``other``
+    bucket after the LLM completion retries have already been exhausted.
+    """
+    recovered = dict(classifications)
+    if "other" not in categories:
+        return recovered
+    for chapter in chapters:
+        source_id = str(chapter.get("id", ""))
+        if not source_id or source_id in recovered:
+            continue
+        text = re.sub(r"\s+", "", str(chapter.get("text", ""))).strip()
+        if not _EXPLICIT_EMPTY_REQUIREMENT_RE.fullmatch(text):
+            continue
+        recovered[source_id] = {
+            "source_id": source_id,
+            "category": "other",
+            "confidence": 1.0,
+            "method": "controlled_empty_content_after_llm_retry",
+            "reason": f"原文仅含明确空内容“{text}”，按受控空内容规则归入 other",
+        }
+        logger.warning(
+            "requirement_classification_empty_content_recovered",
+            extra={"source_id": source_id, "source_text": text},
+        )
+    return recovered
 
 
 def _apply_configured_heading_constraints(
@@ -803,12 +869,17 @@ def build_requirement_classification(
         llm_results,
         categories,
     )
+    llm_results = _apply_explicit_empty_content_fallback(
+        chapters,
+        llm_results,
+        categories,
+    )
     missing_chapters = [
         chapter["id"] for chapter in chapters if chapter["id"] not in llm_results
     ]
     if missing_chapters:
         raise ValueError(
-            "LLM 语义分类结果不完整，缺少来源章节: "
+            "LLM 语义分类结果经缺失项重试后仍不完整，缺少非空来源章节: "
             + ", ".join(missing_chapters[:10])
             + ("…" if len(missing_chapters) > 10 else "")
         )

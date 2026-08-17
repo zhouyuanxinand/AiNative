@@ -5,12 +5,14 @@ import unittest
 from pathlib import Path
 
 from docx import Document
+from docx.oxml.ns import qn
+from docx.shared import Pt
 
 from jonhon_taskbook.development_process_policy import (
     new_process_manual_section_rules,
 )
 from jonhon_taskbook.fill import (
-    _fill_potential_failure_analysis_table,
+    _prepare_manual_potential_failure_analysis_table,
     _replace_section_body_with_manual_note,
     _technical_support_module_groups,
 )
@@ -49,7 +51,7 @@ class P1RuleAlignmentTests(unittest.TestCase):
         self.assertEqual(2, len(groups[0]["items"]))
         self.assertEqual(1, len(groups[1]["items"]))
 
-    def test_matched_failure_modes_seed_potential_analysis_column(self) -> None:
+    def test_potential_failure_analysis_table_is_left_blank_for_manual_input(self) -> None:
         document = Document()
         table = document.add_table(rows=1, cols=5)
         for cell, text in zip(
@@ -57,21 +59,20 @@ class P1RuleAlignmentTests(unittest.TestCase):
             ["序号", "可能发生的失效模式", "失效模式机理", "失效模式后果", "可考虑的解决办法"],
         ):
             cell.text = text
-        table.add_row()
+        for values in (
+            ("1", "历史失效模式", "AI机理", "AI影响", "AI措施"),
+            ("2", "另一种模式", "其他机理", "其他影响", "其他措施"),
+        ):
+            row = table.add_row()
+            for cell, text in zip(row.cells, values):
+                cell.text = text
 
-        written = _fill_potential_failure_analysis_table(
-            document,
-            [
-                {"failure_mode": "弹针缩针"},
-                {"failure_mode": "导销无法装入导销孔"},
-            ],
-        )
+        cleared = _prepare_manual_potential_failure_analysis_table(document)
 
-        self.assertEqual(2, written)
+        self.assertEqual(10, cleared)
         self.assertEqual(3, len(table.rows))
-        self.assertEqual("弹针缩针", table.rows[1].cells[1].text)
-        self.assertEqual("导销无法装入导销孔", table.rows[2].cells[1].text)
-        self.assertEqual("", table.rows[1].cells[2].text)
+        for row in table.rows[1:]:
+            self.assertTrue(all(cell.text == "" for cell in row.cells))
 
     def test_full_new_manual_sections_keep_clean_heading_and_note(self) -> None:
         document = Document()
@@ -118,6 +119,173 @@ class P1RuleAlignmentTests(unittest.TestCase):
         self.assertIn("产品运行场景识别", paragraphs)
         self.assertIn("产品需求分解（QFD质量功能分解）", paragraphs)
         self.assertEqual(2, paragraphs.count("需设计员编辑。"))
+
+    def test_manual_annotation_section_exceptions(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "taskbook.docx"
+            document = Document()
+            document.add_heading("初步的失效模式分析", level=1)
+            document.add_heading("相似失效问题规避【人工标注】", level=2)
+            similar_body = document.add_paragraph()
+            similar_body.add_run("保留的非斜体正文")
+            similar_body.add_run("【人工标注】")
+            italic = similar_body.add_run("斜体模板说明")
+            italic.italic = True
+            similar_table = document.add_table(rows=2, cols=1)
+            similar_table.cell(1, 0).paragraphs[0].add_run("表格斜体说明").italic = True
+
+            document.add_heading("潜在失效模式初步分析", level=2)
+            document.add_paragraph("请设计人员填写下表。")
+            potential_table = document.add_table(rows=3, cols=5)
+            for cell, text in zip(
+                potential_table.rows[0].cells,
+                ["序号", "可能发生的失效模式", "失效模式机理", "失效模式后果/影响", "可考虑的解决办法"],
+            ):
+                cell.text = text
+            for row, values in zip(
+                potential_table.rows[1:],
+                (("1", "AI内容", "AI机理", "AI影响", "AI措施"), ("2", "旧内容", "", "", "")),
+            ):
+                for cell, text in zip(row.cells, values):
+                    cell.text = text
+
+            document.add_heading(
+                "研制经费预算：【请人工标注】(适用于非中央研究院产品)",
+                level=1,
+            )
+            document.add_paragraph().add_run("非中央研究院说明").italic = True
+            document.add_heading(
+                "研制经费预算及经济性分析：【人工标注】(适用于中央研究院产品)",
+                level=1,
+            )
+            document.add_paragraph().add_run("中央研究院说明").italic = True
+            document.save(path)
+
+            stats = postprocess(path)
+            postprocess(path)
+            rendered = Document(path)
+
+        similar_heading = next(p for p in rendered.paragraphs if "相似失效问题规避" in p.text)
+        similar_body_rendered = next(p for p in rendered.paragraphs if "保留的非斜体正文" in p.text)
+        potential_heading = next(p for p in rendered.paragraphs if "潜在失效模式初步分析" in p.text)
+        scope_headings = [
+            p
+            for p in rendered.paragraphs
+            if "适用于非中央研究院产品" in p.text or "适用于中央研究院产品" in p.text
+        ]
+        self.assertNotIn("人工标注", similar_heading.text)
+        self.assertFalse(any(run.italic and run.text for run in similar_body_rendered.runs))
+        self.assertEqual(1, potential_heading.text.count("【请人工标注】"))
+        self.assertTrue(
+            next(run for run in potential_heading.runs if run.text == "【请人工标注】").bold
+        )
+        self.assertTrue(all("人工标注" not in heading.text for heading in scope_headings))
+        self.assertTrue(all(run.text != "表格斜体说明" for run in rendered.tables[0].cell(1, 0).paragraphs[0].runs))
+        self.assertTrue(all(cell.text == "" for row in rendered.tables[1].rows[1:] for cell in row.cells))
+        self.assertGreaterEqual(stats.get("similar_failure_italic_runs_removed", 0), 1)
+        self.assertGreaterEqual(stats.get("potential_failure_analysis_cells_cleared", 0), 1)
+
+    def test_postprocess_normalizes_only_chapter_prose_to_song_five_point(self) -> None:
+        def set_run_font(run, name: str, size: float) -> None:
+            run.font.name = name
+            run.font.size = Pt(size)
+            fonts = run._r.get_or_add_rPr().get_or_add_rFonts()
+            fonts.set(qn("w:eastAsia"), name)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "taskbook.docx"
+            document = Document()
+
+            cover_run = document.add_paragraph().add_run("封面标题")
+            set_run_font(cover_run, "黑体", 26)
+
+            heading = document.add_heading("第一章 总体要求", level=1)
+            set_run_font(heading.runs[0], "黑体", 16)
+
+            body_run = document.add_paragraph().add_run("这是从来源文件搬运的正文。")
+            set_run_font(body_run, "仿宋_GB2312", 12)
+
+            caption_run = document.add_paragraph().add_run("图1 示例图")
+            set_run_font(caption_run, "黑体", 12)
+
+            table = document.add_table(rows=1, cols=1)
+            table_run = table.cell(0, 0).paragraphs[0].add_run("表格专用文字")
+            set_run_font(table_run, "仿宋_GB2312", 9)
+            document.save(path)
+
+            postprocess(path)
+            rendered = Document(path)
+
+        rendered_cover = next(p for p in rendered.paragraphs if p.text == "封面标题")
+        rendered_heading = next(p for p in rendered.paragraphs if p.text.startswith("第一章"))
+        rendered_body = next(p for p in rendered.paragraphs if "来源文件搬运" in p.text)
+        rendered_caption = next(p for p in rendered.paragraphs if p.text == "图1 示例图")
+        rendered_table_run = rendered.tables[0].cell(0, 0).paragraphs[0].runs[-1]
+
+        self.assertAlmostEqual(26.0, rendered_cover.runs[0].font.size.pt)
+        self.assertEqual("黑体", rendered_cover.runs[0]._r.rPr.rFonts.get(qn("w:eastAsia")))
+        self.assertAlmostEqual(16.0, rendered_heading.runs[0].font.size.pt)
+        self.assertEqual("黑体", rendered_heading.runs[0]._r.rPr.rFonts.get(qn("w:eastAsia")))
+        self.assertAlmostEqual(10.5, rendered_body.runs[0].font.size.pt)
+        self.assertEqual("宋体", rendered_body.runs[0].font.name)
+        self.assertEqual("宋体", rendered_body.runs[0]._r.rPr.rFonts.get(qn("w:eastAsia")))
+        self.assertAlmostEqual(12.0, rendered_caption.runs[0].font.size.pt)
+        self.assertEqual("黑体", rendered_caption.runs[0]._r.rPr.rFonts.get(qn("w:eastAsia")))
+        self.assertAlmostEqual(9.0, rendered_table_run.font.size.pt)
+        self.assertEqual("仿宋_GB2312", rendered_table_run._r.rPr.rFonts.get(qn("w:eastAsia")))
+
+    def test_italic_annotation_is_once_per_nearest_chapter_heading(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "taskbook.docx"
+            document = Document()
+            document.add_heading("总体要求", level=1)
+            first = document.add_paragraph()
+            first.add_run("【人工标注】")
+            first.add_run("斜体第一段").italic = True
+            document.add_paragraph().add_run("【请人工标注】斜体第二段").italic = True
+            document.add_heading("详细要求", level=2)
+            third = document.add_paragraph()
+            third.add_run("【人工标注】")
+            third.add_run("斜体第三段").italic = True
+            document.add_paragraph().add_run("斜体第四段").italic = True
+            table_paragraph = document.add_table(rows=1, cols=1).cell(0, 0).paragraphs[0]
+            table_paragraph.add_run("【人工标注】")
+            table_paragraph.add_run("表格斜体内容").italic = True
+            document.add_heading("模板已有标记【人工标注】", level=2)
+            document.add_paragraph().add_run("斜体第五段").italic = True
+            document.add_paragraph().add_run("斜体第六段").italic = True
+            document.add_heading("普通章节", level=1)
+            document.add_paragraph("普通正文")
+            document.save(path)
+
+            stats = postprocess(path)
+            postprocess(path)  # 再次处理也不得重复标注或把标记变黑。
+            rendered = Document(path)
+
+        overall = next(p for p in rendered.paragraphs if p.text.startswith("总体要求"))
+        detail = next(p for p in rendered.paragraphs if p.text.startswith("详细要求"))
+        existing = next(p for p in rendered.paragraphs if p.text.startswith("模板已有标记"))
+        normal = next(p for p in rendered.paragraphs if p.text == "普通章节")
+        body_paragraphs = [p for p in rendered.paragraphs if p.text.startswith("斜体第")]
+
+        self.assertEqual(1, overall.text.count("【请人工标注】"))
+        self.assertEqual(1, detail.text.count("【请人工标注】"))
+        self.assertEqual(1, existing.text.count("【人工标注】"))
+        self.assertNotIn("【请人工标注】", existing.text)
+        self.assertNotIn("人工标注", normal.text)
+        self.assertTrue(all("人工标注" not in paragraph.text for paragraph in body_paragraphs))
+        self.assertTrue(all(paragraph.runs[0].italic for paragraph in body_paragraphs))
+        rendered_table_paragraph = rendered.tables[0].cell(0, 0).paragraphs[0]
+        self.assertNotIn("人工标注", rendered_table_paragraph.text)
+        self.assertTrue(any(run.text == "表格斜体内容" and run.italic for run in rendered_table_paragraph.runs))
+        self.assertEqual(3, stats["italic_annotation_chapters"])
+        self.assertEqual(2, stats["italic_annotations_added"])
+        self.assertEqual(4, stats["italic_annotations_relocated"])
+
+        for heading in (overall, detail):
+            marker_run = next(run for run in heading.runs if run.text == "【请人工标注】")
+            self.assertTrue(marker_run.bold)
+            self.assertEqual("FF0000", str(marker_run.font.color.rgb))
 
     def test_short_prose_cannot_consume_acceptance_table_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

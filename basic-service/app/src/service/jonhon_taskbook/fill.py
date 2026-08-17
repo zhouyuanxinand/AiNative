@@ -5,12 +5,14 @@ fill.py — 语义槽位驱动的研制任务书填充主程序
 换产品/模板: 注册语义标题锚点和受控模板，不修改主流程
 """
 from __future__ import annotations
-import argparse, copy, json, re, sys
+import argparse, copy, json, re, sys, zipfile
+from functools import lru_cache
 from pathlib import Path
 from docx import Document
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 from docx.text.paragraph import Paragraph
+from lxml import etree
 
 try:
     import yaml
@@ -26,6 +28,7 @@ from jonhon_taskbook.indicator_taxonomy import taxonomy_indicator_map
 from jonhon_taskbook.indicator_catalog_loader import (
     load_reference_indicator_catalog,
 )
+from jonhon_taskbook.indicator_identity import canonical_indicator_name
 from jonhon_taskbook.standard_order import sort_standards
 from jonhon_taskbook.renderer.table_style_engine import apply_table_style
 try:
@@ -592,11 +595,14 @@ def _make_p(text: str, ref=None, *, preserve_italic: bool = True):
                     copied_rpr.remove(italic_node)
         r_el.append(copied_rpr)
     else:
-        # 默认：仿宋_GB2312，小四（21 half-points = 10.5pt）
+        # 默认正文：宋体、五号（21 half-points = 10.5pt）。最终输出还会
+        # 在 postprocess 中统一直接来源段落，避免源文件的小四格式泄漏。
         rpr = OxmlElement("w:rPr")
         fonts = OxmlElement("w:rFonts")
-        fonts.set(qn("w:ascii"),    "仿宋_GB2312")
-        fonts.set(qn("w:eastAsia"), "仿宋_GB2312")
+        fonts.set(qn("w:ascii"),    "宋体")
+        fonts.set(qn("w:hAnsi"),    "宋体")
+        fonts.set(qn("w:eastAsia"), "宋体")
+        fonts.set(qn("w:cs"),       "宋体")
         fonts.set(qn("w:hint"),     "eastAsia")
         sz = OxmlElement("w:sz");   sz.set(qn("w:val"), "21")
         szCs = OxmlElement("w:szCs"); szCs.set(qn("w:val"), "21")
@@ -1135,48 +1141,20 @@ def _find_potential_failure_analysis_table(doc):
     return None
 
 
-def _fill_potential_failure_analysis_table(
-    doc,
-    records: list[dict],
-) -> int:
-    """Seed 5.2 only with the matched 5.1 failure-mode evidence.
-
-    The 7-22 rule requires the historical modes from 5.1 to appear in the
-    ``可能发生的失效模式`` column of 5.2.  The mechanism, impact and solution
-    columns remain the designer's work and are intentionally untouched.
-    """
+def _prepare_manual_potential_failure_analysis_table(doc) -> int:
+    """Keep the 5.2 table structure but leave every body cell for manual input."""
     table = _find_potential_failure_analysis_table(doc)
     if table is None or not table.rows:
         return 0
-    headers = [
-        re.sub(r"\s+", "", cell.text or "")
-        for cell in table.rows[0].cells
-    ]
-    mode_column = next(
-        (index for index, text in enumerate(headers) if "可能发生的失效模式" in text),
-        None,
-    )
-    if mode_column is None or len(table.rows) < 2:
-        return 0
 
-    modes = [
-        str(record.get("failure_mode") or "").strip()
-        for record in records
-        if str(record.get("failure_mode") or "").strip()
-    ]
-    if not modes:
-        return 0
-
-    template_row = copy.deepcopy(table._tbl.findall(qn("w:tr"))[1])
-    while len(table.rows) - 1 < len(modes):
-        table._tbl.append(copy.deepcopy(template_row))
-
-    for row, mode in zip(table.rows[1:], modes):
-        if mode_column >= len(row.cells):
-            continue
-        _write_failure_cell(row.cells[mode_column]._tc, mode)
+    cleared = 0
+    for row in table.rows[1:]:
+        for cell in row.cells:
+            if cell.text.strip():
+                cleared += 1
+            _write_failure_cell(cell._tc, "")
     apply_table_style(table, "failure")
-    return len(modes)
+    return cleared
 
 
 def _set_paragraph_text_preserving_style(paragraph: Paragraph, text: str) -> None:
@@ -1337,9 +1315,6 @@ def _apply_process_specific_sections(doc, classification: dict | None, process: 
         if records:
             audit["failure_mode_action"] = "fill"
             audit["failure_mode_rows"] = _fill_failure_mode_table(doc, records)
-            audit["potential_failure_mode_rows"] = (
-                _fill_potential_failure_analysis_table(doc, records)
-            )
         else:
             no_match = failure_no_match_policy()
             audit["failure_mode_action"] = no_match["action"]
@@ -1352,6 +1327,11 @@ def _apply_process_specific_sections(doc, classification: dict | None, process: 
             audit["failure_mode_reason"] = (
                 "故障模式库无适用产品/系列记录，按7-22受控规则写入无历史记录标识"
             )
+        audit["potential_failure_mode_action"] = "manual"
+        audit["potential_failure_mode_rows"] = 0
+        audit["potential_failure_mode_cells_cleared"] = (
+            _prepare_manual_potential_failure_analysis_table(doc)
+        )
 
     if process == "全新":
         manual_sections = []
@@ -1571,26 +1551,8 @@ def _apply_compilation_basis(
 
 
 def _canonical_indicator_name(name: str) -> str:
-    value = re.sub(r"[\s：:（）()]+", "", str(name))
-    aliases = (
-        (("额定电流", "额定载流量"), "额定电流"),
-        (("冲击电流", "脉冲电流"), "冲击电流"),
-        (("其他接点总载流", "其他接点总电流"), "其他接点总载流"),
-        # “插入力/分离力/分离扭矩”可能分别描述单针、接触件或整机，
-        # 不能仅凭词面统一并入“插拔力”。是否合并必须由本次来源证据和
-        # 受控指标定义决定。
-        (("插拔力", "总插拔力", "插合分离力"), "插拔力"),
-        # V3 底层表单与受控模板的显示名不同，但它们指向同一模板槽位。
-        (("总分离力或分离扭矩", "总分离力"), "总分离力或分离扭矩"),
-        (("低温低气压", "低气压"), "低温低气压"),
-        (("环境温度", "工作温度"), "工作温度"),
-        (("机械寿命", "插拔寿命"), "机械寿命"),
-        (("灵巧指按压力", "按钮按压力", "按压力", "承压力"), "按压力"),
-    )
-    for candidates, canonical in aliases:
-        if any(candidate in value for candidate in candidates):
-            return canonical
-    return value
+    # 保留现有私有入口，实际身份规则由填充和最终门禁共同复用。
+    return canonical_indicator_name(name)
 
 
 def _canonical_indicator_category(category: str) -> str:
@@ -2069,6 +2031,268 @@ def _sort_standards_semantic(lines: list[str], sort_order: list | None = None) -
     return sort_standards(lines, sort_order)
 
 
+@lru_cache(maxsize=64)
+def _read_source_table_rows(
+    source_path: str,
+    body_index: int,
+) -> tuple[tuple[str, ...], ...]:
+    """Recover exact cell boundaries for a classified DOCX table block.
+
+    Source block text is intentionally flattened for LLM classification.  That
+    representation is not suitable for indicator extraction because several
+    independent rows become one string.  ``body_index`` is used only as the
+    execution coordinate into the same source file; indicator identity still
+    comes from the row label and never from a chapter number or row position.
+    """
+    path = Path(str(source_path or ""))
+    if not path.is_file() or body_index < 0:
+        return ()
+    try:
+        with zipfile.ZipFile(path) as archive:
+            root = etree.fromstring(archive.read("word/document.xml"))
+        body = root.find(qn("w:body"))
+        elements = list(body) if body is not None else []
+        if body_index >= len(elements):
+            return ()
+        table = elements[body_index]
+        if table.tag != qn("w:tbl"):
+            return ()
+        rows: list[tuple[str, ...]] = []
+        for row in table.findall(qn("w:tr")):
+            cells: list[str] = []
+            for cell in row.findall(qn("w:tc")):
+                paragraphs: list[str] = []
+                for paragraph in cell.findall(f".//{qn('w:p')}"):
+                    text = "".join(
+                        node.text or "" for node in paragraph.iter(qn("w:t"))
+                    ).strip()
+                    if text:
+                        paragraphs.append(text)
+                if paragraphs:
+                    cells.append("\n".join(paragraphs))
+                else:
+                    cells.append(
+                        "".join(node.text or "" for node in cell.iter(qn("w:t"))).strip()
+                    )
+            if cells:
+                rows.append(tuple(cells))
+        return tuple(rows)
+    except (OSError, KeyError, ValueError, zipfile.BadZipFile, etree.XMLSyntaxError):
+        return ()
+
+
+def _source_table_rows(block: dict) -> tuple[tuple[str, ...], ...]:
+    """Return structured rows embedded in, or recoverable for, a source block."""
+    embedded = block.get("table_rows")
+    if isinstance(embedded, (list, tuple)):
+        rows = tuple(
+            tuple(str(cell or "").strip() for cell in row)
+            for row in embedded
+            if isinstance(row, (list, tuple))
+        )
+        if rows:
+            return rows
+    try:
+        body_index = int(block.get("body_index", -1))
+    except (TypeError, ValueError):
+        return ()
+    return _read_source_table_rows(str(block.get("source_path") or ""), body_index)
+
+
+def _table_token(value: str) -> str:
+    return re.sub(r"[\s：:、,，；;。]+", "", str(value or ""))
+
+
+def _structured_table_indicator_entries(
+    rows: tuple[tuple[str, ...], ...],
+) -> list[tuple[str, str]]:
+    """Return explicit ``(item label, value)`` pairs from a headed table."""
+    label_headers = {
+        "项目", "项目名称", "指标项目", "指标名称", "参数名称",
+        "性能项目", "试验项目", "检验项目", "名称",
+    }
+    value_headers = {
+        "指标", "指标值", "技术指标", "性能指标", "用户要求指标",
+        "技术要求", "性能要求", "要求", "参数", "参数值", "数值", "规格",
+    }
+    ignored_header_markers = (
+        "序号", "编号", "抽样", "备注", "依据", "适用", "试验方法",
+        "检验方法", "测试方法",
+    )
+    label_columns: set[int] = set()
+    value_columns: set[int] = set()
+    ignored_columns: set[int] = set()
+    header_rows: set[int] = set()
+    for row_index, row in enumerate(rows[:4]):
+        row_has_header = False
+        for column, cell in enumerate(row):
+            token = _table_token(cell)
+            if token in label_headers:
+                label_columns.add(column)
+                row_has_header = True
+            if token in value_headers:
+                value_columns.add(column)
+                row_has_header = True
+            if any(marker in token for marker in ignored_header_markers):
+                ignored_columns.add(column)
+                row_has_header = True
+        if row_has_header:
+            header_rows.add(row_index)
+    if not label_columns:
+        return []
+
+    entries: list[tuple[str, str]] = []
+    for row_index, row in enumerate(rows):
+        if row_index in header_rows:
+            continue
+        for label_column in sorted(label_columns):
+            if label_column >= len(row):
+                continue
+            label = str(row[label_column]).strip()
+            if not label:
+                continue
+            selected_columns = [
+                column
+                for column in sorted(value_columns)
+                if column < len(row) and column != label_column
+            ]
+            if not selected_columns:
+                selected_columns = [
+                    column
+                    for column in range(label_column + 1, len(row))
+                    if column not in ignored_columns and column not in label_columns
+                ]
+            value = "；".join(
+                dict.fromkeys(
+                    str(row[column]).strip()
+                    for column in selected_columns
+                    if str(row[column]).strip()
+                    and _table_token(row[column]) != _table_token(label)
+                )
+            )
+            entries.append((label, value))
+    return entries
+
+
+def _table_indicator_row_values(
+    rows: tuple[tuple[str, ...], ...],
+    signals: list[str],
+) -> tuple[list[str], bool]:
+    """Extract only values belonging to table rows whose item label matches.
+
+    The routine uses semantic headers (``项目``/``指标名称`` and
+    ``指标``/``技术要求``) when present.  It deliberately does not search a
+    value cell for an indicator keyword, so a condition such as “低气压下
+    150 V” remains part of the dielectric-voltage value and cannot fabricate a
+    separate low-pressure indicator row.
+    """
+    if not rows:
+        return [], False
+    normalized_signals = list(dict.fromkeys(
+        _table_token(signal) for signal in signals if _table_token(signal)
+    ))
+    if not normalized_signals:
+        return [], False
+
+    label_headers = {
+        "项目", "项目名称", "指标项目", "指标名称", "参数名称",
+        "性能项目", "试验项目", "检验项目", "名称",
+    }
+    value_headers = {
+        "指标", "指标值", "技术指标", "性能指标", "用户要求指标",
+        "技术要求", "性能要求", "要求", "参数", "参数值", "数值", "规格",
+    }
+    ignored_header_markers = (
+        "序号", "编号", "抽样", "备注", "依据", "适用", "试验方法",
+        "检验方法", "测试方法",
+    )
+    label_columns: set[int] = set()
+    value_columns: set[int] = set()
+    ignored_columns: set[int] = set()
+    header_rows: set[int] = set()
+    for row_index, row in enumerate(rows[:4]):
+        row_has_header = False
+        for column, cell in enumerate(row):
+            token = _table_token(cell)
+            if token in label_headers:
+                label_columns.add(column)
+                row_has_header = True
+            if token in value_headers:
+                value_columns.add(column)
+                row_has_header = True
+            if any(marker in token for marker in ignored_header_markers):
+                ignored_columns.add(column)
+                row_has_header = True
+        if row_has_header:
+            header_rows.add(row_index)
+
+    def label_matches(value: str) -> bool:
+        token = _table_token(value)
+        token = re.sub(r"^\d+[.)）]", "", token)
+        if not token or len(token) > 40:
+            return False
+        # A row label is a short noun phrase, not a measured value.
+        if re.search(r"\d|[<>≤≥=]|(?:m?[AVWΩ]|℃)", token, re.I):
+            return False
+        canonical = _canonical_indicator_name(token)
+        for signal in normalized_signals:
+            if token == signal or canonical == _canonical_indicator_name(signal):
+                return True
+            suffix = token[len(signal):] if token.startswith(signal) else ""
+            if suffix and re.fullmatch(r"[（(][^（）()]{1,20}[）)]", suffix):
+                return True
+        return False
+
+    matched = False
+    values: list[str] = []
+    for row_index, row in enumerate(rows):
+        if row_index in header_rows:
+            continue
+        candidate_columns = (
+            sorted(column for column in label_columns if column < len(row))
+            if label_columns
+            else list(range(len(row)))
+        )
+        matched_label_columns = [
+            column for column in candidate_columns if label_matches(row[column])
+        ]
+        if not matched_label_columns:
+            continue
+        matched = True
+        label_column = matched_label_columns[0]
+        selected_columns = [
+            column
+            for column in sorted(value_columns)
+            if column < len(row) and column != label_column
+        ]
+        if not selected_columns:
+            selected_columns = [
+                column
+                for column in range(label_column + 1, len(row))
+                if column not in ignored_columns and column not in label_columns
+            ]
+        if not selected_columns:
+            selected_columns = [
+                column
+                for column in range(len(row))
+                if column != label_column
+                and column not in ignored_columns
+                and column not in label_columns
+                and not str(row[column]).strip().isdigit()
+            ]
+        row_value = "；".join(
+            dict.fromkeys(
+                str(row[column]).strip()
+                for column in selected_columns
+                if str(row[column]).strip()
+                and _table_token(row[column]) != _table_token(row[label_column])
+            )
+        )
+        if row_value:
+            values.append(row_value)
+    return list(dict.fromkeys(values)), matched
+
+
 def _classified_indicator_evidence(
     classification: dict | None,
     keywords: list[str] | tuple[str, ...] | set[str],
@@ -2121,6 +2345,44 @@ def _classified_indicator_evidence(
     records.sort(key=lambda value: value[0])
 
     normalized = lambda text: re.sub(r"\s+", "", str(text or ""))
+    # A classified table is one semantic block for the LLM, but its rows are
+    # independent governed indicators.  Exact row-label evidence therefore
+    # takes precedence over chapter and flattened-text matching.
+    structured_table_ids: set[str] = set()
+    table_selected: list[tuple[int, dict, dict, dict]] = []
+    table_values: list[str] = []
+    table_label_matched = False
+    for record in records:
+        _, _, block, _ = record
+        if block.get("type") != "table":
+            continue
+        rows = _source_table_rows(block)
+        if not rows:
+            continue
+        structured_table_ids.add(str(block.get("id")))
+        values, matched = _table_indicator_row_values(rows, signals)
+        if not matched:
+            continue
+        table_label_matched = True
+        table_selected.append(record)
+        table_values.extend(values)
+    if table_label_matched:
+        headings = [
+            str(
+                chapter.get("heading_text")
+                or chapter.get("section")
+                or block.get("heading_text")
+                or block.get("section")
+                or ""
+            ).strip()
+            for _, _, block, chapter in table_selected
+        ]
+        basis = next((heading for heading in headings if heading), "")
+        source_ids = list(dict.fromkeys(
+            str(block.get("id")) for _, _, block, _ in table_selected
+        ))
+        return "；".join(dict.fromkeys(table_values)), basis, source_ids
+
     # First use the semantic chapter title.  A heading such as “工作电压” owns
     # all classified blocks in that chapter, including a value-only paragraph.
     matched_chapters = {
@@ -2153,7 +2415,8 @@ def _classified_indicator_evidence(
         selected = [
             record
             for record in records
-            if any(signal in normalized(record[2].get("text")) for signal in signals)
+            if str(record[2].get("id")) not in structured_table_ids
+            and any(signal in normalized(record[2].get("text")) for signal in signals)
         ]
     if not selected:
         return "", "", []
@@ -2178,6 +2441,46 @@ def _classified_indicator_evidence(
     basis = next((heading for heading in headings if heading), "")
     source_ids = list(dict.fromkeys(str(block.get("id")) for _, _, block, _ in selected))
     return "；".join(dict.fromkeys(values)), basis, source_ids
+
+
+def _indicator_evidence_is_structured_table_row(
+    classification: dict | None,
+    source_ids: list[str] | tuple[str, ...] | set[str],
+    keywords: list[str] | tuple[str, ...] | set[str],
+) -> bool:
+    """Whether every selected source is an exact item/value table-row match.
+
+    ``value_patterns`` are paragraph atomisers: they remove test-method prose
+    around a concise metric.  An already isolated table value has no item label
+    left (for example only ``≥1000MΩ``), so applying those paragraph regexes a
+    second time incorrectly erases valid data.  This provenance check lets the
+    caller preserve exact structured-row values while retaining strict regex
+    extraction for paragraph evidence.
+    """
+    if not isinstance(classification, dict):
+        return False
+    selected_ids = [str(source_id) for source_id in source_ids if str(source_id)]
+    if not selected_ids:
+        return False
+    signals = [str(keyword) for keyword in keywords if str(keyword).strip()]
+    if not signals:
+        return False
+    blocks = {
+        str(block.get("id")): block
+        for block in classification.get("source_blocks", [])
+        if isinstance(block, dict) and block.get("id")
+    }
+    for source_id in selected_ids:
+        block = blocks.get(source_id, {})
+        if block.get("type") != "table":
+            return False
+        _values, matched = _table_indicator_row_values(
+            _source_table_rows(block),
+            signals,
+        )
+        if not matched:
+            return False
+    return True
 
 
 def _standard_applicability_policy() -> dict:
@@ -2687,10 +2990,12 @@ def _dynamic_unlisted_indicator_rows(
                 ),
                 "source_ids": [],
                 "texts": [],
+                "blocks": [],
             },
         )
         group["source_ids"].append(str(block.get("id")))
         group["texts"].append(text)
+        group["blocks"].append(block)
 
     rows: list[tuple[str, str, str, str, str]] = []
     audit: list[dict] = []
@@ -2699,12 +3004,65 @@ def _dynamic_unlisted_indicator_rows(
     }
     for group in grouped.values():
         raw_heading = str(group["heading"]).strip()
+        # A table chapter title such as “电气性能要求” is a container, not an
+        # indicator identity.  Audit explicit table item rows individually and
+        # never promote the container heading merely because the flattened
+        # table text is no longer copied wholesale into 4.1.
+        structured_table_ids: set[str] = set()
+        for block in group.get("blocks", []):
+            if not isinstance(block, dict) or block.get("type") != "table":
+                continue
+            entries = _structured_table_indicator_entries(_source_table_rows(block))
+            if not entries:
+                continue
+            source_id = str(block.get("id", ""))
+            structured_table_ids.add(source_id)
+            for item_name, item_value in entries:
+                canonical_item = _canonical_indicator_name(item_name)
+                normalized_item_value = re.sub(r"\s+", "", item_value)
+                if (
+                    not item_name
+                    or canonical_item in existing_names
+                    or canonical_item in excluded
+                    or (normalized_item_value and normalized_item_value in existing_values)
+                ):
+                    continue
+                audit.append({
+                    "indicator_name": item_name,
+                    "category": "其他",
+                    "source_ids": [source_id] if source_id else [],
+                    "source_heading": raw_heading,
+                    "source_value": item_value,
+                    "status": "UNMAPPED_REVIEW_REQUIRED",
+                    "policy": "controlled_catalog_only",
+                    "notes": [
+                        "表格项目行未进入当前产品受控指标清单；正式件不得自动创建指标行"
+                    ],
+                })
+        unstructured_texts = [
+            str(block.get("text", "")).strip()
+            for block in group.get("blocks", [])
+            if isinstance(block, dict)
+            and str(block.get("id", "")) not in structured_table_ids
+            and str(block.get("text", "")).strip()
+        ]
+        if structured_table_ids and not unstructured_texts:
+            continue
+
         name = re.sub(
             r"^\s*(?:第\s*[一二三四五六七八九十百千万零〇]+\s*章\s*|\d+(?:\.\d+)*(?:\s+|[、)）]))",
             "",
             raw_heading,
         ).strip(" ：:；;。")
-        value = "\n".join(dict.fromkeys(str(text).strip() for text in group["texts"] if str(text).strip()))
+        value = "\n".join(dict.fromkeys(
+            unstructured_texts
+            if structured_table_ids
+            else (
+                str(text).strip()
+                for text in group["texts"]
+                if str(text).strip()
+            )
+        ))
         if not name or name in generic_headings:
             # 只接受原文中明确的“名称：值”，不从数值反猜指标名。
             label_match = re.match(r"^([^\n：:]{1,24})[：:]", value)
@@ -2814,9 +3172,18 @@ def build_content(
                             requirement_classification,
                             tech_kws,
                         )
+                        structured_table_row = (
+                            _indicator_evidence_is_structured_table_row(
+                                requirement_classification,
+                                tech_source_ids,
+                                tech_kws,
+                            )
+                        )
                     else:
                         tv, tech_basis = _find_value_by_semantics(tech_paras, tech_kws)
-                    tv = _select_indicator_value(tv, ind)
+                        structured_table_row = False
+                    if not structured_table_row:
+                        tv = _select_indicator_value(tv, ind)
                     # 指标集合完全由设计输入驱动。设计输入没有该指标时，禁止仅凭
                     # 模板目录或产品规范把它加入输出。
                     if not tv:

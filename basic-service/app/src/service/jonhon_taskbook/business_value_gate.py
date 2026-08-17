@@ -16,6 +16,8 @@ from typing import Any
 
 from docx import Document
 
+from jonhon_taskbook.indicator_identity import canonical_indicator_name
+
 
 AUDIT_FIELDS = (
     "user_requirement",
@@ -31,7 +33,7 @@ def _comparison_text(value: Any) -> str:
 
 
 def _indicator_name(value: Any) -> str:
-    return re.sub(r"[\s:：()（）]+", "", str(value or "")).casefold()
+    return canonical_indicator_name(str(value or "")).casefold()
 
 
 def _indicator_header_columns(cells: list[str]) -> dict[str, int]:

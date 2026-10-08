@@ -12,6 +12,7 @@ export interface ProductType {
   enabled: boolean;
   configured_enabled?: boolean;
   template_label?: string;
+  integration_status?: 'available' | 'configured_pending_regression' | 'missing_template';
   unavailable_reason?: string;
   domains: ProductDomain[];
 }
@@ -84,6 +85,8 @@ export interface JobMeta {
   configured_qa_gate?: GateResult | null;
   semantic_integrity_gate?: GateResult | null;
   delivery_gate_result?: GateResult | null;
+  input_normalization?: Record<string, { method?: string; requires_review?: boolean; evidence_path?: string; error?: string }>;
+  source_review_required?: boolean;
 }
 
 export interface GateResult {
@@ -98,6 +101,38 @@ export interface JobResult {
   warnings?: string[];
   error?: string;
   delivery_status?: string;
+}
+
+export interface IndicatorCandidate {
+  value?: string;
+  display_value?: string;
+  value_kind?: string;
+  qualifiers?: Record<string, string>;
+  scope?: string;
+  condition?: string;
+  comparison_status?: string;
+  comparison_note?: string;
+}
+
+export interface IndicatorDecision {
+  indicator_name: string;
+  manual_review_required: boolean;
+  user_requirement?: string;
+  reason?: string;
+  status?: string;
+  numeric_status?: string;
+  adopted_requirement?: string;
+  candidate_comparisons?: IndicatorCandidate[];
+}
+
+export interface IndicatorReview {
+  jid: string;
+  parent_jid?: string;
+  can_clarify: boolean;
+  unavailable_reason?: string;
+  indicator_clarifications: Record<string, string>;
+  comparison_decisions: IndicatorDecision[];
+  manual_review_required: IndicatorDecision[];
 }
 
 export interface JobStatusResponse {
@@ -128,6 +163,7 @@ export interface HistoryItem {
   jid?: string;
   created_at?: string;
   status: string;
+  error?: string;
   product?: string;
   profile?: string;
   qa_ok?: boolean | null;
@@ -181,9 +217,45 @@ export interface RulesSummary {
 }
 
 export interface TemplateItem {
-  product_type?: string;
-  product_domain?: string;
-  template?: string;
+  product_type: string;
+  product_domain: string;
+  product_type_id: string;
+  product_domain_id: string;
+  template: string;
+  filename: string;
+  version: string;
+  version_id: string;
+  updated_at: string;
+  sha256: string;
+  revision: string;
+}
+
+export interface TemplateVersion {
+  id: string;
+  product: string;
+  domain: string;
+  filename: string;
+  version: string;
+  note: string;
+  actor: string;
+  created_at: string;
+  activated_at?: string;
+  base_revision: string;
+  status: 'active' | 'historical' | 'ready' | 'invalid';
+  warnings: string[];
+  validation: {
+    passed: boolean;
+    problems: string[];
+    heading_count: number;
+    table_count: number;
+    headings_added: string[];
+    headings_removed: string[];
+  };
+}
+
+export interface TemplateVersionHistory {
+  current: TemplateItem;
+  versions: TemplateVersion[];
 }
 
 export interface TemplateCandidate {

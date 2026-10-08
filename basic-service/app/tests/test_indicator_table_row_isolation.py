@@ -191,8 +191,14 @@ class IndicatorTableRowIsolationTests(unittest.TestCase):
             "产品规范",
         )
 
-        self.assertEqual([], rows)
+        self.assertEqual("未知参数", rows[0][0])
+        self.assertEqual("42foo", rows[0][1])
+        # C51(3): with no specification to compare, preserve the explicit user
+        # value. An unregistered name/unit does not justify discarding it.
+        self.assertEqual("42foo", rows[0][3])
+        self.assertFalse(audit[0]["manual_review_required"])
         self.assertEqual(1, len(audit))
+        self.assertEqual("电性能", audit[0]["category"])
         self.assertEqual("未知参数", audit[0]["indicator_name"])
         self.assertNotEqual("电气性能要求", audit[0]["indicator_name"])
 

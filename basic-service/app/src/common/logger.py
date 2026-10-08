@@ -7,7 +7,8 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
-from src.common.request_context import correlation_id_var
+from src.common.request_context import correlation_id_var, job_id_var, job_stage_var
+from src.common.runtime_logs import redact_log_text, sanitize_log_value
 
 LOGGER_NAME = "src"
 _STANDARD_RECORD_KEYS = set(logging.makeLogRecord({}).__dict__) | {"message", "asctime"}
@@ -21,6 +22,12 @@ _SENSITIVE_KEY_PARTS = (
     "secret",
     "prompt",
     "source_document",
+    "source_text",
+    "source_content",
+    "document_text",
+    "request_body",
+    "response_body",
+    "raw_response",
     "model_output",
 )
 _SENSITIVE_KEY_NAMES = {"token", "access_token", "id_token", "refresh_token"}
@@ -37,29 +44,40 @@ class JsonFormatter(logging.Formatter):
     """Structured JSON log line carrying the request correlation id."""
 
     def format(self, record: logging.LogRecord) -> str:
+        correlation_id = redact_log_text(
+            str(getattr(record, "correlation_id", correlation_id_var.get()) or "-")
+        )
         payload: dict[str, Any] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
-            "correlation_id": getattr(
-                record, "correlation_id", correlation_id_var.get()
-            ),
+            "message": redact_log_text(record.getMessage()),
+            "correlation_id": correlation_id,
         }
+        job_id = getattr(record, "job_id", job_id_var.get())
+        stage = getattr(record, "stage", job_stage_var.get())
+        if job_id and job_id != "-":
+            payload["job_id"] = redact_log_text(str(job_id))
+        if stage and stage != "-":
+            payload["stage"] = redact_log_text(str(stage))
         for key, value in record.__dict__.items():
             if (
                 key in _STANDARD_RECORD_KEYS
+                or key in {"correlation_id", "job_id", "stage"}
                 or key.startswith("_")
                 or _is_sensitive_key(key)
             ):
                 continue
             try:
-                json.dumps(value)
-                payload[key] = value
+                safe_value = sanitize_log_value(value, key=key)
+                json.dumps(safe_value)
+                payload[key] = safe_value
             except TypeError:
-                payload[key] = str(value)
+                payload[key] = redact_log_text(str(value))
         if record.exc_info:
-            payload["exc_info"] = self.formatException(record.exc_info)
+            payload["exception"] = redact_log_text(
+                self.formatException(record.exc_info)
+            )
         return json.dumps(payload, ensure_ascii=False)
 
 
@@ -69,6 +87,10 @@ class CorrelationIdFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         if not getattr(record, "correlation_id", None):
             record.correlation_id = correlation_id_var.get()
+        if not getattr(record, "job_id", None):
+            record.job_id = job_id_var.get()
+        if not getattr(record, "stage", None):
+            record.stage = job_stage_var.get()
         return True
 
 
@@ -90,6 +112,18 @@ def configure_logging(
     stream_handler.setFormatter(JsonFormatter())
     stream_handler.addFilter(CorrelationIdFilter())
     root.addHandler(stream_handler)
+
+    # The platform emits its own bounded HTTP/LLM diagnostics.  Raw transport
+    # DEBUG logs otherwise crowd all useful task events out of the latest-log
+    # window and may include request implementation details.
+    for dependency_logger in (
+        "httpcore",
+        "httpx",
+        "openai",
+        "multipart",
+        "asyncio",
+    ):
+        logging.getLogger(dependency_logger).setLevel(logging.WARNING)
 
     if log_dir:
         log_path = Path(log_dir)

@@ -9,6 +9,7 @@ tree.  Business policy stays in YAML; this module has no product or chapter IDs.
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -19,6 +20,7 @@ from docx import Document
 from docx.oxml.ns import qn
 
 from .template_scanner import scan_template_tree, semantic_title
+from .source_scope import normalize_source_display_text
 
 
 _NON_SEMANTIC = re.compile(r"[\s，,。；;：:、.!！?？（）()\[\]【】]+")
@@ -48,11 +50,20 @@ def _element_text(element) -> str:
     return "".join(node.text or "" for node in element.iter(qn("w:t")))
 
 
-def _evidence_in_target(source_text: str, target_text: str) -> tuple[bool, str]:
-    """Allow only deterministic figure-number changes in exact evidence checks."""
+def _evidence_in_target(
+    source_text: str, target_text: str, *, heading_number: str = "", heading_text: str = ""
+) -> tuple[bool, str]:
+    """Allow controlled display changes without dropping technical evidence."""
     normalized_target = _norm(target_text)
     if _norm(source_text) in normalized_target:
         return True, "exact"
+
+    source_display = normalize_source_display_text(
+        source_text, heading_number=heading_number, heading_text=heading_text,
+    )
+    target_display = "\n".join(normalize_source_display_text(line) for line in target_text.splitlines())
+    if source_display and source_display in target_display:
+        return True, "display_number_or_terminal_punctuation"
 
     caption = _FIGURE_CAPTION.match(source_text)
     if caption:
@@ -190,6 +201,7 @@ def run_semantic_integrity_gate(
     category_mapping_path: str | Path,
     *,
     sidecar_path: str | Path | None = None,
+    require_complete_source_checks: bool = False,
 ) -> dict[str, Any]:
     """Return a deterministic target-slot integrity report.
 
@@ -214,7 +226,12 @@ def run_semantic_integrity_gate(
         "checked": [],
         "violations": [],
         "passed": False,
+        "output_sha256": hashlib.sha256(Path(output_path).read_bytes()).hexdigest(),
+        "require_complete_source_checks": require_complete_source_checks,
     }
+    coverage_path = Path(output_path).with_suffix(".coverage_ledger.json")
+    if coverage_path.is_file():
+        report["coverage_ledger_sha256"] = hashlib.sha256(coverage_path.read_bytes()).hexdigest()
 
     if not plan or not classification:
         report["violations"].append({"code": "MISSING_SEMANTIC_AUDIT_INPUT"})
@@ -295,6 +312,8 @@ def run_semantic_integrity_gate(
                     output_contains, evidence_match = _evidence_in_target(
                         source_text,
                         section_texts.get(slot_id, ""),
+                        heading_number=str(evidence_block.get("heading_number", "")),
+                        heading_text=str(evidence_block.get("heading_text", "")),
                     )
                     check = {
                         "source_id": evidence_id,
@@ -317,6 +336,21 @@ def run_semantic_integrity_gate(
                             **check,
                             "source_preview": source_text[:160],
                         })
+
+        if require_complete_source_checks:
+            checked_ids = {check["source_id"] for check in report["checked"]}
+            expected_ids = {
+                source_id for source_id, item in class_by_id.items()
+                if item.get("category") in category_policies
+                and str(class_source_by_id.get(source_id, {}).get("text", "")).strip()
+                and not str(class_source_by_id.get(source_id, {}).get("text", "")).startswith("[图片对象")
+            }
+            report["expected_source_ids"] = sorted(expected_ids)
+            for source_id in sorted(expected_ids - checked_ids):
+                report["violations"].append({
+                    "code": "SOURCE_SEMANTIC_ROUTE_NOT_CHECKED", "source_id": source_id,
+                    "category": class_by_id[source_id].get("category", ""),
+                })
 
     report["passed"] = not report["violations"]
     destination = Path(sidecar_path) if sidecar_path else Path(output_path).with_suffix(

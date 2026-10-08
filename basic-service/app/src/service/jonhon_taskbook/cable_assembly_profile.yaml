@@ -1,0 +1,122 @@
+schema_version: '3.1'
+profile_id: cable_assembly
+product_type: 线缆组件
+integration_status: available
+template_source:
+  file: cable_assembly_taskbook.docx
+  sha256: 77aa436e2ed05043c4323332942c292950ce1870e2b848cfe69e69d8cb728b40
+  indicator_policy: 原模板指标名称；数值仅来自本次需求和产品规范
+semantic_routing:
+  category_mapping: cable_assembly_requirement_categories.yaml
+  chapter_numbers_are_identity: false
+  source_order_is_identity: false
+  copy_source_text_only: true
+semantic_structures:
+  performance_indicator:
+    mode: indicator_table
+indicator_sources:
+  workbook: false
+  reference_families: []
+standards_policy: merge_template
+spec_model_filter:
+  enabled: true
+delivery_gate:
+  min_indicator_rows: 0
+  min_interface_fills: 0
+  required_headings:
+  - 产品组成
+  - 适用的法律法规要求
+  - 通用质量特性要求
+  - 任务进度要求
+  - 任务书编制依据
+  - 来源和功能
+  - 技术指标
+indicator_map:
+  电性能:
+  - name: 耐电压
+    tech_kws:
+    - 耐电压
+    std_kws:
+    - 耐电压
+  - name: 绝缘电阻
+    tech_kws:
+    - 绝缘电阻
+    std_kws:
+    - 绝缘电阻
+  - name: 屏蔽要求
+    tech_kws:
+    - 屏蔽要求
+    std_kws:
+    - 屏蔽要求
+  机械性能:
+  - name: 振动
+    tech_kws:
+    - 振动
+    std_kws:
+    - 振动
+  - name: 冲击
+    tech_kws:
+    - 冲击
+    std_kws:
+    - 冲击
+  - name: 加速度
+    tech_kws:
+    - 加速度
+    std_kws:
+    - 加速度
+  环境性能:
+  - name: 工作温度
+    tech_kws:
+    - 工作温度
+    std_kws:
+    - 工作温度
+  - name: 低温低气压
+    tech_kws:
+    - 低温低气压
+    std_kws:
+    - 低温低气压
+  - name: 高温
+    tech_kws:
+    - 高温
+    std_kws:
+    - 高温
+  - name: 低温
+    tech_kws:
+    - 低温
+    std_kws:
+    - 低温
+  - name: 温度冲击
+    tech_kws:
+    - 温度冲击
+    std_kws:
+    - 温度冲击
+  - name: 湿热
+    tech_kws:
+    - 湿热
+    std_kws:
+    - 湿热
+  - name: 盐雾
+    tech_kws:
+    - 盐雾
+    std_kws:
+    - 盐雾
+  - name: 阻燃
+    tech_kws:
+    - 阻燃
+    std_kws:
+    - 阻燃
+  - name: 霉菌
+    tech_kws:
+    - 霉菌
+    std_kws:
+    - 霉菌
+  - name: 密封性
+    tech_kws:
+    - 密封性
+    std_kws:
+    - 密封性
+qa_profile:
+  required_headings:
+  - 技术指标
+  - 其他要求
+  forbidden_phrases: []

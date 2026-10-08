@@ -16,9 +16,43 @@ from .template_cleanup import INSTRUCTION_KEYWORDS, strip_parenthetical_instruct
 
 PLACEHOLDER_RE = re.compile(
     r"……|\.\.\.|\.{4,}|_{2,}|(?<![a-zA-Z])\bXX\b(?![a-zA-Z])|"
-    r"\bxxx\b|20\s*年\s*月|20[xX]{2}|F/C/S/D|（型号名称）",
+    r"20\s*年\s*月|20[xX]{2}|F/C/S/D|（型号名称）",
     re.I,
 )
+_XXX_RE = re.compile(r"\bxxx\b", re.IGNORECASE)
+_SERIAL_CODE_NOTATION_RE = re.compile(
+    r"最后三码\s*[（(]\s*XXX\s*[）)]\s*为流水码", re.IGNORECASE,
+)
+
+
+def contains_unresolved_xxx(text: str) -> bool:
+    """Treat the source's ``最后三码(XXX)为流水码`` as notation, not a blank."""
+    explanatory_spans = [match.span() for match in _SERIAL_CODE_NOTATION_RE.finditer(text)]
+    return any(
+        not any(start <= match.start() and match.end() <= end for start, end in explanatory_spans)
+        for match in _XXX_RE.finditer(text)
+    )
+
+
+def is_table_sequence_ellipsis(element) -> bool:
+    """Recognize a trailing continuation of numeric/Base-36 table entries."""
+    cell = element if element.tag == f"{{{W}}}tc" else next(
+        element.iterancestors(f"{{{W}}}tc"), None
+    )
+    if cell is None or not re.fullmatch(r"\.{3,}|…{2,}", get_cell_text(cell).strip()):
+        return False
+    row = cell.getparent()
+    if row is None or row.tag != f"{{{W}}}tr":
+        return False
+    cells = row.findall(f"{{{W}}}tc")
+    index = cells.index(cell)
+    if index < 2 or any(get_cell_text(item).strip() for item in cells[index + 1:]):
+        return False
+    before = [get_cell_text(item).strip().upper() for item in cells[index - 2:index]]
+    if not all(re.fullmatch(r"[0-9A-Z]{1,16}", value) for value in before):
+        return False
+    base = 10 if all(value.isdecimal() for value in before) else 36
+    return int(before[1], base) - int(before[0], base) == 1
 
 SECTION_HEADING_RE = re.compile(
     r"^(\d+(?:\.\d+)*)\s+(\S.+)$|^附录\s*[A-Z]?\s*|^第[一二三四五六七八九十]+章",
@@ -74,7 +108,7 @@ def _is_placeholder_text(text: str) -> bool:
         return True
     if t in {"……", "...", "无", "/"}:
         return t in {"……", "..."}
-    return bool(PLACEHOLDER_RE.search(t))
+    return bool(PLACEHOLDER_RE.search(t)) or contains_unresolved_xxx(t)
 
 
 def _is_instruction_text(text: str) -> bool:
@@ -195,7 +229,7 @@ def detect_placeholder_zones(paras: List) -> List[FillZone]:
         text = get_para_text(para).strip()
         if not text or re.match(r"^图\s*\d+", text):
             continue
-        if _is_placeholder_text(text):
+        if _is_placeholder_text(text) and not is_table_sequence_ellipsis(para):
             zones.append(
                 FillZone(
                     zone_type="PLACEHOLDER",

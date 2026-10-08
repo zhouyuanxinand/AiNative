@@ -1,8 +1,4 @@
-version: "2.1"
-
-# 产品类型与模板的对应关系来自本地受控《研制任务书生成规则7-22.xlsx》。
-# 只有已经取得真实模板的类型才允许生成；没有模板的选项仍在网页显示，
-# 但保持 disabled，禁止拿低频模板冒充别的模板。
+version: '3.0'
 aliases:
   connector/general: low_frequency_rectangular/military
   connector/low_frequency: low_frequency_rectangular/military
@@ -17,222 +13,529 @@ aliases:
   indoor_fiber_connector/military: high_speed_io/military
   outdoor_fiber_connector/military: high_speed_backplane/military
   civil_aircraft_product/civil_aviation: high_speed_io/civil_aviation
-
 product_types:
   low_frequency_rectangular:
     label: 低频连接器-矩形低频
     enabled: true
     template_label: 研制任务书（低频）
     domains:
-      military: &low_frequency_domain
+      military:
         label: 军品
         template: connector_taskbook.docx
         profile: connector_profile.yaml
         category_mapping: connector_requirement_categories.yaml
         preserve_unfilled_template: true
       airworthiness:
-        <<: *low_frequency_domain
         label: 适航
+        template: connector_taskbook.docx
+        profile: connector_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       civil_aviation:
-        <<: *low_frequency_domain
         label: 民机
+        template: connector_taskbook.docx
+        profile: connector_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       as9100:
-        <<: *low_frequency_domain
         label: AS9100
-
+        template: connector_taskbook.docx
+        profile: connector_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
   low_frequency_circular:
     label: 低频连接器-圆形低频
-    enabled: false
+    enabled: true
     template_label: 研制任务书（低频）
-    unavailable_reason: 尚未配置并验收圆形低频独立 Profile 与真实回归样例
     domains:
-      military: *low_frequency_domain
+      military:
+        label: 军品
+        template: connector_taskbook.docx
+        profile: low_frequency_circular_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       airworthiness:
-        <<: *low_frequency_domain
         label: 适航
+        template: connector_taskbook.docx
+        profile: low_frequency_circular_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       civil_aviation:
-        <<: *low_frequency_domain
         label: 民机
+        template: connector_taskbook.docx
+        profile: low_frequency_circular_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       as9100:
-        <<: *low_frequency_domain
         label: AS9100
-
+        template: connector_taskbook.docx
+        profile: low_frequency_circular_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
+    integration_status: available
   low_frequency_twist_pin:
     label: 低频连接器-绞针低频
-    enabled: false
+    enabled: true
     template_label: 研制任务书（低频）
-    unavailable_reason: 尚未配置并验收绞针低频独立 Profile 与真实回归样例
     domains:
-      military: *low_frequency_domain
+      military:
+        label: 军品
+        template: connector_taskbook.docx
+        profile: low_frequency_twist_pin_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       airworthiness:
-        <<: *low_frequency_domain
         label: 适航
+        template: connector_taskbook.docx
+        profile: low_frequency_twist_pin_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       civil_aviation:
-        <<: *low_frequency_domain
         label: 民机
+        template: connector_taskbook.docx
+        profile: low_frequency_twist_pin_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       as9100:
-        <<: *low_frequency_domain
         label: AS9100
-
+        template: connector_taskbook.docx
+        profile: low_frequency_twist_pin_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
+    integration_status: available
   rf_contact:
     label: 射频连接器-射频接触件
-    enabled: false
+    enabled: true
     template_label: 研制任务书（射频）
-    unavailable_reason: 尚未配置并验收射频连接器真实模板
-    domains: {}
+    domains:
+      military:
+        label: 军品
+        template: rf_connector_taskbook.docx
+        profile: rf_contact_profile.yaml
+        category_mapping: rf_connector_requirement_categories.yaml
+        preserve_unfilled_template: true
+    integration_status: available
+    domain_review: 当前提供军品配置，其他领域按后续模板配置扩展
   rf_hybrid:
     label: 射频连接器-高低频混装连接器
-    enabled: false
+    enabled: true
     template_label: 研制任务书（射频）
-    unavailable_reason: 尚未配置并验收射频连接器真实模板
-    domains: {}
+    domains:
+      military:
+        label: 军品
+        template: rf_connector_taskbook.docx
+        profile: rf_hybrid_profile.yaml
+        category_mapping: rf_connector_requirement_categories.yaml
+        preserve_unfilled_template: true
+    integration_status: available
+    domain_review: 当前提供军品配置，其他领域按后续模板配置扩展
   rf_standard_interface:
     label: 射频连接器-标准界面射频连接器
-    enabled: false
+    enabled: true
     template_label: 研制任务书（射频）
-    unavailable_reason: 尚未配置并验收射频连接器真实模板
-    domains: {}
+    domains:
+      military:
+        label: 军品
+        template: rf_connector_taskbook.docx
+        profile: rf_standard_interface_profile.yaml
+        category_mapping: rf_connector_requirement_categories.yaml
+        preserve_unfilled_template: true
+    integration_status: available
+    domain_review: 当前提供军品配置，其他领域按后续模板配置扩展
   filter_connector:
     label: 滤波连接器
-    enabled: false
+    enabled: true
     template_label: 研制任务书（滤波）
-    unavailable_reason: 尚未配置并验收滤波连接器真实模板
-    domains: {}
+    domains:
+      military:
+        label: 军品
+        template: versions/0b687735d3814838bfb6cbcb3b8913e8.docx
+        profile: filter_connector_profile.yaml
+        category_mapping: filter_connector_requirement_categories.yaml
+        preserve_unfilled_template: true
+        template_revision: 0b687735d3814838bfb6cbcb3b8913e8
+        template_version: 2026-09-18 滤波模板更新
+        template_source_name: 0000000443研制任务书(滤波)（JONHON受控）.doc
+        template_updated_at: '2026-09-18T06:37:29.454530+00:00'
+    integration_status: available
+    domain_review: 当前提供军品配置，其他领域按后续模板配置扩展
   cable_assembly:
     label: 线缆组件
-    enabled: false
+    enabled: true
     template_label: 研制任务书（线缆组件）
-    unavailable_reason: 尚未配置并验收线缆组件真实模板
-    domains: {}
+    domains:
+      military:
+        label: 军品
+        template: cable_assembly_taskbook.docx
+        profile: cable_assembly_profile.yaml
+        category_mapping: cable_assembly_requirement_categories.yaml
+        preserve_unfilled_template: true
+    integration_status: available
+    domain_review: 当前提供军品配置，其他领域按后续模板配置扩展
   liquid_cooling_connector:
     label: 液冷产品-液冷连接器
-    enabled: false
-    template_label: 研制任务书（流体）
-    unavailable_reason: 尚未配置并验收液冷连接器真实模板
-    domains: {}
+    enabled: true
+    template_label: 研制任务书（流体连接器）
+    integration_status: available
+    domain_review: 当前受控接入军品配置；其他质量体系需补充适用模板配置
+    domains:
+      military:
+        label: 军品
+        template: liquid_cooling_connector_taskbook.docx
+        template_source_name: 0000727539研制任务书(流体连接器)(JONHON受控).doc
+        profile: liquid_cooling_connector_profile.yaml
+        category_mapping: liquid_cooling_connector_requirement_categories.yaml
+        preserve_unfilled_template: true
   liquid_cooling_pipeline:
     label: 液冷产品-液冷管路
-    enabled: false
+    enabled: true
     template_label: 研制任务书（液冷管路）
-    unavailable_reason: 尚未配置并验收液冷管路真实模板
-    domains: {}
+    domains:
+      military:
+        label: 军品
+        template: liquid_cooling_pipeline_taskbook.docx
+        profile: liquid_cooling_pipeline_profile.yaml
+        category_mapping: liquid_cooling_pipeline_requirement_categories.yaml
+        preserve_unfilled_template: true
+    integration_status: available
+    domain_review: 当前提供军品配置，其他领域按后续模板配置扩展
   liquid_cooling_chassis:
     label: 液冷产品-液冷机箱、冷板
-    enabled: false
+    enabled: true
     template_label: 研制任务书（机箱和冷板）
-    unavailable_reason: 尚未配置并验收液冷机箱、冷板真实模板
-    domains: {}
-
+    domains:
+      military:
+        label: 军品
+        template: liquid_cooling_chassis_taskbook.docx
+        profile: liquid_cooling_chassis_profile.yaml
+        category_mapping: liquid_cooling_chassis_requirement_categories.yaml
+        preserve_unfilled_template: true
+    integration_status: available
+    domain_review: 当前提供军品配置，其他领域按后续模板配置扩展
   high_speed_backplane:
     label: 高速连接器-高速背板连接器
-    enabled: false
+    enabled: true
     template_label: 研制任务书（低频）
-    unavailable_reason: 尚未配置并验收高速背板独立模板、Profile 与回归样例
     domains:
-      military: *low_frequency_domain
+      military:
+        label: 军品
+        template: connector_taskbook.docx
+        profile: high_speed_backplane_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       airworthiness:
-        <<: *low_frequency_domain
         label: 适航
+        template: connector_taskbook.docx
+        profile: high_speed_backplane_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       civil_aviation:
-        <<: *low_frequency_domain
         label: 民机
+        template: connector_taskbook.docx
+        profile: high_speed_backplane_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       as9100:
-        <<: *low_frequency_domain
         label: AS9100
+        template: connector_taskbook.docx
+        profile: high_speed_backplane_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
+    integration_status: available
   high_speed_io:
     label: 高速连接器-高速I/O连接器
-    enabled: false
+    enabled: true
     template_label: 研制任务书（低频）
-    unavailable_reason: 尚未配置并验收高速I/O独立模板、Profile 与回归样例
     domains:
-      military: *low_frequency_domain
+      military:
+        label: 军品
+        template: connector_taskbook.docx
+        profile: high_speed_io_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       airworthiness:
-        <<: *low_frequency_domain
         label: 适航
+        template: connector_taskbook.docx
+        profile: high_speed_io_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       civil_aviation:
-        <<: *low_frequency_domain
         label: 民机
+        template: connector_taskbook.docx
+        profile: high_speed_io_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       as9100:
-        <<: *low_frequency_domain
         label: AS9100
+        template: connector_taskbook.docx
+        profile: high_speed_io_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
+    integration_status: available
   end_contact_spring_pin:
     label: 端面接触-弹针连接器
     enabled: true
     template_label: 研制任务书（低频）
     domains:
-      military: &end_contact_spring_pin_domain
-        <<: *low_frequency_domain
+      military:
+        label: 军品
+        template: connector_taskbook.docx
         profile: end_contact_spring_pin_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       airworthiness:
-        <<: *end_contact_spring_pin_domain
         label: 适航
+        template: connector_taskbook.docx
+        profile: end_contact_spring_pin_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       civil_aviation:
-        <<: *end_contact_spring_pin_domain
         label: 民机
+        template: connector_taskbook.docx
+        profile: end_contact_spring_pin_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       as9100:
-        <<: *end_contact_spring_pin_domain
         label: AS9100
+        template: connector_taskbook.docx
+        profile: end_contact_spring_pin_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
   end_contact_pogo:
     label: 端面接触-毛纽扣连接器
-    enabled: false
+    enabled: true
     template_label: 研制任务书（低频）
-    unavailable_reason: 尚未配置并验收毛纽扣连接器独立 Profile 与真实回归样例
     domains:
-      military: *low_frequency_domain
+      military:
+        label: 军品
+        template: connector_taskbook.docx
+        profile: end_contact_pogo_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       airworthiness:
-        <<: *low_frequency_domain
         label: 适航
+        template: connector_taskbook.docx
+        profile: end_contact_pogo_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       civil_aviation:
-        <<: *low_frequency_domain
         label: 民机
+        template: connector_taskbook.docx
+        profile: end_contact_pogo_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       as9100:
-        <<: *low_frequency_domain
         label: AS9100
+        template: connector_taskbook.docx
+        profile: end_contact_pogo_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
+    integration_status: available
   end_contact_finger:
     label: 端面接触-表带触指
-    enabled: false
+    enabled: true
     template_label: 研制任务书（低频）
-    unavailable_reason: 尚未配置并验收表带触指独立 Profile 与真实回归样例
     domains:
-      military: *low_frequency_domain
+      military:
+        label: 军品
+        template: connector_taskbook.docx
+        profile: end_contact_finger_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       airworthiness:
-        <<: *low_frequency_domain
         label: 适航
+        template: connector_taskbook.docx
+        profile: end_contact_finger_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       civil_aviation:
-        <<: *low_frequency_domain
         label: 民机
+        template: connector_taskbook.docx
+        profile: end_contact_finger_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       as9100:
-        <<: *low_frequency_domain
         label: AS9100
+        template: connector_taskbook.docx
+        profile: end_contact_finger_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
+    integration_status: available
   separation_connector:
     label: 分离脱落连接器
-    enabled: false
+    enabled: true
     template_label: 研制任务书（低频）
-    unavailable_reason: 尚未配置并验收分离脱落连接器独立 Profile 与真实回归样例
     domains:
-      military: *low_frequency_domain
+      military:
+        label: 军品
+        template: connector_taskbook.docx
+        profile: separation_connector_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       airworthiness:
-        <<: *low_frequency_domain
         label: 适航
+        template: connector_taskbook.docx
+        profile: separation_connector_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       civil_aviation:
-        <<: *low_frequency_domain
         label: 民机
+        template: connector_taskbook.docx
+        profile: separation_connector_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       as9100:
-        <<: *low_frequency_domain
         label: AS9100
+        template: connector_taskbook.docx
+        profile: separation_connector_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
+    integration_status: available
   watertight_connector:
     label: 水密连接器
-    enabled: false
+    enabled: true
     template_label: 研制任务书（低频）
-    unavailable_reason: 尚未配置并验收水密连接器独立 Profile 与真实回归样例
     domains:
-      military: *low_frequency_domain
+      military:
+        label: 军品
+        template: connector_taskbook.docx
+        profile: watertight_connector_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       airworthiness:
-        <<: *low_frequency_domain
         label: 适航
+        template: connector_taskbook.docx
+        profile: watertight_connector_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       civil_aviation:
-        <<: *low_frequency_domain
         label: 民机
+        template: connector_taskbook.docx
+        profile: watertight_connector_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
       as9100:
-        <<: *low_frequency_domain
         label: AS9100
+        template: connector_taskbook.docx
+        profile: watertight_connector_profile.yaml
+        category_mapping: connector_requirement_categories.yaml
+        preserve_unfilled_template: true
+    integration_status: available
+  optical_connector:
+    label: 光连接器
+    enabled: true
+    template_label: 研制任务书（光纤连接器）
+    integration_status: available
+    domain_review: 当前受控接入军品配置；其他质量体系需补充适用模板配置
+    domains:
+      military:
+        label: 军品
+        template: optical_connector_taskbook.docx
+        profile: optical_connector_profile.yaml
+        category_mapping: optical_connector_requirement_categories.yaml
+        preserve_unfilled_template: true
+  printed_board_assembly:
+    label: 印制板组件
+    enabled: true
+    template_label: 研制任务书（背板）
+    integration_status: available
+    domain_review: 当前受控接入军品配置；其他质量体系需补充适用模板配置
+    domains:
+      military:
+        label: 军品
+        template: printed_board_assembly_taskbook.docx
+        profile: printed_board_assembly_profile.yaml
+        category_mapping: printed_board_assembly_requirement_categories.yaml
+        preserve_unfilled_template: true
+  optical_cable_assembly:
+    label: 光缆组件
+    enabled: true
+    template_label: 研制任务书（光缆组件）
+    integration_status: available
+    domain_review: 当前受控接入军品配置；其他质量体系需补充适用模板配置
+    domains:
+      military:
+        label: 军品
+        template: optical_cable_assembly_taskbook.docx
+        template_source_name: 0001352445研制任务书(光缆组件)20260605（JONHON受控）.doc
+        profile: optical_cable_assembly_profile.yaml
+        category_mapping: optical_cable_assembly_requirement_categories.yaml
+        preserve_unfilled_template: true
+  chassis:
+    label: 机箱
+    enabled: true
+    template_label: 研制任务书（机箱）
+    integration_status: available
+    domain_review: 当前受控接入军品配置；其他质量体系需补充适用模板配置
+    domains:
+      military:
+        label: 军品
+        template: chassis_taskbook.docx
+        profile: chassis_profile.yaml
+        category_mapping: chassis_requirement_categories.yaml
+        preserve_unfilled_template: true
+  mounting_plate:
+    label: 安装板
+    enabled: true
+    template_label: 研制任务书（机箱）
+    integration_status: available
+    domain_review: 当前受控接入军品配置；其他质量体系需补充适用模板配置
+    domains:
+      military:
+        label: 军品
+        template: chassis_taskbook.docx
+        profile: mounting_plate_profile.yaml
+        category_mapping: chassis_requirement_categories.yaml
+        preserve_unfilled_template: true
+  optical_distribution_box:
+    label: 光布线箱
+    enabled: true
+    template_label: 研制任务书（机箱）
+    integration_status: available
+    domain_review: 当前受控接入军品配置；其他质量体系需补充适用模板配置
+    domains:
+      military:
+        label: 军品
+        template: chassis_taskbook.docx
+        profile: optical_distribution_box_profile.yaml
+        category_mapping: chassis_requirement_categories.yaml
+        preserve_unfilled_template: true
+  mounting_frame:
+    label: 安装架
+    enabled: true
+    template_label: 研制任务书（系统集成+整机布线）
+    integration_status: available
+    domain_review: 当前受控接入军品配置；其他质量体系需补充适用模板配置
+    domains:
+      military:
+        label: 军品
+        template: system_integration_taskbook.docx
+        profile: mounting_frame_profile.yaml
+        category_mapping: system_integration_requirement_categories.yaml
+        preserve_unfilled_template: true
+  equipment_cabinet:
+    label: 设备柜
+    enabled: true
+    template_label: 研制任务书（系统集成+整机布线）
+    integration_status: available
+    domain_review: 当前受控接入军品配置；其他质量体系需补充适用模板配置
+    domains:
+      military:
+        label: 军品
+        template: system_integration_taskbook.docx
+        profile: equipment_cabinet_profile.yaml
+        category_mapping: system_integration_requirement_categories.yaml
+        preserve_unfilled_template: true
+  display_console:
+    label: 显控台
+    enabled: true
+    template_label: 研制任务书（系统集成+整机布线）
+    integration_status: available
+    domain_review: 当前受控接入军品配置；其他质量体系需补充适用模板配置
+    domains:
+      military:
+        label: 军品
+        template: system_integration_taskbook.docx
+        profile: display_console_profile.yaml
+        category_mapping: system_integration_requirement_categories.yaml
+        preserve_unfilled_template: true

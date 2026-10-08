@@ -83,7 +83,15 @@ def list_product_catalog(catalog_path: str | Path = CATALOG_PATH) -> list[dict[s
         for domain_key, domain_cfg in (type_cfg.get("domains") or {}).items():
             domains.append({"value": domain_key, "label": domain_cfg.get("label", domain_key)})
         configured_enabled = bool(type_cfg.get("enabled", True))
-        effective_enabled = configured_enabled or allow_disabled
+        integration_status = str(
+            type_cfg.get("integration_status")
+            or ("available" if configured_enabled else "missing_template")
+        )
+        effective_enabled = (
+            (configured_enabled or allow_disabled)
+            and bool(domains)
+            and integration_status != "missing_template"
+        )
         result.append(
             {
                 "value": type_key,
@@ -91,6 +99,7 @@ def list_product_catalog(catalog_path: str | Path = CATALOG_PATH) -> list[dict[s
                 "enabled": effective_enabled,
                 "configured_enabled": configured_enabled,
                 "template_label": str(type_cfg.get("template_label", "")),
+                "integration_status": integration_status,
                 "unavailable_reason": str(type_cfg.get("unavailable_reason", "")),
                 "domains": domains,
             }
@@ -111,7 +120,13 @@ def resolve_template_selection(
     type_cfg = catalog["product_types"].get(product_type)
     if not isinstance(type_cfg, dict):
         raise ValueError(f"不支持的产品类型: {product_type}")
-    if not bool(type_cfg.get("enabled", True)) and not _allow_disabled_product_types():
+    missing_template = (
+        type_cfg.get("integration_status") == "missing_template"
+        or not type_cfg.get("domains")
+    )
+    if missing_template or (
+        not bool(type_cfg.get("enabled", True)) and not _allow_disabled_product_types()
+    ):
         reason = str(type_cfg.get("unavailable_reason", "模板尚未配置"))
         raise ValueError(f"产品类型 {type_cfg.get('label', product_type)} 暂不可用: {reason}")
     domain_cfg = (type_cfg.get("domains") or {}).get(product_domain)
@@ -135,6 +150,12 @@ def resolve_template_selection(
     if not isinstance(profile_data, dict):
         raise ValueError(f"产品配置必须是 YAML 对象: {resolved_profile}")
     validate_indicator_profile(profile_data, source=str(resolved_profile))
+    mapping_data = yaml.safe_load(mapping_path.read_text(encoding="utf-8")) or {}
+    requirements_mode = profile_data.get("technical_requirements_mode", "table")
+    if requirements_mode not in {"table", "sections"} or requirements_mode != mapping_data.get(
+        "technical_requirements_mode", "table"
+    ):
+        raise ValueError("产品配置与语义分类映射的技术要求填写模式不一致")
     profile_path = str(resolved_profile)
 
     return TemplateSelection(

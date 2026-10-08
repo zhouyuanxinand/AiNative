@@ -1,0 +1,503 @@
+version: '3.1'
+template_id: optical_connector
+exact_fragment_routing:
+  enabled: true
+  min_text_length: 24
+  max_fragments_per_block: 12
+  source_categories:
+  - source_and_function
+  - usage_environment
+  - installation_form
+  - product_composition
+  - installation_dimension
+  - installation_method
+  - technical_support
+  - reliability
+  - maintainability
+  - testability
+  - supportability
+  - safety
+  - environmental_adaptability
+  - process_requirement
+  - appearance_requirement
+  - other
+  - aperture_dimension
+  - reliability_quantitative
+  - reliability_qualitative
+  - reliability_test
+  - beyond_standard
+  - product_state_change
+  - customer_documents
+  - previous_design_information
+  - composition_outline
+  - contact_arrangement
+  - interchangeability
+  target_categories:
+  - source_and_function
+  - usage_environment
+  - installation_form
+  - product_composition
+  - installation_dimension
+  - installation_method
+  - technical_support
+  - reliability
+  - maintainability
+  - testability
+  - supportability
+  - safety
+  - environmental_adaptability
+  - process_requirement
+  - appearance_requirement
+  - other
+  - aperture_dimension
+  - reliability_quantitative
+  - reliability_qualitative
+  - reliability_test
+  - beyond_standard
+  - product_state_change
+  - customer_documents
+  - previous_design_information
+  - composition_outline
+  - contact_arrangement
+  - interchangeability
+evidence_projections:
+- source_category: performance_indicator
+  target_category: environmental_adaptability
+  match_any:
+  - 工作温度
+  - 使用温度
+  - 环境温度
+  - 温度范围
+  extract_patterns:
+  - '[-－−+]?\d+(?:\.\d+)?\s*(?:℃|°C)\s*[～~—至到]\s*[-－−+]?\d+(?:\.\d+)?\s*(?:℃|°C)'
+semantic_roles:
+  standards_reference:
+    label: 适用的法律法规要求
+    definition: 文档引用、适用标准、法律法规和规范性文件
+    target_heading_keywords:
+    - 适用的法律法规要求
+    write_mode: standards_merge
+    target_heading_level: 1
+  intro_other:
+    label: 产品功能用途中的其他
+    definition: 产品功能用途章节中没有可提取内容时使用的受控空槽，不承载来源正文
+    target_heading_keywords:
+    - 其他
+    target_heading_level: 2
+    target_parent_heading: 产品的功能用途
+categories:
+  source_and_function:
+    label: 来源和功能
+    definition: 产品研制来源、背景、立项依据，以及产品用途、功能和任务能力
+    source_heading_keywords:
+    - 来源和功能
+    - 产品功能
+    - 产品用途
+    - 概述
+    target_heading_keywords:
+    - 来源和功能
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 产品的功能用途
+  usage_environment:
+    label: 使用环境和部位
+    definition: 产品工作的温度、气压、淋雨、电磁、海拔等环境条件，以及装配、搭载、部署和使用部位；不包含具体安装固定操作
+    source_heading_keywords:
+    - 使用环境和部位
+    - 安装使用环境
+    - 使用环境
+    - 使用部位
+    target_heading_keywords:
+    - 使用环境和部位（可附图说明）
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 产品的功能用途
+  installation_form:
+    label: 安装形式和方法
+    definition: 产品总体安装载体、固定端或自由端关系、板前或板后等总体安装形式；不等同于接口章节中的具体安装操作或尺寸
+    source_heading_keywords:
+    - 安装形式和方法
+    - 安装形式
+    - 安装方法
+    source_content_patterns:
+    - (?:安装|装配|固定|搭载|部署)在[^。；;\n]{0,60}(?:印制板|电路板|机架|舱内|设备|平台|载体)(?:上|内|处)?
+    target_heading_keywords:
+    - 安装形式和方法
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 产品的功能用途
+  product_composition:
+    label: 产品组成
+    definition: 产品构成、部件、组件关系和结构组成
+    source_heading_keywords:
+    - 产品组成
+    - 组成结构
+    target_heading_keywords:
+    - 主要组成部分
+    target_integrity: exact
+    target_heading_level: 2
+    target_parent_heading: 产品组成
+  performance_indicator:
+    label: 技术指标
+    definition: 光连接器的传输模式、工作波长、插入损耗、回波损耗、重复性、光学端面、机械和环境等可检验性能指标；所有数值只取本次来源证据；独立安装操作与空间尺寸归入用户安装要求
+    source_heading_keywords:
+    - 传输模式
+    - 工作波长
+    - 插入损耗
+    - 互换性
+    - 重复性
+    - 回波损耗
+    - 光不连续性
+    - 负载传输
+    - 3D面型
+    - 端面检查
+    - 工作温度
+    - 高温寿命
+    - 温度循环
+    - 温度冲击
+    - 低气压(高度)
+    - 浸渍
+    - 低气压浸渍
+    - 水压和冰冻
+    - 湿热
+    - 盐雾
+    - 砂尘
+    - 易燃性
+    - 霉菌
+    - 机械耐久性
+    - 啮合和分离力
+    - 啮合和分离力矩
+    - 光缆保持力
+    - 扭转
+    - 光缆尾部弯曲
+    - 振动
+    - 冲击
+    - 加速度
+    - 撞击
+    - 抗挤压
+    - 耐水压
+    target_heading_keywords:
+    - 技术指标
+    write_mode: indicator_table
+    excluded_indicator_names: []
+    target_heading_level: 2
+    target_parent_heading: 技术要求
+  installation_dimension:
+    label: 尾部弯曲空间
+    definition: 光缆尾部的弯曲空间、最小弯曲半径和固定距离等用户安装空间要求；不复制模板中的示例尺寸
+    source_heading_keywords:
+    - 尾部弯曲空间
+    - 弯曲空间
+    - 安装空间
+    - 最小弯曲半径
+    target_heading_keywords:
+    - 尾部弯曲空间：例：尾部光缆弯曲空间：连接器尾部范围内光缆需90°弯曲固定
+    target_heading_level: 3
+    target_parent_heading: 用户安装要求
+    target_integrity: exact
+  installation_method:
+    label: 安装方式
+    definition: 螺钉、导销、卡扣、导轨、焊接、嵌入等具体安装固定方式、操作步骤和流程
+    source_heading_keywords:
+    - 安装方式
+    - 固定方式
+    target_heading_keywords:
+    - 安装方式：例：螺母紧固安装
+    target_heading_level: 3
+    target_parent_heading: 用户安装要求
+    replicate_to_categories:
+    - installation_form
+    target_integrity: exact
+  interface_definition:
+    label: 用户安装要求
+    definition: 用户安装条件和接口要求的容器，按原文拆分到安装方式、开口尺寸、尾部弯曲空间和互换性；不直接把正文写到容器标题
+    source_heading_keywords:
+    - 用户安装要求
+    - 安装要求
+    - 接口要求
+    container_only: true
+    block_target_categories:
+    - installation_method
+    - aperture_dimension
+    - installation_dimension
+    - interchangeability
+    block_fallback_category: installation_dimension
+  technical_support:
+    label: 保障要求
+    definition: 条件保障、验收和交付要求，包括随产品提供的说明书、合格证、工具、备件、维修手册和技术资料等事实
+    source_heading_keywords:
+    - 条件保障要求
+    - 技术保障要求
+    - 保障要求
+    - 验收要求
+    - 检验验收
+    - 交付要求
+    source_parent_heading_keywords:
+    - 验收及交付要求
+    source_content_patterns:
+    - (?:随产品|随机|交付时)[^。；;\n]*(?:提供|配备)[^。；;\n]*(?:使用说明书|技术说明书|维修手册|合格证|工具|备件|技术资料)
+    - (?:提供|配备)[^。；;\n]*(?:使用说明书|技术说明书|维修手册|随机工具|随机备件|接触件备件|合格证)
+    content_priority: 100
+    target_heading_keywords:
+    - 条件保障要求
+    target_heading_level: 2
+    write_mode: dynamic_children
+    target_integrity: exact
+    target_parent_heading: 技术要求
+  reliability:
+    label: 可靠性要求
+    definition: 平均无故障时间、寿命、耐久度、故障率、稳定性、容错和可靠性试验要求
+    source_heading_keywords:
+    - 可靠性要求
+    - 可靠性
+    target_heading_keywords:
+    - 可靠性要求
+    target_integrity: exact
+    target_heading_level: 2
+    target_parent_heading: 通用质量特性要求
+    preserve_child_headings: true
+    insert_position: after_children
+  maintainability:
+    label: 维修性要求
+    definition: 平均修复时间、可达性、可拆卸性、故障隔离、维修操作、维修工具和维修保障要求
+    source_heading_keywords:
+    - 维修性要求
+    - 维修保障要求
+    - 维修性
+    target_heading_keywords:
+    - 维修性要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+  testability:
+    label: 测试性要求
+    definition: 机内测试、故障检测与隔离、虚警率、测试覆盖、测试设备、流程、精度和验收要求
+    source_heading_keywords:
+    - 测试性要求
+    - 测试性
+    target_heading_keywords:
+    - 测试性要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+  supportability:
+    label: 保障性要求
+    definition: 六性中的综合保障设计、保障资源配置、保障分析、保障方案、保障成本和持续保障要求；不是随产品交付清单
+    source_heading_keywords:
+    - 保障性要求
+    - 保障性
+    target_heading_keywords:
+    - 保障性要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+  safety:
+    label: 安全性定性要求
+    definition: 使用、安装、运维、存储和运输过程中的电气、机械、防火防爆、防误操作和人员设备安全要求
+    source_heading_keywords:
+    - 安全性定性要求
+    - 安全性要求
+    - 安全性
+    target_heading_keywords:
+    - 安全性定性要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+  environmental_adaptability:
+    label: 环境适应性要求
+    definition: 高低温、湿热、盐雾、霉菌、淋雨、沙尘、振动冲击、低气压、老化等专项环境适应性与试验要求
+    source_heading_keywords:
+    - 环境适应性要求
+    - 环境适应性
+    target_heading_keywords:
+    - 环境适应性要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+  process_requirement:
+    label: 工艺要求
+    definition: 研制、生产、装配和调试过程中的加工、焊接、粘接、紧固、表面处理、密封、公差和工艺验收要求
+    source_heading_keywords:
+    - 工艺要求
+    - 制造工艺
+    - 装配工艺
+    target_heading_keywords:
+    - 工艺要求
+    target_heading_level: 1
+    empty_policy: fill_none
+    target_integrity: exact
+  schedule:
+    write_mode: preserve_template
+    label: 进度要求
+    definition: 研制进度、周期、阶段时间、任务节点和交付计划要求
+    source_heading_keywords:
+    - 任务进度要求
+    - 研制进度
+    - 进度要求
+    target_heading_keywords:
+    - 任务进度要求
+    target_heading_level: 1
+    target_integrity: exact
+  appearance_requirement:
+    label: 外观要求
+    definition: 产品外观、外形和可见状态要求；按 7-22 直接复制到“产品的功能用途”下的“其他”槽
+    source_heading_keywords:
+    - 外观要求
+    target_heading_keywords:
+    - 其他
+    target_heading_level: 2
+    target_parent_heading: 产品的功能用途
+    target_integrity: exact
+  other:
+    label: 其他要求
+    definition: 无法归入以上类别、来源明确标为“其他要求”，或按 7-22 指定进入顾客特殊要求的完整设计输入模块
+    source_heading_keywords:
+    - 其他要求
+    - 安装使用注意事项
+    - 元器件和原材料选用要求
+    - 元器件和材料选用要求
+    - 原材料和元器件选用要求
+    - 研制批产品数量要求
+    - 研制批产品数量
+    - 研制批数量要求
+    atomic_source_heading_keywords:
+    - 安装使用注意事项
+    - 元器件和原材料选用要求
+    - 元器件和材料选用要求
+    - 原材料和元器件选用要求
+    - 研制批产品数量要求
+    - 研制批产品数量
+    - 研制批数量要求
+    target_heading_keywords:
+    - 其他要求
+    target_parent_heading: 顾客的特殊要求
+    preserve_child_headings: true
+    insert_position: after_children
+    target_integrity: exact
+    target_heading_level: 2
+  aperture_dimension:
+    label: 开口尺寸
+    definition: 光连接器安装开口的尺寸、公差和孔口几何约束
+    source_heading_keywords:
+    - 开口尺寸
+    - 安装开孔
+    - 安装开口
+    target_heading_keywords:
+    - 开口尺寸
+    target_heading_level: 3
+    target_parent_heading: 用户安装要求
+    target_integrity: exact
+  reliability_quantitative:
+    label: 可靠性定量要求
+    definition: 可靠性定量目标、平均无故障时间、故障率及其明确数值要求，不包含模板中的示例值
+    source_heading_keywords:
+    - 可靠性定量要求
+    target_heading_keywords:
+    - 可靠性定量要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 可靠性要求
+  reliability_qualitative:
+    label: 可靠性定性要求
+    definition: 降额、冗余、容错、防差错等定性可靠性设计要求
+    source_heading_keywords:
+    - 可靠性定性要求
+    target_heading_keywords:
+    - 可靠性定性要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 可靠性要求
+  reliability_test:
+    label: 可靠性试验要求
+    definition: 可靠性验证试验方法、试验条件、判据及试验文件要求
+    source_heading_keywords:
+    - 可靠性试验要求
+    target_heading_keywords:
+    - 可靠性试验要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 可靠性要求
+  beyond_standard:
+    label: 超出现有技术的要求
+    definition: 明确超出现有企业技术能力或已具备技术标准的特殊要求
+    source_heading_keywords:
+    - 超出现有技术的要求
+    target_heading_keywords:
+    - 超出现有技术的要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 顾客的特殊要求
+  product_state_change:
+    label: 超出同类产品状态的要求
+    definition: 与已有同类产品结构、性能或状态不同的特殊要求
+    source_heading_keywords:
+    - 超出同类产品状态的要求
+    target_heading_keywords:
+    - 超出同类产品状态的要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 顾客的特殊要求
+    preserve_child_headings: true
+    insert_position: after_children
+  customer_documents:
+    label: 需向用户提交的文件
+    definition: 用户要求提交的研制交付文件、报告、鉴定记录和数据包；随产品提供的使用说明书及工具归入条件保障要求
+    source_heading_keywords:
+    - 需向用户提交的文件
+    - 交付文件
+    - 提交文件
+    - 交付文档
+    target_heading_keywords:
+    - 需向用户提交的文件
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 其他要求
+  previous_design_information:
+    label: 以前类似设计提供的信息
+    definition: 明确来自以往类似产品设计的输入资料和经验，不把不匹配系列的故障记录作为本系列事实
+    source_heading_keywords:
+    - 以前类似设计提供的信息
+    - 类似设计经验
+    - 既有设计资料
+    target_heading_keywords:
+    - 以前类似设计提供的信息
+    target_heading_level: 1
+    target_integrity: exact
+  composition_outline:
+    label: 外形图
+    definition: 光连接器的外形图、产品外观轮廓、总体外形尺寸及图示证据
+    source_heading_keywords:
+    - 外形图
+    - 外形尺寸
+    - 外形要求
+    - 总体尺寸
+    target_heading_keywords:
+    - 外形图
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 产品组成
+  contact_arrangement:
+    label: 孔位排列及标识
+    definition: 光连接器通道、孔位排列和标识、位置和编号对应关系
+    source_heading_keywords:
+    - 孔位排列及标识
+    - 孔位排列
+    - 通道排列
+    - 通道标识
+    target_heading_keywords:
+    - 孔位排列及标识
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 产品组成
+  interchangeability:
+    label: 互换性
+    definition: 连接器或组件之间可互换、互配以及接口兼容性的要求；涉及光学性能的互换性损耗仍须同步匹配技术表对应指标
+    source_heading_keywords:
+    - 互换性
+    - 互配性
+    - 接口兼容性
+    target_heading_keywords:
+    - 互换性
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 用户安装要求

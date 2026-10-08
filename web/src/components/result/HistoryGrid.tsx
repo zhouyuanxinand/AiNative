@@ -60,11 +60,13 @@ function HistoryCard({ item }: { item: HistoryItem }) {
         图片决策：{Number(item.image_warning_count || 0)} 条提示
         <br />
         输出：{item.output_name || '-'}
+        {item.error && <><br />失败原因：{item.error}</>}
         {item.saved_path ? <br /> : null}
         {item.saved_path ? `保存：${item.saved_path}` : null}
-        {item.jid ? (
+        {item.jid && (item.status === 'done' || item.status === 'blocked') ? (
           <>
             <br />
+            <a href={`/review/${encodeURIComponent(item.jid)}`}>审阅与修订</a> /{' '}
             <a href={`/api/download/${encodeURIComponent(item.jid)}`}>下载文档</a> /{' '}
             <a href={`/api/report/${encodeURIComponent(item.jid)}`} target="_blank" rel="noopener">
               查看报告

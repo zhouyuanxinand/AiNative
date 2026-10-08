@@ -46,8 +46,6 @@ semantic_roles:
     target_heading_keywords: [其他]
     target_heading_level: 2
     target_parent_heading: 产品的功能用途
-    empty_policy: fill_none
-
 # 《研制任务书生成规则7-14.xlsx》定义的 19 个一级语义类别。
 # 分类只依据无编号标题、父标题和整章节正文；章节号与章节顺序不参与判断。
 categories:
@@ -90,6 +88,8 @@ categories:
        绝缘电阻, 插拔力, 总分离力, 机械寿命, 振动, 冲击, 加速度, 工作温度,
        高温, 低温, 低气压, 低温低气压]
     target_heading_keywords: [技术指标, 性能指标]
+    target_heading_level: 2
+    target_parent_heading: 技术要求
     write_mode: indicator_table
     excluded_indicator_names: [互换性, 互配性]
   outline_dimension:
@@ -163,15 +163,15 @@ categories:
     target_heading_keywords: [条件保障要求, 技术保障要求, 保障要求]
     target_heading_level: 2
     write_mode: dynamic_children
-    # 模板中的“随产品提供说明书/工具/……”只是提示，不是事实。
-    # 没有输入证据时清空提示子项，只保留主标题。
-    empty_policy: clear_body
+    # 开发逻辑 E38：无输入时保留原模板。
     target_integrity: exact
   reliability:
     label: 可靠性要求
     definition: 平均无故障时间、寿命、耐久度、故障率、稳定性、容错和可靠性试验要求
     source_heading_keywords: [可靠性要求, 可靠性]
     target_heading_keywords: [可靠性要求, 可靠性]
+    target_heading_level: 2
+    target_parent_heading: 通用质量特性要求
     target_integrity: exact
   maintainability:
     label: 维修性要求
@@ -217,6 +217,7 @@ categories:
     empty_policy: fill_none
     target_integrity: exact
   schedule:
+    write_mode: preserve_template
     label: 进度要求
     definition: 研制进度、周期、阶段时间、任务节点和交付计划要求
     source_heading_keywords: [任务进度要求, 研制进度, 进度要求]
@@ -230,7 +231,6 @@ categories:
     target_heading_keywords: [其他]
     target_heading_level: 2
     target_parent_heading: 产品的功能用途
-    empty_policy: fill_none
     target_integrity: exact
   other:
     label: 其他要求
@@ -260,6 +260,5 @@ categories:
     target_heading_keywords: [其他要求]
     target_parent_heading: 顾客的特殊要求
     preserve_child_headings: true
-    empty_policy: fill_none
     insert_position: after_children
     target_integrity: exact

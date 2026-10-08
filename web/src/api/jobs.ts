@@ -1,6 +1,18 @@
 /** 任务生命周期接口：提交、取消、状态轮询、预检。 */
-import type { JobStatusResponse, PrecheckResponse } from '../types';
-import { postForm, getJSON } from './client';
+import type { IndicatorReview, JobStatusResponse, PrecheckResponse } from '../types';
+import { postForm, getJSON, fetchJSON } from './client';
+
+export function getIndicatorReview(jid: string): Promise<IndicatorReview> {
+  return getJSON(`/api/indicator_review/${encodeURIComponent(jid)}`);
+}
+
+export function clarifyIndicators(jid: string, clarifications: Record<string, string>): Promise<{ jid: string; parent_jid: string }> {
+  return fetchJSON(`/api/indicator_review/${encodeURIComponent(jid)}/clarify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clarifications }),
+  });
+}
 
 export function submitJob(fd: FormData): Promise<{ jid: string }> {
   return postForm('/api/submit', fd);

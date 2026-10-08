@@ -1,6 +1,7 @@
 /** 结果卡片——摘要 + 下载按钮 + 警告 + 门禁面板。 */
 import { useTaskbook } from '../../hooks/useTaskbook';
 import { escapeHtml } from '../../lib/dom';
+import { IndicatorReviewPanel } from './IndicatorReviewPanel';
 
 export function ResultCard() {
   const { jobResult, resultBlocked, currentJid } = useTaskbook();
@@ -62,6 +63,10 @@ export function ResultCard() {
         />
       </div>
       <div className="result-grid">
+        {currentJid && <a className="btn-dl btn-docx" id="btn-review" href={`/review/${encodeURIComponent(currentJid)}`}>
+          <svg className="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 4h7v16H4zM14 4h6v16h-6M7 8h1M7 12h1M17 8h1M17 12h1" /></svg>
+          打开审阅模式
+        </a>}
         <a
           className="btn-dl btn-docx"
           id="btn-docx"
@@ -121,6 +126,13 @@ export function ResultCard() {
           ))}
         </div>
       )}
+
+      {currentJid && <IndicatorReviewPanel key={currentJid} jid={currentJid} />}
+      {currentJid && meta.source_review_required && <section className="indicator-review" aria-label="输入文档识别复核">
+        <h3>输入文档待复核</h3>
+        <p>转换或 OCR 内容需逐页核对。下载原件、识别文本与原页证据，核对或修正后上传 DOCX 重新生成。</p>
+        {Object.entries(meta.input_normalization || {}).filter(([, value]) => value.evidence_path).map(([role]) => <p key={role}><a href={`/api/input_evidence/${encodeURIComponent(currentJid)}/${role}`}>下载{role === 'tech' ? '需求文件' : '产品规范'}识别证据（ZIP）</a></p>)}
+      </section>}
 
       {/* 门禁面板 */}
       {gate && gate.passed !== null && (

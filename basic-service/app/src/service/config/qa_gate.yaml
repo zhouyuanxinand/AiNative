@@ -19,6 +19,11 @@ block_if:
     - "不适用请删除"
     - "根据具体情况增减"
     - "XXX产品"
+    - "XX技术协议"
+    - "（此处填写"
+    - "请在此处"
+    - "□"
+    - "▲"
 
   # 表格类
   as9100_table_exists: true           # AS9100 相关表格残留
@@ -29,6 +34,11 @@ block_if:
   change_record_data_rows_gt: 1       # 变更记录数据行 > 1（只允许 A版新发）
   indicator_table_missing: true       # 技术指标表缺失
   indicator_table_no_basis_col: true  # 技术指标表缺少"依据"列
+  indicator_table_wrong_columns: true # 指标表字段或数据行结构不完整
+  indicator_instruction_exists: true  # 指标表上方出现新增模板提示
+  indicator_change_record_contamination: true # 指标值混入规范变更记录
+  landscape_section_exists: true     # 未获产品规则允许的横向页面节
+  figure_caption_orphan_auto: true   # 图题附近没有图片对象
   duplicate_body_image_relationship: true
   figure_caption_sequence_wrong: true # 图题必须按最终文档顺序连续编号
 

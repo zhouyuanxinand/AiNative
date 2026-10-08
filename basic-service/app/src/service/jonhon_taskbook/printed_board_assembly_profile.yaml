@@ -1,0 +1,36 @@
+schema_version: '3.1'
+profile_id: printed_board_assembly
+product_type: 印制板组件
+integration_status: available
+technical_requirements_mode: sections
+template_variant_policy: single_budget_template_variant_policy.yaml
+template_source:
+  file: printed_board_assembly_taskbook.docx
+  sha256: af49810d7ffcb6517f2de64f7f231133ff57f4f9c3d5d8944493d29161da9e98
+  indicator_policy: 章节式技术要求；原文按真实语义章节复制，保留表格及图片，不转换为不存在的指标表
+semantic_routing:
+  category_mapping: printed_board_assembly_requirement_categories.yaml
+  chapter_numbers_are_identity: false
+  source_order_is_identity: false
+  copy_source_text_only: true
+semantic_structures: {}
+indicator_sources:
+  workbook: false
+  reference_families: []
+standards_policy: merge_template
+spec_model_filter:
+  enabled: true
+delivery_gate:
+  min_indicator_rows: 0
+  min_interface_fills: 0
+  required_headings: &id001
+  - 适用的法律法规要求
+  - 技术要求
+  - 任务书编制依据
+  - 信号定义
+  - 结构尺寸
+  - 任务进度要求
+indicator_map: {}
+qa_profile:
+  required_headings: *id001
+  forbidden_phrases: []

@@ -13,6 +13,12 @@ openpyxl==3.1.5
 lxml==6.1.0
 pillow==12.2.0
 chardet==5.2.0
+# 本地 PDF 解析与扫描件 OCR（模型随 rapidocr 安装包提供，不外发文档）
+PyMuPDF==1.28.2
+rapidocr==3.9.2
+onnxruntime==1.30.0
+# 旧版 DOC 在 Windows 上调用已安装的 Microsoft Word；其他平台可用 LibreOffice
+pywin32==312; sys_platform == "win32"
 
 # 配置与数据
 pyyaml==6.0.3

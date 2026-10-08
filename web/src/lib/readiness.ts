@@ -68,7 +68,7 @@ export function collectReadinessIssues(
 
   if (!form.productType) issues.push('请选择产品类型');
   if (form.productType && product?.enabled === false) issues.push('该产品类型当前模板未就绪');
-  if (!form.productDomain) issues.push('请选择产品领域');
+  if (!form.productDomain) issues.push('请选择质量管理体系分类');
   if (!form.developmentProcess) issues.push('请选择研制流程分类');
   if (!form.coverPhase) issues.push('请选择封面研制阶段（F/C/S/D）');
   if (!form.productSeries) issues.push('请填写产品系列');

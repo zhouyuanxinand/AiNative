@@ -12,6 +12,8 @@ import { UploadCard } from './components/workspace/UploadCard';
 import { PrecheckCard } from './components/workspace/PrecheckCard';
 import { ProgressCard } from './components/workspace/ProgressCard';
 import { ManagementPanel } from './components/management/ManagementPanel';
+import { StandaloneRuntimeLogsPage } from './components/management/StandaloneRuntimeLogsPage';
+import { TaskbookReviewPage } from './components/review/TaskbookReviewPage';
 import { loadProductCatalog, loadModelCatalog, checkModelStatus } from './api/catalog';
 import {
   submitJob,
@@ -38,6 +40,8 @@ function AppInner() {
   const tb = useTaskbook();
   const draft = useDraft();
   const [draftReady, setDraftReady] = useState(false);
+  const [modelSettingsRevision, setModelSettingsRevision] = useState(0);
+  const [modelCatalogState, setModelCatalogState] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading');
 
   const sseCallbacks = useRef({
     onDone: (msg: SSEMessage) => {
@@ -79,6 +83,7 @@ function AppInner() {
       tb.setShowProgressCard(true);
       tb.setReviewTab('result');
       draft.clearRunningJob();
+      loadHistory().then((items) => tb.setHistory(items)).catch(() => {});
     },
     onCancelled: () => {
       tb.setIsRunning(false);
@@ -86,6 +91,7 @@ function AppInner() {
       tb.setProgressLiveClass('progress-live err');
       tb.setProgressLiveText('本次任务已安全终止；可以返回重新选择产品或文件');
       draft.clearRunningJob();
+      loadHistory().then((items) => tb.setHistory(items)).catch(() => {});
     },
   });
 
@@ -149,6 +155,7 @@ function AppInner() {
     tb.setJobResult(null);
     tb.setResultBlocked(false);
     tb.setIsRunning(true);
+    tb.setJobStatus('running');
     tb.setIsCancelled(false);
     tb.setReviewTab('result');
     tb.setCurrentStep(2);
@@ -156,6 +163,15 @@ function AppInner() {
     tb.setProgressLiveClass('progress-live waiting');
     tb.setProgressLiveText('正在连接受控工作流…');
   }, [tb]);
+
+  const handleReplayStarted = useCallback((jid: string) => {
+    resetSSE();
+    tb.setLogs([]);
+    showProgress();
+    tb.setCurrentJid(jid);
+    draft.persistRunningJob(jid);
+    listenSSE(jid, new EventSource(`/api/stream/${encodeURIComponent(jid)}`));
+  }, [draft, listenSSE, resetSSE, showProgress, tb]);
 
   const handleSubmitLocal = useCallback(async () => {
     if (!validateBeforeRun()) return;
@@ -271,6 +287,7 @@ function AppInner() {
     tb.setProgressLiveClass('progress-live waiting');
     tb.setIsRunning(false);
     tb.setIsCancelled(false);
+    tb.setJobStatus('idle');
     tb.setPrecheck(null);
     tb.setJobResult(null);
     tb.setResultBlocked(false);
@@ -418,55 +435,6 @@ function AppInner() {
         if (!cancelled) setDraftReady(true);
       });
 
-    loadModelCatalog()
-      .then((data) => {
-        if (cancelled) return;
-        if (!data.success || !Array.isArray(data.models)) {
-          throw new Error(data.error || '模型目录读取失败');
-        }
-        const models = data.models
-          .map((item) => ({
-            provider: String(item.provider || 'smartvision'),
-            name: String(item.model || item.name || ''),
-            id: String(item.id || ''),
-            vendor: String(item.vendor || ''),
-            configured: item.configured !== false,
-          }))
-          .filter((item) => item.name);
-        tb.setModelCatalog(models);
-        const savedKey =
-          storedDraft?.model_provider && storedDraft?.model_name
-            ? modelSelectionKey({
-                provider: storedDraft.model_provider,
-                name: storedDraft.model_name,
-                id: storedDraft.model_id || '',
-              })
-            : '';
-        const preferred =
-          models.find((item) => modelSelectionKey(item) === savedKey) ||
-          models.find((item) => item.configured) ||
-          models[0];
-        tb.setSelectedModelKey(preferred ? modelSelectionKey(preferred) : '');
-      })
-      .catch(() => {
-        if (cancelled) return;
-        tb.setModelCatalog([]);
-        tb.setSelectedModelKey('');
-        tb.setSelectedModelReady(false);
-      });
-
-    loadBackendStatus()
-      .then((data) => {
-        if (cancelled) return;
-        tb.setBackendHealth(data);
-        tb.setBackendHealthReady(Boolean(data.ready_for_generation));
-      })
-      .catch(() => {
-        if (cancelled) return;
-        tb.setBackendHealth(null);
-        tb.setBackendHealthReady(null);
-      });
-
     loadHistory().then((items) => !cancelled && tb.setHistory(items)).catch(() => {});
 
     checkLocalFiles()
@@ -496,6 +464,7 @@ function AppInner() {
         tb.setShowProgressCard(true);
         tb.setReviewTab('result');
         tb.setIsRunning(true);
+        tb.setJobStatus('running');
         tb.setIsCancelled(false);
         tb.setCurrentJid(payload.jid);
         tb.setLogs([]);
@@ -517,6 +486,69 @@ function AppInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Refresh after credential changes and discard requests from older settings.
+  useEffect(() => {
+    let cancelled = false;
+    const storedDraft = draft.readStoredDraft(AUTO_DRAFT_KEY) || draft.readStoredDraft(DRAFT_KEY);
+    setModelCatalogState('loading');
+    tb.setModelCatalog([]);
+    tb.setSelectedModelKey('');
+    tb.setSelectedModelReady(null);
+    tb.setBackendHealthReady(null);
+    loadModelCatalog()
+      .then((data) => {
+        if (cancelled) return;
+        if (!data.success || !Array.isArray(data.models)) {
+          throw new Error(data.error || '模型目录读取失败');
+        }
+        const models = data.models
+          .map((item) => ({
+            provider: String(item.provider || 'smartvision'),
+            name: String(item.model || item.name || ''),
+            id: String(item.id || ''),
+            vendor: String(item.vendor || ''),
+            configured: item.configured !== false,
+          }))
+          .filter((item) => item.name);
+        tb.setModelCatalog(models);
+        setModelCatalogState(models.length ? 'ready' : 'empty');
+        const savedKey =
+          storedDraft?.model_provider && storedDraft?.model_name
+            ? modelSelectionKey({
+                provider: storedDraft.model_provider,
+                name: storedDraft.model_name,
+                id: storedDraft.model_id || '',
+              })
+            : '';
+        const preferred =
+          models.find((item) => modelSelectionKey(item) === savedKey && item.configured) ||
+          models.find((item) => item.configured) ||
+          models[0];
+        tb.setSelectedModelKey(preferred ? modelSelectionKey(preferred) : '');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        tb.setModelCatalog([]);
+        tb.setSelectedModelKey('');
+        tb.setSelectedModelReady(false);
+        setModelCatalogState('error');
+      });
+
+    loadBackendStatus()
+      .then((data) => {
+        if (cancelled) return;
+        tb.setBackendHealth(data);
+        tb.setBackendHealthReady(Boolean(data.ready_for_generation));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        tb.setBackendHealth(null);
+        tb.setBackendHealthReady(null);
+      });
+
+    return () => { cancelled = true; };
+  }, [modelSettingsRevision]);
+
   // 所选模型变化时重新检查凭据，忽略已经过期的响应。
   useEffect(() => {
     let active = true;
@@ -532,7 +564,7 @@ function AppInner() {
     return () => {
       active = false;
     };
-  }, [getSelectedModel, tb.selectedModelKey, tb.modelCatalog]);
+  }, [getSelectedModel, tb.selectedModelKey, tb.modelCatalog, modelSettingsRevision]);
 
   // UI 模式和管理页都依赖 body 级 CSS 选择器。
   useEffect(() => {
@@ -570,6 +602,7 @@ function AppInner() {
     clearDraft: () => draft.clearDraft(true),
     previewEdit: handlePreviewEdit,
     applyHistory: handleApplyHistoryPreset,
+    replayStarted: handleReplayStarted,
   });
   eventHandlersRef.current = {
     submit: handleSubmit,
@@ -580,6 +613,7 @@ function AppInner() {
     clearDraft: () => draft.clearDraft(true),
     previewEdit: handlePreviewEdit,
     applyHistory: handleApplyHistoryPreset,
+    replayStarted: handleReplayStarted,
   };
   const pendingStateRef = useRef(false);
   pendingStateRef.current = Boolean(
@@ -603,6 +637,7 @@ function AppInner() {
       eventHandlersRef.current.applyHistory(
         (event as CustomEvent<HistoryPresetDetail>).detail,
       );
+    const onReplayStarted = (event: Event) => eventHandlersRef.current.replayStarted((event as CustomEvent<{ jid: string }>).detail.jid);
 
     window.addEventListener('taskbook:submit', onSubmit);
     window.addEventListener('taskbook:submit-local', onSubmitLocal);
@@ -612,8 +647,10 @@ function AppInner() {
     window.addEventListener('taskbook:clear-draft', onClearDraft);
     window.addEventListener('taskbook:preview-edit', onPreviewEdit);
     window.addEventListener('taskbook:apply-history', onApplyHistory);
+    window.addEventListener('taskbook:replay-started', onReplayStarted);
 
     const onKeyDown = (event: KeyboardEvent) => {
+      if (document.querySelector('dialog[open]')) return;
       if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
         const runButton = document.getElementById('btn-run') as HTMLButtonElement | null;
         if (!runButton || runButton.disabled) return;
@@ -639,6 +676,7 @@ function AppInner() {
       window.removeEventListener('taskbook:clear-draft', onClearDraft);
       window.removeEventListener('taskbook:preview-edit', onPreviewEdit);
       window.removeEventListener('taskbook:apply-history', onApplyHistory);
+      window.removeEventListener('taskbook:replay-started', onReplayStarted);
       document.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('beforeunload', onBeforeUnload);
     };
@@ -650,7 +688,7 @@ function AppInner() {
       id="workspace-shell"
       style={{ display: 'grid' }}
     >
-      <Sidebar />
+      <Sidebar onCredentialsSaved={async () => { setModelSettingsRevision(value => value + 1); }} />
       <Header />
       <div className="main">
         <Hero />
@@ -671,7 +709,10 @@ function AppInner() {
                 </div>
               ))}
             </div>
-            {tb.showUploadCard && <UploadCard />}
+            {tb.showUploadCard && <UploadCard
+              modelCatalogState={modelCatalogState}
+              onRetryModelCatalog={() => setModelSettingsRevision(value => value + 1)}
+            />}
             <PrecheckCard />
             <ProgressCard />
             <div className="footer-note">
@@ -687,6 +728,13 @@ function AppInner() {
 }
 
 export default function App() {
+  const path = window.location.pathname.replace(/\/+$/, '') || '/';
+  if (path === '/log' || path === '/logs') {
+    return <StandaloneRuntimeLogsPage />;
+  }
+  const reviewPath = path.match(/^\/review\/([^/]+)$/);
+  if (reviewPath) return <TaskbookReviewPage jid={decodeURIComponent(reviewPath[1])} />;
+
   return (
     <TaskbookProvider>
       <AppInner />

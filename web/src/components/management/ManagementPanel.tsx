@@ -1,15 +1,16 @@
 /** 管理面板——规则中心 / 模板目录。 */
 import { useState, useEffect, type FormEvent } from 'react';
 import { useTaskbook } from '../../hooks/useTaskbook';
+import { RulesView } from './RulesView';
+import { TemplateDirectory } from './TemplateDirectory';
+import { FailureDatabaseView } from './FailureDatabaseView';
 import {
-  loadRulesSummary,
   loadTemplateDirectory,
   loadTemplateCandidates,
-  loadCapabilities,
   onboardTemplate,
   postCandidateAction,
 } from '../../api/templates';
-import type { RulesSummary, TemplateItem, TemplateCandidate, CapabilitiesResponse } from '../../types';
+import type { TemplateItem, TemplateCandidate } from '../../types';
 
 export function ManagementPanel() {
   const { managementKind, setManagementKind, setWorkspaceView } = useTaskbook();
@@ -20,7 +21,11 @@ export function ManagementPanel() {
     <section className="management-panel open" id="management-panel" aria-live="polite">
       <div className="management-head">
         <h2 id="management-title">
-          {managementKind === 'rules' ? '规则中心（只读审计）' : '模板目录与候选接入'}
+          {managementKind === 'rules'
+            ? '规则中心'
+            : managementKind === 'failures'
+              ? '故障数据库'
+              : '模板目录'}
         </h2>
         <button
           className="management-close"
@@ -35,126 +40,53 @@ export function ManagementPanel() {
       </div>
       {managementKind === 'rules' && <RulesView />}
       {managementKind === 'templates' && <TemplatesView />}
+      {managementKind === 'failures' && <FailureDatabaseView />}
     </section>
-  );
-}
-
-function RulesView() {
-  const [summary, setSummary] = useState<RulesSummary | null>(null);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    loadRulesSummary().then(setSummary).catch((e) => setError(e.message || '后台不可用'));
-  }, []);
-
-  const stats: [string, string][] = summary
-    ? [
-        [String(summary.semantic_categories ?? '-'), '语义分类与角色数'],
-        [String(summary.product_catalog?.enabled_types ?? '-'), '已启用产品类型'],
-        [summary.template_onboarding?.auto_publish ? '是' : '否', '候选模板自动发布'],
-        [summary.chapter_numbers_are_identity ? '是' : '否', '章节编号作为身份'],
-        [summary.source_body_generation ? '是' : '否', '模型生成技术正文'],
-        [summary.mode === 'read_only' ? '只读' : summary.mode || '-', '当前管理模式'],
-      ]
-    : error
-      ? [['读取失败', error]]
-      : [['…', '正在读取受控规则']];
-
-  return (
-    <div className="management-view active" id="management-rules">
-      <div className="management-grid" id="rules-summary">
-        {stats.map(([value, label], i) => (
-          <ManagementStat key={i} value={value} label={label} />
-        ))}
-      </div>
-      <div className="management-note">
-        规则中心当前为只读审计视图。章节编号不作为身份，大模型只分类和定位，不生成技术正文；业务规则变更需版本化、测试并审核后发布。
-      </div>
-    </div>
   );
 }
 
 function TemplatesView() {
   const [directory, setDirectory] = useState<TemplateItem[]>([]);
   const [candidates, setCandidates] = useState<TemplateCandidate[]>([]);
-  const [capabilities, setCapabilities] = useState<CapabilitiesResponse | null>(null);
   const [dirError, setDirError] = useState('');
-  const [capabilityError, setCapabilityError] = useState('');
+  const [candidateError, setCandidateError] = useState('');
+  const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
 
   useEffect(() => {
+    let active = true;
     setDirError('');
-    setCapabilityError('');
+    setCandidateError('');
+    setLoading(true);
     Promise.all([
-      loadTemplateDirectory().catch((e) => setDirError(e.message)),
-      loadTemplateCandidates().catch(() => {}),
-      loadCapabilities().catch((e) => setCapabilityError(e.message)),
-    ]).then(([dir, cands, caps]) => {
+      loadTemplateDirectory().catch((e) => { if (active) setDirError(e.message); }),
+      loadTemplateCandidates().catch((e) => { if (active) setCandidateError(e.message); }),
+    ]).then(([dir, cands]) => {
+      if (!active) return;
       if (Array.isArray(dir)) setDirectory(dir);
       if (Array.isArray(cands)) setCandidates(cands);
-      if (caps) setCapabilities(caps);
+      setLoading(false);
     });
+    return () => { active = false; };
   }, [revision]);
 
   const refresh = () => setRevision((value) => value + 1);
-
-  const source = capabilities?.source_inputs || {};
-  const supported = Object.entries(source)
-    .filter(([, v]) => v.status === 'supported')
-    .map(([k]) => k.toUpperCase());
-  const pending = Object.entries(source)
-    .filter(([, v]) => v.status !== 'supported')
-    .map(([k]) => k.replaceAll('_', ' '));
-
   return (
     <div className="management-view active" id="management-templates">
-      <div className="capability-warning" id="template-capability-note">
-        {capabilityError
-          ? `能力边界读取失败：${capabilityError}。为安全起见，请勿把未经审批的新模板用于正式生成。`
-          : `当前正式支持：${supported.join('、') || '无'}。尚未承诺：${pending.join('、') || '无'}。新模板会自动扫描为候选，但必须经过机器校验、真实样例回归、整页视觉复核和人工批准后才能发布；支持版本回滚。`}
-      </div>
-      <div className="template-directory" id="template-directory">
-        {dirError ? (
-          <div className="management-status">模板目录读取失败：{dirError}</div>
-        ) : directory.length === 0 ? (
-          <div className="management-status">当前没有已发布模板。</div>
-        ) : (
-          directory.map((item, i) => (
-            <div key={i} className="template-directory-item">
-              <div>
-                <strong>
-                  {item.product_type || '-'} / {item.product_domain || '-'}
-                </strong>
-                <br />
-                <span>{item.template || '-'}</span>
-              </div>
-              <span>正式目录</span>
-            </div>
-          ))
-        )}
-      </div>
-      <div className="candidate-section">
-        <h3>候选模板与发布审批</h3>
-        <div className="candidate-list" id="template-candidates">
-          {candidates.length === 0 ? (
-            <div className="management-status">当前没有候选模板。</div>
-          ) : (
-            candidates.map((c) => (
-              <CandidateCard key={c.candidate_id} candidate={c} onRefresh={refresh} />
-            ))
-          )}
+      <TemplateDirectory directory={directory} error={dirError} loading={loading} onRefresh={refresh} />
+      <details className="template-advanced">
+        <summary>新增产品模板与候选审批</summary>
+        <p className="management-note">更换现有产品模板可在上方直接操作。新产品类型的首次接入仍需完成规则配置、样例回归及审核。</p>
+        <div className="candidate-section">
+          <h3>候选模板与发布审批</h3>
+          <div className="candidate-list" id="template-candidates">
+            {candidateError ? <div role="alert">候选模板读取失败：{candidateError}</div>
+              : candidates.length === 0 ? <div className="management-status">当前没有候选模板。</div>
+              : candidates.map(c => <CandidateCard key={c.candidate_id} candidate={c} onRefresh={refresh} />)}
+          </div>
         </div>
-      </div>
-      <OnboardingBox onSubmitted={refresh} />
-    </div>
-  );
-}
-
-function ManagementStat({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="management-stat">
-      <strong>{value}</strong>
-      <span>{label}</span>
+        <OnboardingBox onSubmitted={refresh} />
+      </details>
     </div>
   );
 }

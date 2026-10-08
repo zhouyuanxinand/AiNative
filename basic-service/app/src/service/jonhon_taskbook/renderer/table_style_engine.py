@@ -77,7 +77,8 @@ def _ensure_child(parent, tag: str):
     return child
 
 
-def _set_run_font(run, font_name: str, size_half_points: int) -> None:
+def set_run_typography(run, font_name: str, size_half_points: int) -> None:
+    """Set a controlled family/size that source theme references cannot undo."""
     rpr = run.find(f"{_W}rPr")
     if rpr is None:
         rpr = OxmlElement("w:rPr")
@@ -86,6 +87,10 @@ def _set_run_font(run, font_name: str, size_half_points: int) -> None:
     if fonts is None:
         fonts = OxmlElement("w:rFonts")
         rpr.insert(0, fonts)
+    # A theme reference takes precedence over the corresponding explicit
+    # family in Word. Copied source themes must not override controlled fonts.
+    for key in ("asciiTheme", "hAnsiTheme", "eastAsiaTheme", "cstheme", "csTheme"):
+        fonts.attrib.pop(f"{_W}{key}", None)
     for key in ("ascii", "hAnsi", "eastAsia", "cs"):
         fonts.set(f"{{{W}}}{key}", font_name)
     for tag in ("sz", "szCs"):
@@ -94,6 +99,13 @@ def _set_run_font(run, font_name: str, size_half_points: int) -> None:
             node = OxmlElement(f"w:{tag}")
             rpr.append(node)
         node.set(f"{{{W}}}val", str(size_half_points))
+
+
+def _clear_run_italics(run) -> None:
+    rpr = run.find(f"{_W}rPr")
+    if rpr is None:
+        rpr = OxmlElement("w:rPr")
+        run.insert(0, rpr)
     # Customer templates may attach an italic paragraph/character style to
     # table cells.  Font name and size alone do not override that inheritance,
     # so the generated controlled tables must explicitly opt out of italics.
@@ -103,6 +115,13 @@ def _set_run_font(run, font_name: str, size_half_points: int) -> None:
             node = OxmlElement(f"w:{tag}")
             rpr.append(node)
         node.set(f"{{{W}}}val", "0")
+
+
+def normalize_imported_table_typography(table) -> None:
+    """Style imported text while retaining italic evidence for the B57 rule."""
+    for run in _table_xml(table).findall(f".//{_W}r"):
+        if run.find(f".//{_W}t") is not None:
+            set_run_typography(run, DEFAULT_FONT, DEFAULT_SIZE_HALF_POINTS)
 
 
 def _normalize_paragraph_spacing(paragraph) -> None:
@@ -164,6 +183,7 @@ def normalize_table_width(
     *,
     alignment: str = "left",
     indent: int = 0,
+    inline: bool = False,
 ) -> tuple[int, ...]:
     """Fit an existing table to one exact width without changing its ratios.
 
@@ -198,6 +218,11 @@ def normalize_table_width(
     tbl_pr = table_xml.find(f"{_W}tblPr")
     if tbl_pr is None:
         return fitted
+    if inline:
+        # Imported source tables can carry absolute floating positions. Once
+        # placed in a taskbook chapter they must paginate in the text flow.
+        for positioning in list(tbl_pr.findall(f"{_W}tblpPr")):
+            tbl_pr.remove(positioning)
     jc = tbl_pr.find(f"{_W}jc")
     if jc is None:
         jc = OxmlElement("w:jc")
@@ -224,11 +249,22 @@ def normalize_table_width(
     return fitted
 
 
-def _available_page_width(table_xml) -> int | None:
-    """Read usable width from the live template instead of a fixed chapter."""
+def available_page_width(table) -> int | None:
+    """Read the table's own section, whose properties follow its content."""
 
-    root = table_xml.getroottree().getroot()
-    for section in root.findall(f".//{_W}sectPr"):
+    table_xml = _table_xml(table)
+    sections = []
+    block = table_xml
+    while block is not None:
+        for sibling in block.itersiblings():
+            if sibling.tag == f"{_W}sectPr":
+                sections.append(sibling)
+            else:
+                sections.extend(sibling.findall(f".//{_W}sectPr"))
+        block = block.getparent()
+        if block is None or block.tag == f"{_W}body":
+            break
+    for section in sections:
         page = section.find(f"{_W}pgSz")
         margin = section.find(f"{_W}pgMar")
         if page is None or margin is None:
@@ -426,6 +462,21 @@ def normalize_table_borders(
                 _set_cell_border(cell, side, size)
 
 
+def normalize_table_header(table, *, header_rows: int = 1) -> None:
+    """Bold every header run, including runs that explicitly disable bold."""
+
+    table_xml = _table_xml(table)
+    for row in table_xml.findall(f"{_W}tr")[:max(0, int(header_rows))]:
+        for run in row.findall(f".//{_W}r"):
+            rpr = run.find(f"{_W}rPr")
+            if rpr is None:
+                rpr = OxmlElement("w:rPr")
+                run.insert(0, rpr)
+            for tag in ("b", "bCs"):
+                bold = _ensure_child(rpr, f"{_W}{tag}")
+                bold.set(f"{_W}val", "1")
+
+
 def apply_table_style(
     table,
     table_kind: str = "generic",
@@ -436,16 +487,15 @@ def apply_table_style(
 ) -> None:
     """Apply deterministic presentation styling to a python-docx table/XML.
 
-    ``widths`` is optional.  If omitted, a default is applied only when the
-    table has the matching logical column count; otherwise its template grid
-    is preserved.  This avoids making chapter- or product-specific assumptions.
+    ``widths`` is optional.  An existing template grid keeps its proportions;
+    defaults are used only for a missing grid with a matching column count.
     """
 
     table_xml = _table_xml(table)
     _set_fixed_layout(table_xml)
     cells = list(_iter_cells(table_xml))
     width_values = tuple(int(value) for value in widths) if widths else None
-    if width_values is None:
+    if width_values is None and table_xml.find(f"{_W}tblGrid") is None:
         default_widths = DEFAULT_WIDTHS.get(table_kind)
         rows = table_xml.findall(f"{_W}tr")
         first_row = rows[0] if rows else None
@@ -458,16 +508,19 @@ def apply_table_style(
         if default_widths and len(default_widths) == logical_columns:
             width_values = default_widths
     if width_values:
-        available = _dominant_dxa_table_width(table_xml) or _available_page_width(table_xml)
+        available = available_page_width(table_xml) or _dominant_dxa_table_width(table_xml)
         if available:
             width_values = fit_widths(width_values, available)
         _set_table_grid(table_xml, width_values)
         _set_row_widths(table_xml, width_values)
+    if width_values or table_kind in {"indicator", "failure"}:
         _normalize_row_flow(table_xml)
     if table_kind in {"indicator", "failure"}:
         normalize_table_borders(table_xml)
+        normalize_table_header(table_xml)
     for cell in cells:
         for paragraph in _iter_paragraphs(cell):
             _normalize_paragraph_spacing(paragraph)
         for run in _iter_runs(cell):
-            _set_run_font(run, font_name, size_half_points)
+            set_run_typography(run, font_name, size_half_points)
+            _clear_run_italics(run)

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,6 @@ from typing import Any
 import yaml
 from docx.document import Document as _Document
 from docx.text.paragraph import Paragraph
-
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_POLICY_PATH = ROOT / "config" / "template_variant_policy.yaml"
@@ -28,9 +28,18 @@ def load_template_variant_policy(
     if not isinstance(data.get("fields"), dict):
         raise ValueError(f"模板分支策略缺少 fields: {path}")
     groups = data.get("mutually_exclusive_groups")
-    if not isinstance(groups, list) or not groups:
+    explicitly_no_groups = data.get("no_mutually_exclusive_sections") is True
+    if not isinstance(groups, list) or (not groups and not explicitly_no_groups):
         raise ValueError(f"模板分支策略缺少 mutually_exclusive_groups: {path}")
+    if explicitly_no_groups and groups:
+        raise ValueError(f"模板分支策略同时声明无互斥分支和非空分支组: {path}")
     return data
+
+
+def budget_headings(doc: _Document) -> list[str]:
+    """Find actual budget chapters before accepting an explicit absence rule."""
+    return [paragraph.text for paragraph in doc.paragraphs
+            if _heading_level(paragraph) and "研制经费预算" in _compact(paragraph.text)]
 
 
 def allowed_organization_scopes(
@@ -58,7 +67,7 @@ def normalize_organization_scope(
     if normalized in by_label:
         return by_label[normalized]
     raise ValueError(
-        "产品归属范围无效，允许值为: "
+        f"模板分支策略 {Path(policy_path).name} 不支持产品归属范围 {normalized!r}，允许值为: "
         + "、".join(f"{key}（{label}）" for key, label in allowed.items())
     )
 
@@ -102,12 +111,22 @@ def _matching_headings(
         if not title:
             continue
         for variant_id, rule in variants.items():
+            exact_names = [
+                _compact(name).rstrip("：:")
+                for name in (rule or {}).get("heading_exact_names", [])
+                if _compact(name)
+            ]
             markers = [
                 _compact(marker)
                 for marker in (rule or {}).get("heading_markers", [])
                 if _compact(marker)
             ]
-            if markers and all(marker in title for marker in markers):
+            matched = (
+                title.rstrip("：:") in exact_names
+                if exact_names
+                else bool(markers) and all(marker in title for marker in markers)
+            )
+            if matched:
                 matches[str(variant_id)].append(paragraph)
     return matches
 
@@ -170,6 +189,14 @@ def apply_template_variant_policy(
         "passed": True,
         "errors": [],
     }
+
+    if policy.get("no_mutually_exclusive_sections") is True:
+        audit["no_mutually_exclusive_sections"] = True
+        audit["policy_sha256"] = hashlib.sha256(Path(policy_path).read_bytes()).hexdigest()
+        audit["budget_headings"] = budget_headings(doc)
+        if audit["budget_headings"]:
+            audit["passed"] = False
+            audit["errors"].append("无预算分支策略与实际模板不符：仍存在研制经费预算标题")
 
     for group in policy.get("mutually_exclusive_groups", []):
         group_id = str(group.get("id") or "").strip()

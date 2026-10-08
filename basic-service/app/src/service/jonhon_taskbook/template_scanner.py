@@ -18,7 +18,7 @@ _DISPLAY_NUMBER = re.compile(
     # Display numbering is presentation only.  Support Arabic chapter paths,
     # Chinese ``第…章`` and common Chinese list prefixes such as ``一、`` or
     # ``（一）``; none of these values become a slot identity.
-    r"^\s*(?:第\s*[一二三四五六七八九十百零〇]+\s*章\s*|[（(]\s*[一二三四五六七八九十百零〇]+\s*[）)]\s*|[一二三四五六七八九十百零〇]+\s*[、.．]|\d+(?:\.\d+)*(?:\s+|[、)）]|[.．](?!\d)))"
+    r"^\s*(?:第\s*[一二三四五六七八九十百零〇]+\s*章\s*|[（(]\s*[一二三四五六七八九十百零〇]+\s*[）)]\s*|[一二三四五六七八九十百零〇]+\s*[、.．]|\d+(?:\.\d+)+(?=[\u4e00-\u9fff])|\d+(?:\.\d+)*(?:\s+|[、)）]|[.．](?!\d)))"
 )
 _HEADING_STYLE = re.compile(r"(?:Heading|标题)\s*([1-9])", re.I)
 

@@ -1,0 +1,56 @@
+.runtime-logs-view{min-width:0;color:var(--color-text-primary)}
+.runtime-log-toolbar{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--space-6);margin-bottom:var(--space-4)}
+.runtime-log-intro{max-width:72ch;font-size:var(--font-size-control);line-height:1.65}
+.runtime-log-meta,.runtime-log-source{margin-top:var(--space-2);color:var(--color-text-secondary);font-size:var(--font-size-xs);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.runtime-log-actions{display:flex;align-items:center;justify-content:flex-end;gap:var(--space-3);flex-wrap:wrap}
+.runtime-auto-refresh{position:relative;display:inline-flex;align-items:center;gap:var(--space-2);min-height:40px;color:var(--color-text-secondary);font-size:var(--font-size-sm);white-space:nowrap;cursor:pointer}
+.runtime-auto-refresh input{position:absolute;z-index:1;top:50%;left:0;width:34px;height:20px;opacity:0;transform:translateY(-50%);cursor:pointer}
+.runtime-auto-refresh>span{position:relative;width:34px;height:20px;flex:0 0 34px;border-radius:var(--radius-pill);background:var(--color-border-strong);transition:background var(--motion-duration-fast)}
+.runtime-auto-refresh>span::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:var(--color-bg-surface);box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform var(--motion-duration-fast)}
+.runtime-auto-refresh input:checked+span{background:var(--color-action)}
+.runtime-auto-refresh input:checked+span::after{transform:translateX(14px)}
+.runtime-auto-refresh input:focus-visible+span{outline:2px solid var(--color-border-focus);outline-offset:3px}
+.runtime-refresh-button{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-2);min-height:40px;padding:8px 14px;border:1px solid var(--color-border-strong);border-radius:var(--radius-control);background:var(--color-bg-surface);font-size:var(--font-size-sm);font-weight:500;white-space:nowrap;transition:background var(--motion-duration-fast),border-color var(--motion-duration-fast)}
+.runtime-refresh-button:hover:not(:disabled){border-color:var(--color-border-hover);background:var(--color-bg-hover)}
+.runtime-refresh-button:focus-visible,.runtime-log-error button:focus-visible,.runtime-log-stream:focus-visible{outline:2px solid var(--color-border-focus);outline-offset:3px}
+.runtime-refresh-button:disabled{cursor:wait;color:var(--color-text-secondary)}
+.runtime-refresh-button svg{width:16px;height:16px}
+.runtime-refresh-button svg.spinning{animation:runtime-log-spin .8s linear infinite}
+@keyframes runtime-log-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.runtime-refresh-button svg.spinning{animation:none}}
+.runtime-log-error{display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);margin-bottom:var(--space-4);padding:12px 14px;border:1px solid var(--color-error-border);border-radius:var(--radius-control);background:var(--color-error-bg);color:var(--color-error)}
+.runtime-log-error div{display:grid;gap:2px;min-width:0}
+.runtime-log-error strong{font-size:var(--font-size-sm)}
+.runtime-log-error span{font-size:var(--font-size-xs);overflow-wrap:anywhere}
+.runtime-log-error button{min-height:34px;padding:6px 10px;border-radius:var(--radius-sm);background:var(--color-bg-surface);color:var(--color-error);font-size:var(--font-size-xs);font-weight:600;white-space:nowrap}
+.runtime-log-stream{height:min(650px,calc(100vh - 250px));min-height:360px;border:1px solid var(--color-border);border-radius:var(--radius-card);background:#19191d;color:#e8e8ed;overflow:auto;scrollbar-color:#56565e #242429;scrollbar-width:thin}
+.runtime-log-stream::-webkit-scrollbar{width:10px;height:10px}.runtime-log-stream::-webkit-scrollbar-track{background:#242429}.runtime-log-stream::-webkit-scrollbar-thumb{border:2px solid #242429;border-radius:10px;background:#56565e}
+.runtime-log-columns,.runtime-log-row{display:grid;grid-template-columns:170px 76px minmax(0,1fr);gap:var(--space-3)}
+.runtime-log-columns{position:sticky;z-index:2;top:0;padding:9px 14px;border-bottom:1px solid #36363c;background:#242429;color:#aaaab2;font:600 11px/1.4 var(--font-family-sans);text-transform:uppercase;letter-spacing:.04em}
+.runtime-log-stream ol{list-style:none;margin:0;padding:0}
+.runtime-log-row{padding:12px 14px;border-bottom:1px solid #303036;font:12px/1.65 var(--font-family-mono)}
+.runtime-log-row:last-child{border-bottom:0}
+.runtime-log-row:hover{background:#202025}
+.runtime-log-row>time{color:#aaaab2;font-variant-numeric:tabular-nums;white-space:nowrap}
+.runtime-log-level{align-self:start;justify-self:start;padding:1px 7px;border-radius:5px;font:700 10px/18px var(--font-family-sans);letter-spacing:.03em}
+.runtime-log-level.info{background:#173b5c;color:#9bd4ff}.runtime-log-level.warning{background:#51381b;color:#ffd28b}.runtime-log-level.error{background:#54242a;color:#ffb3bc}.runtime-log-level.debug{background:#34343a;color:#c5c5cb}
+.runtime-log-content{min-width:0}.runtime-log-origin{display:flex;align-items:baseline;gap:var(--space-3);min-width:0;margin-bottom:3px}.runtime-log-origin strong{color:#f5f5f7;font-family:var(--font-family-sans);font-size:12px;font-weight:600}.runtime-log-origin span{overflow:hidden;color:#9b9ba3;font-size:10px;text-overflow:ellipsis;white-space:nowrap}
+.runtime-log-content>p{color:#dedee3;white-space:pre-wrap;overflow-wrap:anywhere}
+.runtime-log-exception{max-height:180px;margin-top:var(--space-2);padding:10px;border-radius:var(--radius-sm);background:#291d20;color:#ffc0c7;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.6 var(--font-family-mono)}
+.runtime-log-context{display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap;margin-top:var(--space-2);font-size:10px}.runtime-log-context div{display:flex;gap:4px;min-width:0}.runtime-log-context dt{color:#85858d}.runtime-log-context dd{max-width:50ch;margin:0;color:#bcbcc4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.runtime-log-skeleton{height:min(650px,calc(100vh - 250px));min-height:360px;padding:18px;border:1px solid var(--color-border);border-radius:var(--radius-card);background:var(--color-bg-subtle);overflow:hidden}
+.runtime-log-skeleton span{display:block;height:44px;margin-bottom:12px;border-radius:var(--radius-sm);background:linear-gradient(90deg,#e2e2e7 20%,#f4f4f6 50%,#e2e2e7 80%);background-size:240% 100%;animation:runtime-log-loading 1.2s ease-in-out infinite}
+.runtime-log-skeleton span:nth-child(even){width:88%}
+@keyframes runtime-log-loading{to{background-position:-240% 0}}
+@media(prefers-reduced-motion:reduce){.runtime-log-skeleton span{animation:none}}
+.runtime-log-empty{min-height:360px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:var(--space-8);border:1px solid var(--color-border);border-radius:var(--radius-card);text-align:center}
+.runtime-log-empty svg{width:42px;height:42px;margin-bottom:var(--space-4);padding:9px;border-radius:12px;background:var(--color-action-subtle);color:var(--color-action)}
+.runtime-log-empty strong{font-size:var(--font-size-control);font-weight:650}.runtime-log-empty span{max-width:52ch;margin-top:var(--space-2);color:var(--color-text-secondary);font-size:var(--font-size-sm)}
+.runtime-log-source{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:760px){
+  .runtime-log-toolbar{flex-direction:column;gap:var(--space-3)}.runtime-log-actions{width:100%;justify-content:space-between}.runtime-refresh-button{flex:0 0 auto}
+  .runtime-log-stream,.runtime-log-skeleton{height:calc(100vh - 260px);min-height:340px}
+  .runtime-log-columns{display:none}.runtime-log-row{grid-template-columns:minmax(0,1fr);gap:6px;padding:12px}.runtime-log-row>time{grid-row:1;grid-column:1;font-size:10px}.runtime-log-level{grid-row:1;grid-column:1;justify-self:end}.runtime-log-content{grid-row:2;grid-column:1}.runtime-log-origin{align-items:flex-start;flex-direction:column;gap:2px}.runtime-log-origin span{max-width:100%}
+  .runtime-log-error{align-items:flex-start}.runtime-log-error button{flex:0 0 auto}
+}
+@media(max-width:420px){.runtime-log-actions{align-items:stretch;flex-direction:column}.runtime-auto-refresh{justify-content:flex-start}.runtime-refresh-button{width:100%}}

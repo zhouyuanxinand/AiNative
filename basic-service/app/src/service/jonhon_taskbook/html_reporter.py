@@ -9,6 +9,7 @@ import json, zipfile, re
 from pathlib import Path
 from lxml import etree
 from datetime import datetime
+from html import escape
 
 W  = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _W = f"{{{W}}}"
@@ -139,7 +140,7 @@ def _render_gate_panel(gate: dict) -> str:
             f'border:1px solid {color};margin-right:6px">{cat}</span>'
         )
         for item in items:
-            rows += f'<tr><td style="padding:6px 10px">{badge}</td><td style="padding:6px 10px;font-size:13px">{item}</td></tr>\n'
+            rows += f'<tr><td style="padding:6px 10px">{badge}</td><td style="padding:6px 10px;font-size:13px">{escape(str(item))}</td></tr>\n'
     warn_rows = "".join(
         f'<li style="font-size:13px;color:#595959;padding:2px 0">⚠ {w}</li>'
         for w in gate["warnings"]
@@ -158,13 +159,82 @@ def _render_gate_panel(gate: dict) -> str:
     )
 
 
+def _combined_gate_report(docx_path: Path) -> dict:
+    """The report must reflect all delivery checks, not only coverage QA."""
+    gate = _load_qa_gate_report(docx_path)
+    for suffix, label, issue_key in (
+        (".configured_qa_gate.json", "配置检查", "block_reasons"),
+        (".semantic_integrity_gate.json", "语义位置", "violations"),
+        (".business_value_audit.json", "指标事实与数值", "blockers"),
+        (".delivery_gate.json", "正式交付", "blockers"),
+    ):
+        data = _load_ledger(str(docx_path.with_suffix(suffix)))
+        if not data:
+            continue
+        issues = data.get(issue_key) or []
+        passed = data.get("passed", not data.get("blocked", False))
+        if passed is False or issues:
+            gate["passed"] = False
+            messages = []
+            for issue in issues:
+                if isinstance(issue, dict):
+                    message = "；".join(str(issue[key]) for key in ("code", "location", "label", "message", "text") if issue.get(key))
+                    messages.append(message or json.dumps(issue, ensure_ascii=False))
+                else:
+                    messages.append(str(issue))
+            gate["categories"][label] = messages or [f"{label}未通过，请查看任务检查记录"]
+    return gate
+
+
+def _spec_applicability_panel(docx_path: Path) -> str:
+    audit = _load_ledger(str(docx_path.with_suffix(".indicator_audit.json"))) or {}
+    items = [item for item in audit.get("comparison_decisions", []) if item.get("status") == "SPEC_MODEL_NOT_APPLICABLE"]
+    if not items:
+        return ""
+    rows = "".join(
+        f"<li>{escape(str(item.get('indicator_name', '')))}：{escape(str(item.get('reason') or '规范不适用于本次产品'))}仅采用用户要求。</li>"
+        for item in items
+    )
+    return f'<div class="section"><h2>产品规范适用性</h2><ul>{rows}</ul></div>'
+
+
+def _review_reference_panel(ledger: dict | None) -> str:
+    references = (ledger or {}).get("review_only_sources", [])
+    if not references:
+        return ""
+    rows = []
+    for item in references:
+        source = escape(str(item.get("source_file") or ledger.get("source_file", "")))
+        kind = {"table": "原始数据表", "image": "历史测试图片"}.get(item.get("block_type"), "测试资料")
+        position = item.get("source_body_index", -1)
+        location = f"正文对象第 {position + 1} 项" if isinstance(position, int) and position >= 0 else "位置未记录"
+        ids = escape(", ".join(str(sid) for sid in item.get("semantic_source_ids", [])))
+        raw = escape(str(item.get("raw_text", "")))
+        digest = escape(str(item.get("artifact_hash", "")))
+        rows.append(
+            '<details class="review-reference">'
+            f'<summary>{escape(str(item.get("block_id", "")))} · {kind} · '
+            f'{escape(str(item.get("source_section", "")))}</summary>'
+            f'<p>来源文件：{source}</p><p>{location}；来源 ID：{ids}</p>'
+            f'<p>{escape(str(item.get("summary", "")))}</p>'
+            + (f'<p>图片 SHA-256：{digest}</p>' if digest else '')
+            + (f'<pre>{raw}</pre>' if raw else '')
+            + '</details>'
+        )
+    return (
+        '<div class="section"><h2>历史测试资料（仅供审阅）</h2>'
+        f'<p>共 {len(references)} 项，不计入正文覆盖率。保留来源位置及原始证据，供审阅时对照。</p>'
+        + ''.join(rows) + '</div>'
+    )
+
+
 def generate_report(docx_path: str, output_path: str | None = None) -> str:
     docx_path = Path(docx_path)
     if output_path is None:
         output_path = docx_path.with_suffix(".report.html")
 
     qa = _qa_scan(str(docx_path))
-    gate = _load_qa_gate_report(str(docx_path))
+    gate = _combined_gate_report(docx_path)
     ledger_path = docx_path.with_suffix(".coverage_ledger.json")
     if not ledger_path.exists():
         ledger_path = docx_path.parent / "coverage_ledger.json"
@@ -215,8 +285,7 @@ def generate_report(docx_path: str, output_path: str | None = None) -> str:
         qa_color  = "#ff4d4f"
         qa_label  = f"❌ {total_issues} 项"
     else:
-        qa_color = "#52c41a" if qa["qa_passed"] else "#ff4d4f"
-        qa_label = "✅ 通过" if qa["qa_passed"] else "❌ 未通过"
+        qa_color, qa_label = "#8c8c8c", "检查未完成"
 
     red_warn = f'<div class="warn-box">⚠️ 残余红字: {qa["red_count"]} 处</div>' if qa["red_count"] else ""
     hl_warn  = f'<div class="warn-box">⚠️ 残余高亮: {qa["hl_count"]} 处</div>' if qa["hl_count"] else ""
@@ -233,7 +302,7 @@ def generate_report(docx_path: str, output_path: str | None = None) -> str:
         "</div>"
     ) if image_warnings else ""
 
-    gate_panel = _render_gate_panel(gate)
+    gate_panel = _render_gate_panel(gate) + _spec_applicability_panel(docx_path)
     now   = datetime.now().strftime("%Y-%m-%d %H:%M")
     fname = docx_path.name
 
@@ -270,6 +339,9 @@ tr.warn td:first-child{{color:#faad14}}
 .warn-box{{background:#fff2f0;border:1px solid #ffccc7;border-radius:6px;
            padding:8px 14px;margin-bottom:8px;font-size:13px}}
 ul{{padding-left:18px;line-height:1.7}}
+.review-reference{{margin-top:12px;border-top:1px solid #eee;padding-top:10px;overflow-wrap:anywhere}}
+.review-reference summary{{cursor:pointer;font-size:13px;font-weight:600}}
+.review-reference p,.review-reference pre{{margin-top:8px;font-size:12px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}}
 </style>
 </head>
 <body>
@@ -310,6 +382,8 @@ ul{{padding-left:18px;line-height:1.7}}
   </div>
 
   {image_warning_section}
+
+  {_review_reference_panel(ledger)}
 
   <div class="section">
     <h2>📊 输入覆盖账本（前60条）</h2>

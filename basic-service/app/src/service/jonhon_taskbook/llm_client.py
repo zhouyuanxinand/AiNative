@@ -4,15 +4,16 @@
 支持神州问学、DashScope、Azure OpenAI 和 OpenAI JSON 协议兼容接口。大模型仅由上层用于
 语义分类、路由和模板标题树操作，不在此模块生成业务正文。
 
-网页提交的凭据只保存在当前 Python 进程内存中；本模块不会把凭据写入
-源码、YAML、日志或输出文档。
+服务设置的凭据单独保存在运行目录的 SQLite 数据库；旧临时配置接口保留内存覆盖。
+凭据不写入源码、YAML、日志或输出文档。
 """
 from __future__ import annotations
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 import json
+import logging
 import os
 import re
 import threading
@@ -22,6 +23,10 @@ from urllib.parse import urlsplit, urlunsplit
 from pathlib import Path
 
 import httpx
+
+from .service_credentials import FIELDS as CREDENTIAL_FIELDS, get_credential_store
+
+logger = logging.getLogger(__name__)
 
 
 # Patch ThreadPoolExecutor so that contextvars (specifically the model
@@ -47,6 +52,7 @@ _SHARED_ENV_FILE_KEY = "JTB_SHARED_ENV_FILE"
 
 _LOCAL_ENV_KEYS = {
     _SHARED_ENV_FILE_KEY,
+    "JTB_SERVICE_CREDENTIAL_PRESETS",
     "JTB_LLM_PROVIDER",
     "JTB_LLM_API_URL",
     "JTB_LLM_API_KEY",
@@ -117,6 +123,10 @@ _DEFAULT_DASHSCOPE_ENDPOINT = (
 )
 _DEFAULT_DASHSCOPE_MODEL = "qwen-plus"
 _DEFAULT_MODELS_PATH = "opi-maas/v1/chat/models"
+# Reasoning tokens share the completion budget. Reserve enough room for both
+# semantic planning and its structured result, with one larger retry if needed.
+DEFAULT_MAX_TOKENS = 32768
+DEFAULT_JSON_MAX_TOKENS = 16384
 
 
 def _read_env_file(env_path: Path) -> dict[str, str]:
@@ -205,14 +215,30 @@ _RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 class _LLMHTTPError(RuntimeError):
     """携带 HTTP 状态码的调用异常，供重试层区分可重试与不可重试错误。"""
 
-    def __init__(self, message: str, status_code: int | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        *,
+        error_type: str = "",
+    ) -> None:
         super().__init__(message)
+        self.status_code = status_code
+        self.error_type = error_type or _http_error_type(status_code)
+
+
+class ModelCatalogUnavailable(RuntimeError):
+    """Safe catalogue failure for the UI; never include gateway response text."""
+
+    def __init__(self, code: str, message: str, *, status_code: int = 503) -> None:
+        super().__init__(message)
+        self.code = code
         self.status_code = status_code
 
 
 @dataclass(frozen=True)
 class LLMConfig:
-    """单个 LLM 连接配置。api_key 只允许驻留在内存。"""
+    """单个 LLM 连接配置；公开状态不包含 api_key。"""
 
     provider: str
     api_key: str
@@ -226,7 +252,7 @@ class LLMConfig:
     tenant_id_header: str = "Tenant-Id"
     api_version: str = _DEFAULT_API_VERSION
     timeout_seconds: float = 90.0
-    max_tokens: int = 8192
+    max_tokens: int = DEFAULT_MAX_TOKENS
     source: str = "runtime"
 
 
@@ -276,7 +302,7 @@ def make_config(
     tenant_id_header: str = "Tenant-Id",
     api_version: str = _DEFAULT_API_VERSION,
     timeout_seconds: float = 90.0,
-    max_tokens: int = 8192,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
     source: str = "runtime",
 ) -> LLMConfig:
     provider = (provider or "").strip().lower()
@@ -339,7 +365,7 @@ def _smartvision_config_from_environment() -> LLMConfig | None:
         model=os.getenv("MODEL_NAME", _DEFAULT_MAAS_MODEL),
         model_id=os.getenv("MODEL_ID", ""),
         timeout_seconds=float(os.getenv("AI_TIMEOUT", "600")),
-        max_tokens=int(os.getenv("MODEL_MAX_TOKENS", "8192")),
+        max_tokens=int(os.getenv("MODEL_MAX_TOKENS", str(DEFAULT_MAX_TOKENS))),
         source="environment",
     )
 
@@ -368,7 +394,7 @@ def _jtb_config_from_environment() -> LLMConfig | None:
         model=os.getenv("JTB_LLM_MODEL", default_model),
         model_id=os.getenv("JTB_LLM_MODEL_ID", default_model_id),
         timeout_seconds=float(os.getenv("JTB_LLM_TIMEOUT_SECONDS", "90")),
-        max_tokens=int(os.getenv("JTB_LLM_MAX_TOKENS", "8192")),
+        max_tokens=int(os.getenv("JTB_LLM_MAX_TOKENS", str(DEFAULT_MAX_TOKENS))),
         source="environment",
     )
 
@@ -391,7 +417,7 @@ def _azure_config_from_environment() -> LLMConfig | None:
             os.getenv("AZURE_API_VERSION", _DEFAULT_API_VERSION),
         ),
         timeout_seconds=float(os.getenv("JTB_LLM_TIMEOUT_SECONDS", "90")),
-        max_tokens=int(os.getenv("JTB_LLM_MAX_TOKENS", "8192")),
+        max_tokens=int(os.getenv("JTB_LLM_MAX_TOKENS", str(DEFAULT_MAX_TOKENS))),
         source="environment",
     )
 
@@ -424,7 +450,7 @@ def _openai_config_from_environment() -> LLMConfig | None:
         endpoint=endpoint,
         model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         timeout_seconds=float(os.getenv("JTB_LLM_TIMEOUT_SECONDS", "90")),
-        max_tokens=int(os.getenv("JTB_LLM_MAX_TOKENS", "8192")),
+        max_tokens=int(os.getenv("JTB_LLM_MAX_TOKENS", str(DEFAULT_MAX_TOKENS))),
         source="environment",
     )
 
@@ -449,11 +475,71 @@ def _config_from_environment() -> LLMConfig | None:
     return configs[0] if configs else None
 
 
+def get_service_credential_defaults() -> dict[str, dict[str, str]]:
+    """Deployment values for the dedicated settings endpoint, never public status."""
+    defaults = {
+        "model": {field: os.getenv(f"MODEL_{field.upper()}", "") for field in CREDENTIAL_FIELDS["model"]},
+    }
+    for loader in (_smartvision_config_from_environment, _jtb_config_from_environment):
+        try:
+            config = loader()
+        except (TypeError, ValueError):
+            continue
+        if config and _provider_kind(config) == "smartvision":
+            values = asdict(config)
+            values["base_url"] = config.endpoint
+            if config.endpoint.endswith("/opi-maas/v1/chat/completions"):
+                values["base_url"] = config.endpoint.removesuffix("opi-maas/v1/chat/completions")
+            defaults["model"] = {field: str(values[field]) for field in CREDENTIAL_FIELDS["model"]}
+            break
+    return defaults
+
+
+def _service_override_config(values: dict[str, str]) -> LLMConfig:
+    parameters = {
+        "provider": "smartvision", "api_key": values["api_key"],
+        "endpoint": _completion_url(values["base_url"], "opi-maas/v1/chat/completions"),
+        "app_id": values["app_id"], "tenant_id": values["tenant_id"],
+        "model": os.getenv("MODEL_NAME", _DEFAULT_MAAS_MODEL), "source": "settings",
+    }
+    # Retain deployment tuning, model IDs and header names when changing credentials.
+    for loader in (_smartvision_config_from_environment, _jtb_config_from_environment):
+        try:
+            config = loader()
+        except (TypeError, ValueError):
+            continue
+        if config and _provider_kind(config) == "smartvision":
+            parameters = {**asdict(config), **parameters, "model": config.model}
+            break
+    return replace(make_config(**parameters), api_key=values["api_key"])
+
+
+def validate_service_credentials(payload: dict) -> None:
+    if payload["model"] is not None:
+        _service_override_config(payload["model"])
+
+
+def _effective_configs() -> list[LLMConfig]:
+    saved = get_credential_store().read() or {}
+    override = _service_override_config(saved["model"]) if saved.get("model") else None
+    deployment = []
+    for loader in (_smartvision_config_from_environment, _jtb_config_from_environment,
+                   _azure_config_from_environment, _dashscope_config_from_environment, _openai_config_from_environment):
+        try:
+            config = loader()
+        except (TypeError, ValueError):
+            continue
+        if config and not (override and _provider_kind(config) == "smartvision"):
+            deployment.append(config)
+    return ([override] if override else []) + deployment
+
+
 def _base_config() -> LLMConfig | None:
     with _LOCK:
         config = _runtime_config
     if config is None:
-        config = _config_from_environment()
+        configs = _effective_configs()
+        config = configs[0] if configs else None
     return config
 
 
@@ -486,7 +572,7 @@ def _resolve_model_config(selection: ModelSelection | None) -> LLMConfig:
     candidates: list[LLMConfig] = []
     if base is not None:
         candidates.append(base)
-    candidates.extend(_environment_configs())
+    candidates.extend(_effective_configs())
     selected_config = next(
         (item for item in candidates if _provider_kind(item) == provider),
         None,
@@ -538,6 +624,8 @@ def _safe_status(config: LLMConfig | None) -> dict[str, Any]:
             "app_id_configured": False,
             "tenant_id_configured": False,
             "model_id_configured": False,
+            "max_tokens": None,
+            "json_initial_tokens": None,
         }
     return {
         "configured": True,
@@ -548,6 +636,8 @@ def _safe_status(config: LLMConfig | None) -> dict[str, Any]:
         "app_id_configured": bool(config.app_id),
         "tenant_id_configured": bool(config.tenant_id),
         "model_id_configured": bool(config.model_id),
+        "max_tokens": config.max_tokens,
+        "json_initial_tokens": min(DEFAULT_JSON_MAX_TOKENS, config.max_tokens),
     }
 
 
@@ -557,7 +647,7 @@ def get_status() -> dict[str, Any]:
         config = _runtime_config
     if config is None:
         try:
-            config = _config_from_environment()
+            config = _base_config()
         except (TypeError, ValueError):
             config = None
     return _safe_status(config)
@@ -582,8 +672,8 @@ def get_model_status(
         }
 
 
-def _catalog_url(config: LLMConfig) -> str:
-    explicit = os.getenv("JTB_LLM_MODELS_API_URL", "").strip()
+def _catalog_url(config: LLMConfig, *, use_override: bool = True) -> str:
+    explicit = os.getenv("JTB_LLM_MODELS_API_URL", "").strip() if use_override else ""
     if explicit:
         parts = urlsplit(explicit)
         if parts.scheme not in {"http", "https"} or not parts.netloc:
@@ -643,14 +733,14 @@ def _parse_catalog_response(payload: Any) -> list[dict[str, Any]]:
 def list_available_models() -> list[dict[str, Any]]:
     """返回模型目录。
 
-    神州问学：只有目录接口成功返回模型才展示，请求失败则不展示。
-    DashScope / Azure / OpenAI 兼容接口：展示已配置的模型。
+    神州问学：只有目录接口成功返回模型才展示；请求失败时上报原因。
+    其他接口仅展示已配置的模型；独立 DashScope qwen-plus 不再提供。
     """
     configured: list[LLMConfig] = []
     base = _base_config()
     if base is not None:
         configured.append(base)
-    configured.extend(_environment_configs())
+    configured.extend(_effective_configs())
 
     vendor_labels = {
         "smartvision": "神州问学",
@@ -659,6 +749,7 @@ def list_available_models() -> list[dict[str, Any]]:
         "openai_compatible": "OpenAI 兼容接口",
     }
     models: list[dict[str, Any]] = []
+    catalog_error: ModelCatalogUnavailable | None = None
 
     # 神州问学：只有目录接口成功返回模型才展示。
     smartvision = next(
@@ -666,6 +757,8 @@ def list_available_models() -> list[dict[str, Any]]:
         None,
     )
     if smartvision is not None:
+        started = time.perf_counter()
+        gateway_status: int | None = None
         try:
             response = httpx.get(
                 _catalog_url(smartvision),
@@ -673,16 +766,67 @@ def list_available_models() -> list[dict[str, Any]]:
                 timeout=httpx.Timeout(7.0, connect=3.0),
                 follow_redirects=False,
             )
+            gateway_status = response.status_code
             response.raise_for_status()
-            models.extend(_parse_catalog_response(response.json()))
-        except (httpx.HTTPError, ValueError, json.JSONDecodeError):
-            # 目录服务不可达时不展示神州问学模型。
-            pass
+            payload = response.json()
+            items = payload if isinstance(payload, list) else payload.get("data") if isinstance(payload, dict) else None
+            if isinstance(items, dict):
+                items = items.get("list")
+            if isinstance(payload, dict) and payload.get("success") is False:
+                catalog_error = ModelCatalogUnavailable(
+                    "request_rejected", "模型目录服务拒绝请求，请检查当前凭证权限。", status_code=502,
+                )
+            elif not isinstance(items, list):
+                catalog_error = ModelCatalogUnavailable(
+                    "invalid_response", "模型目录响应格式不正确，请检查接口兼容性。", status_code=502,
+                )
+            else:
+                parsed = _parse_catalog_response(payload)
+                if parsed:
+                    models.extend(parsed)
+                else:
+                    catalog_error = ModelCatalogUnavailable(
+                        "empty_models", "当前凭证未返回可用模型，请检查模型授权。", status_code=502,
+                    )
+        except httpx.HTTPStatusError as exc:
+            error_type = _http_error_type(exc.response.status_code)
+            message = (
+                "模型目录鉴权失败，请检查服务凭证和访问权限。"
+                if error_type == "authentication_failed" else
+                "模型目录服务拒绝请求，请检查服务地址及访问权限。"
+            )
+            catalog_error = ModelCatalogUnavailable(error_type, message, status_code=502)
+        except httpx.TimeoutException:
+            catalog_error = ModelCatalogUnavailable(
+                "timeout", "模型目录连接超时，请检查网络或稍后重试。",
+            )
+        except httpx.NetworkError:
+            catalog_error = ModelCatalogUnavailable(
+                "connection_failed", "无法连接模型目录服务，请检查服务器网络。",
+            )
+        except httpx.HTTPError:
+            catalog_error = ModelCatalogUnavailable(
+                "request_failed", "模型目录请求失败，请检查服务连接。",
+            )
+        except (ValueError, TypeError):
+            catalog_error = ModelCatalogUnavailable(
+                "invalid_response", "模型目录响应格式不正确，请检查接口兼容性。", status_code=502,
+            )
+        _log_llm_event(
+            "failed" if catalog_error else "completed",
+            provider="smartvision", model=smartvision.model, operation="model_catalog",
+            attempt=1, max_attempts=1,
+            duration_ms=(time.perf_counter() - started) * 1000,
+            status_code=gateway_status,
+            error_type=catalog_error.code if catalog_error else "",
+        )
 
     # 非神州问学的已配置模型直接展示。
     for config in configured:
         provider = _provider_kind(config)
         if provider == "smartvision":
+            continue
+        if provider == "dashscope" and config.model.strip().lower() == "qwen-plus":
             continue
         models.append(
             {
@@ -691,19 +835,6 @@ def list_available_models() -> list[dict[str, Any]]:
                 "id": config.model_id,
                 "provider": provider,
                 "configured": True,
-            }
-        )
-
-    # DashScope 未配置时展示默认值。
-    configured_providers = {_provider_kind(item) for item in configured}
-    if "dashscope" not in configured_providers:
-        models.append(
-            {
-                "model": os.getenv("AI_MODEL", _DEFAULT_DASHSCOPE_MODEL),
-                "vendor": "阿里云 DashScope",
-                "id": "",
-                "provider": "dashscope",
-                "configured": False,
             }
         )
 
@@ -723,6 +854,8 @@ def list_available_models() -> list[dict[str, Any]]:
             str(item.get("model")),
         )
     )
+    if not unique and catalog_error is not None:
+        raise catalog_error
     return unique
 
 
@@ -754,8 +887,172 @@ def _redact(value: object, config: LLMConfig) -> str:
         text = text.replace(config.api_key, "[REDACTED]")
     if config.app_id:
         text = text.replace(config.app_id, "[REDACTED]")
+    if config.tenant_id:
+        text = text.replace(config.tenant_id, "[REDACTED]")
     text = re.sub(r"\bsk_[A-Za-z0-9_-]{8,}\b", "[REDACTED]", text)
     return text[:800]
+
+
+def _diagnostic_text(value: object, *, max_length: int = 200) -> str:
+    """Return one bounded log field without multiline/control characters."""
+
+    text = re.sub(r"[\x00-\x1f\x7f]+", " ", str(value or "")).strip()
+    return text[:max_length]
+
+
+def _diagnostic_count(value: object) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def _http_error_type(status_code: int | None) -> str:
+    if status_code in {401, 403}:
+        return "authentication_failed"
+    if status_code == 404:
+        return "not_found"
+    if status_code == 429:
+        return "rate_limited"
+    if status_code is not None and status_code >= 500:
+        return "service_unavailable"
+    if status_code is not None and 300 <= status_code < 400:
+        return "redirect"
+    if status_code is not None and 400 <= status_code < 500:
+        return "request_rejected"
+    if status_code is not None:
+        return "invalid_response"
+    return "http_error"
+
+
+def _completion_metadata(
+    payload: object,
+    *,
+    status_code: int | None = None,
+) -> dict[str, Any]:
+    """Extract bounded response diagnostics without retaining response content."""
+
+    finish_reason = ""
+    content_chars = 0
+    usage: object = {}
+    if isinstance(payload, dict):
+        choices = payload.get("choices")
+        if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+            finish_reason = _diagnostic_text(
+                choices[0].get("finish_reason"), max_length=80
+            )
+        try:
+            content_chars = len(_message_content(payload))
+        except (KeyError, RuntimeError, TypeError, ValueError):
+            content_chars = 0
+        usage = payload.get("usage") or {}
+    if not isinstance(usage, dict):
+        usage = {}
+    details = usage.get("completion_tokens_details") or {}
+    if not isinstance(details, dict):
+        details = {}
+    return {
+        "status_code": status_code,
+        "finish_reason": finish_reason,
+        "completion_tokens": _diagnostic_count(usage.get("completion_tokens")),
+        "reasoning_tokens": _diagnostic_count(details.get("reasoning_tokens")),
+        "content_chars": content_chars,
+    }
+
+
+def _attach_diagnostics(
+    exc: Exception,
+    *,
+    error_type: str,
+    metadata: dict[str, Any] | None = None,
+) -> Exception:
+    """Attach only safe classification data used by the retry-boundary logger."""
+
+    exc.error_type = error_type  # type: ignore[attr-defined]
+    if metadata is not None:
+        exc.llm_diagnostics = metadata  # type: ignore[attr-defined]
+        exc.status_code = metadata.get("status_code")  # type: ignore[attr-defined]
+    return exc
+
+
+def _error_type(exc: Exception) -> str:
+    explicit = _diagnostic_text(getattr(exc, "error_type", ""), max_length=80)
+    if explicit:
+        return explicit
+    if isinstance(exc, httpx.TimeoutException):
+        return "timeout"
+    if isinstance(exc, httpx.NetworkError):
+        return "connection_failed"
+    name = type(exc).__name__
+    known = {
+        "AuthenticationError": "authentication_failed",
+        "PermissionDeniedError": "authentication_failed",
+        "BadRequestError": "request_rejected",
+        "NotFoundError": "not_found",
+        "UnprocessableEntityError": "request_rejected",
+        "RateLimitError": "rate_limited",
+        "APITimeoutError": "timeout",
+        "APIConnectionError": "connection_failed",
+        "InternalServerError": "service_unavailable",
+    }
+    return known.get(name, _diagnostic_text(name, max_length=80) or "unknown_error")
+
+
+def _error_status_code(exc: Exception) -> int | None:
+    value = getattr(exc, "status_code", None)
+    if value is None:
+        response = getattr(exc, "response", None)
+        value = getattr(response, "status_code", None)
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _log_llm_event(
+    status: str,
+    *,
+    provider: object,
+    model: object,
+    operation: object,
+    attempt: int,
+    max_attempts: int,
+    duration_ms: float,
+    status_code: int | None = None,
+    error_type: object = "",
+    finish_reason: object = "",
+    completion_tokens: object = 0,
+    reasoning_tokens: object = 0,
+    content_chars: object = 0,
+) -> None:
+    """Emit one queryable LLM attempt event without request or response content."""
+
+    event = f"llm_call_{status}"
+    level = {
+        "completed": logging.INFO,
+        "retrying": logging.WARNING,
+        "failed": logging.ERROR,
+    }.get(status, logging.INFO)
+    logger.log(
+        level,
+        event,
+        extra={
+            "event": event,
+            "status": _diagnostic_text(status, max_length=20),
+            "provider": _diagnostic_text(provider, max_length=80),
+            "model": _diagnostic_text(model),
+            "operation": _diagnostic_text(operation, max_length=80),
+            "attempt": max(1, int(attempt)),
+            "max_attempts": max(1, int(max_attempts)),
+            "duration_ms": round(max(0.0, float(duration_ms)), 2),
+            "status_code": status_code,
+            "error_type": _diagnostic_text(error_type, max_length=80),
+            "finish_reason": _diagnostic_text(finish_reason, max_length=80),
+            "completion_tokens": _diagnostic_count(completion_tokens),
+            "reasoning_tokens": _diagnostic_count(reasoning_tokens),
+            "content_chars": _diagnostic_count(content_chars),
+        },
+    )
 
 
 def _compatible_headers(config: LLMConfig) -> dict[str, str]:
@@ -792,6 +1089,48 @@ def _message_content(payload: dict[str, Any]) -> str:
     return "" if content is None else str(content)
 
 
+class _LLMOutputLimitError(RuntimeError):
+    """The completion stopped at its token budget, so no partial JSON is usable."""
+
+
+def _completed_message(
+    payload: dict[str, Any],
+    config: LLMConfig,
+    max_tokens: int,
+    *,
+    status_code: int | None = None,
+) -> tuple[str, dict[str, Any]]:
+    content = _message_content(payload)
+    choice = payload["choices"][0]
+    finish_reason = choice.get("finish_reason")
+    metadata = _completion_metadata(payload, status_code=status_code)
+    completion_tokens = metadata["completion_tokens"]
+    reasoning_tokens = metadata["reasoning_tokens"]
+    if finish_reason == "length":
+        raise _attach_diagnostics(
+            _LLMOutputLimitError(
+                f"LLM 输出达到 token 上限（{max_tokens}）；模型 {config.model}，"
+                f"本次输出用量 {completion_tokens}，其中推理用量 {reasoning_tokens}。"
+                "未取得完整响应，请提高模型输出上限或减少单次分类内容后重试"
+            ),
+            error_type="output_limit",
+            metadata=metadata,
+        )
+    if finish_reason == "content_filter" or (choice.get("message") or {}).get("refusal"):
+        raise _attach_diagnostics(
+            RuntimeError(f"LLM 模型 {config.model} 拒绝返回本次请求的内容"),
+            error_type="response_rejected",
+            metadata=metadata,
+        )
+    if not content.strip():
+        raise _attach_diagnostics(
+            RuntimeError(f"LLM 响应内容为空（模型 {config.model}，结束原因 {finish_reason}）"),
+            error_type="empty_response",
+            metadata=metadata,
+        )
+    return content, metadata
+
+
 def _request_compatible(
     config: LLMConfig,
     system: str,
@@ -799,7 +1138,8 @@ def _request_compatible(
     *,
     temperature: float,
     max_tokens: int,
-) -> str:
+    json_mode: bool = False,
+) -> tuple[str, dict[str, Any]]:
     body: dict[str, Any] = {
         "model": config.model,
         "messages": [
@@ -811,6 +1151,8 @@ def _request_compatible(
     }
     if config.model_id:
         body["extra_parameters"] = {"model_id": config.model_id}
+    if json_mode:
+        body["response_format"] = {"type": "json_object"}
     try:
         response = httpx.post(
             config.endpoint,
@@ -821,24 +1163,52 @@ def _request_compatible(
         )
         if response.is_redirect:
             # 重定向是 endpoint 配置错误，立即失败，不重试。
-            raise RuntimeError("LLM 接口返回重定向；请填写最终 /chat/completions 地址")
+            raise _attach_diagnostics(
+                RuntimeError("LLM 接口返回重定向；请填写最终 /chat/completions 地址"),
+                error_type="redirect",
+                metadata=_completion_metadata({}, status_code=response.status_code),
+            )
         response.raise_for_status()
         payload = response.json()
         if not isinstance(payload, dict):
-            raise _LLMHTTPError("LLM 响应不是 JSON 对象", status_code=200)
-        return _message_content(payload)
+            raise _LLMHTTPError(
+                "LLM 响应不是 JSON 对象",
+                status_code=response.status_code,
+                error_type="invalid_response",
+            )
+        return _completed_message(
+            payload,
+            config,
+            body["max_tokens"],
+            status_code=response.status_code,
+        )
     except httpx.HTTPStatusError as exc:
         detail = _redact(exc.response.text, config)
         raise _LLMHTTPError(
             f"LLM 接口返回 HTTP {exc.response.status_code}: {detail}",
             exc.response.status_code,
+            error_type=_http_error_type(exc.response.status_code),
         ) from None
-    except (httpx.TimeoutException, httpx.NetworkError) as exc:
+    except httpx.TimeoutException as exc:
         # 超时与连接异常属于可重试的瞬时网络故障，不附带状态码。
-        raise _LLMHTTPError(f"LLM 接口网络异常: {_redact(exc, config)}") from None
+        raise _LLMHTTPError(
+            f"LLM 接口网络异常: {_redact(exc, config)}",
+            error_type="timeout",
+        ) from None
+    except httpx.NetworkError as exc:
+        raise _LLMHTTPError(
+            f"LLM 接口网络异常: {_redact(exc, config)}",
+            error_type="connection_failed",
+        ) from None
     except (httpx.HTTPError, ValueError, json.JSONDecodeError) as exc:
         # 协议错误、JSON 解析失败等属于不可重试的非瞬时异常。
-        raise RuntimeError(f"LLM 接口调用失败: {_redact(exc, config)}") from None
+        error = RuntimeError(f"LLM 接口调用失败: {_redact(exc, config)}")
+        response_status = getattr(locals().get("response"), "status_code", None)
+        raise _attach_diagnostics(
+            error,
+            error_type="invalid_response",
+            metadata=_completion_metadata({}, status_code=response_status),
+        ) from None
 
 
 def _get_azure_client(config: LLMConfig):
@@ -867,7 +1237,7 @@ def _request_once(
     temperature: float,
     max_tokens: int,
     json_mode: bool,
-) -> str:
+) -> tuple[str, dict[str, Any]]:
     if config.provider in {"openai_compatible", "smartvision", "dashscope"}:
         return _request_compatible(
             config,
@@ -875,6 +1245,7 @@ def _request_once(
             user,
             temperature=temperature,
             max_tokens=max_tokens,
+            json_mode=json_mode,
         )
     client = _get_azure_client(config)
     kwargs: dict[str, Any] = {
@@ -889,7 +1260,7 @@ def _request_once(
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
     response = client.chat.completions.create(**kwargs)
-    return response.choices[0].message.content or ""
+    return _completed_message(response.model_dump(), config, kwargs["max_tokens"])
 
 
 def _is_retryable(exc: Exception) -> bool:
@@ -931,11 +1302,15 @@ def _request_with_retry(
     max_tokens: int,
     json_mode: bool,
     retries: int,
+    operation: str = "completion",
 ) -> str:
     last_error: Exception | None = None
-    for attempt in range(max(1, retries)):
+    max_attempts = max(1, retries)
+    for attempt_index in range(max_attempts):
+        attempt = attempt_index + 1
+        started = time.perf_counter()
         try:
-            return _request_once(
+            content, metadata = _request_once(
                 config,
                 system,
                 user,
@@ -944,17 +1319,72 @@ def _request_with_retry(
                 max_tokens=max_tokens,
                 json_mode=json_mode,
             )
+        except _LLMOutputLimitError as exc:
+            # Repeating an identical request cannot fix a known output budget limit.
+            diagnostics = getattr(exc, "llm_diagnostics", {}) or {}
+            _log_llm_event(
+                "failed",
+                provider=_provider_kind(config),
+                model=config.model,
+                operation=operation,
+                attempt=attempt,
+                max_attempts=max_attempts,
+                duration_ms=(time.perf_counter() - started) * 1000,
+                status_code=_error_status_code(exc),
+                error_type=_error_type(exc),
+                finish_reason=diagnostics.get("finish_reason", ""),
+                completion_tokens=diagnostics.get("completion_tokens", 0),
+                reasoning_tokens=diagnostics.get("reasoning_tokens", 0),
+                content_chars=diagnostics.get("content_chars", 0),
+            )
+            raise
         except Exception as exc:  # SDK 与兼容 HTTP 客户端异常统一在边界判定
             last_error = exc
+            retryable = _is_retryable(exc)
+            will_retry = retryable and attempt < max_attempts
+            diagnostics = getattr(exc, "llm_diagnostics", {}) or {}
+            _log_llm_event(
+                "retrying" if will_retry else "failed",
+                provider=_provider_kind(config),
+                model=config.model,
+                operation=operation,
+                attempt=attempt,
+                max_attempts=max_attempts,
+                duration_ms=(time.perf_counter() - started) * 1000,
+                status_code=_error_status_code(exc),
+                error_type=_error_type(exc),
+                finish_reason=diagnostics.get("finish_reason", ""),
+                completion_tokens=diagnostics.get("completion_tokens", 0),
+                reasoning_tokens=diagnostics.get("reasoning_tokens", 0),
+                content_chars=diagnostics.get("content_chars", 0),
+            )
             # 不可重试的错误（鉴权失败、参数错误等）立即抛出，不做无意义等待。
-            if not _is_retryable(exc):
+            if not retryable:
                 raise RuntimeError(_redact(exc, config)) from None
-            if attempt + 1 < max(1, retries):
+            if will_retry:
                 # 退避 2**attempt（1/2/4...），与参考服务一致；可由环境变量封顶。
                 max_delay = float(
                     os.getenv("JTB_LLM_RETRY_MAX_DELAY_SECONDS", "20")
                 )
-                time.sleep(min(max(0.0, max_delay), float(2**attempt)))
+                time.sleep(
+                    min(max(0.0, max_delay), float(2**attempt_index))
+                )
+        else:
+            _log_llm_event(
+                "completed",
+                provider=_provider_kind(config),
+                model=config.model,
+                operation=operation,
+                attempt=attempt,
+                max_attempts=max_attempts,
+                duration_ms=(time.perf_counter() - started) * 1000,
+                status_code=metadata.get("status_code"),
+                finish_reason=metadata.get("finish_reason", ""),
+                completion_tokens=metadata.get("completion_tokens", 0),
+                reasoning_tokens=metadata.get("reasoning_tokens", 0),
+                content_chars=metadata.get("content_chars", 0),
+            )
+            return content
     if last_error is not None:
         raise RuntimeError(_redact(last_error, config)) from None
     raise RuntimeError("LLM 调用失败")
@@ -971,6 +1401,7 @@ def probe_config(config: LLMConfig) -> None:
         max_tokens=32,
         json_mode=False,
         retries=_configured_retries(default=3),
+        operation="connectivity_probe",
     )
     if not raw.strip():
         raise RuntimeError("LLM 连接成功但响应内容为空")
@@ -995,6 +1426,7 @@ def chat(
         max_tokens=max_tokens,
         json_mode=False,
         retries=retries,
+        operation="chat",
     )
 
 
@@ -1007,12 +1439,14 @@ def _parse_json(raw: str) -> Any:
             return json.loads(fenced)
         except json.JSONDecodeError:
             decoder = json.JSONDecoder()
-            for match in re.finditer(r"[\[{]", raw):
+            # A truncated outer object must not be mistaken for a valid nested fragment.
+            match = re.search(r"[\[{]", fenced)
+            if match:
                 try:
-                    value, _ = decoder.raw_decode(raw[match.start():])
+                    value, _ = decoder.raw_decode(fenced[match.start():])
                     return value
                 except json.JSONDecodeError:
-                    continue
+                    pass
     raise RuntimeError("LLM 未返回可解析的 JSON")
 
 
@@ -1021,21 +1455,34 @@ def chat_json(
     user: str,
     deployment: str = _DEFAULT_DEPLOYMENT,
     temperature: float = 0.0,
-    max_tokens: int = 4096,
+    max_tokens: int = DEFAULT_JSON_MAX_TOKENS,
 ) -> Any:
     """要求模型返回 JSON 并严格解析；不接受无法解析的自然语言兜底。"""
     config = _active_config()
-    raw = _request_with_retry(
-        config,
-        system,
-        user,
-        deployment=deployment,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        json_mode=True,
-        retries=_configured_retries(default=7),
-    )
-    return _parse_json(raw)
+    budget = min(int(max_tokens), config.max_tokens)
+    while True:
+        try:
+            raw = _request_with_retry(
+                config,
+                system,
+                user,
+                deployment=deployment,
+                temperature=temperature,
+                max_tokens=budget,
+                json_mode=True,
+                retries=_configured_retries(default=7),
+                operation="chat_json",
+            )
+            return _parse_json(raw)
+        except _LLMOutputLimitError:
+            if budget >= config.max_tokens:
+                raise
+            # One recovery within the configured cap; never accept a truncated fragment.
+            logger.warning(
+                "LLM JSON output truncated model=%s; retry with max_tokens=%s -> %s",
+                config.model, budget, config.max_tokens,
+            )
+            budget = config.max_tokens
 
 
 def _configured_retries(*, default: int) -> int:

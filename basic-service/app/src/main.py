@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import time
@@ -41,9 +42,15 @@ from src.common.logger import configure_logging, get_logger, shutdown_logging  #
 from src.common.request_context import correlation_id_var  # noqa: E402
 from src.controller.taskbook_controller import register as register_controller  # noqa: E402
 from src.controller.taskbook_controller import router as taskbook_router  # noqa: E402
+from src.controller.failure_database_controller import router as failure_database_router  # noqa: E402
+from src.controller.service_credentials_controller import router as service_credentials_router  # noqa: E402
+from src.controller.runtime_logs_controller import router as runtime_logs_router  # noqa: E402
+from src.controller.review_controller import router as review_router  # noqa: E402
+from src.controller.review_editor_controller import router as review_editor_router  # noqa: E402
 from src.utils.config_loader import AppConfig, get_config  # noqa: E402
 
 logger = get_logger("src.main")
+_QUIET_ACCESS_LOG_PATHS = {"/api/logs/latest"}
 
 
 class CorrelationIdMiddleware(BaseHTTPMiddleware):
@@ -57,13 +64,17 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
         start = time.perf_counter()
         try:
             response = await call_next(request)
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "request_failed",
                 extra={
                     "method": request.method,
                     "path": request.url.path,
                     "correlation_id": correlation_id,
+                    "duration_ms": round(
+                        (time.perf_counter() - start) * 1000, 2
+                    ),
+                    "error_type": type(exc).__name__,
                 },
             )
             raise
@@ -71,22 +82,35 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
             correlation_id_var.reset(token)
         elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
         response.headers["X-Correlation-ID"] = correlation_id
-        logger.info(
-            "request_completed",
-            extra={
-                "method": request.method,
-                "path": request.url.path,
-                "status_code": response.status_code,
-                "duration_ms": elapsed_ms,
-            },
-        )
+        if (
+            request.url.path not in _QUIET_ACCESS_LOG_PATHS
+            or response.status_code >= 400
+        ):
+            level = (
+                logging.ERROR
+                if response.status_code >= 500
+                else logging.WARNING
+                if response.status_code >= 400
+                else logging.INFO
+            )
+            logger.log(
+                level,
+                "request_completed",
+                extra={
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": response.status_code,
+                    "duration_ms": elapsed_ms,
+                    "correlation_id": correlation_id,
+                },
+            )
         return response
 
 
 class UploadContentLengthLimitMiddleware(BaseHTTPMiddleware):
     """Reject oversized multipart uploads before the body is fully buffered."""
 
-    _UPLOAD_PATHS = {"/api/submit", "/api/precheck", "/api/templates/onboard"}
+    _UPLOAD_PATHS = {"/api/submit", "/api/precheck", "/api/templates/onboard", "/api/templates/versions"}
 
     async def dispatch(self, request: StarletteRequest, call_next) -> Response:
         if request.url.path in self._UPLOAD_PATHS:
@@ -107,6 +131,8 @@ def _resolve_web_index() -> Path | None:
     in development it lives at the repository ``web/`` directory two levels up.
     """
     candidates = [
+        APP_DIR / "web" / "dist" / "index.html",
+        APP_DIR.parent.parent / "web" / "dist" / "index.html",
         APP_DIR / "web" / "index.html",
         APP_DIR.parent.parent / "web" / "index.html",
     ]
@@ -139,6 +165,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     application.add_middleware(CorrelationIdMiddleware)
 
     application.include_router(taskbook_router)
+    application.include_router(failure_database_router)
+    application.include_router(service_credentials_router)
+    application.include_router(runtime_logs_router)
+    application.include_router(review_editor_router)
+    application.include_router(review_router)
 
     web_index = _resolve_web_index()
 
@@ -146,6 +177,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         web_dir = web_index.parent
 
         @application.get("/", response_class=HTMLResponse, include_in_schema=False)
+        @application.get("/log", response_class=HTMLResponse, include_in_schema=False)
+        @application.get("/logs", response_class=HTMLResponse, include_in_schema=False)
+        @application.get("/review/{jid}", response_class=HTMLResponse, include_in_schema=False)
         async def serve_spa_root() -> HTMLResponse:
             return HTMLResponse(
                 web_index.read_text(encoding="utf-8"),

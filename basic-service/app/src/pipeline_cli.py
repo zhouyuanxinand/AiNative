@@ -56,17 +56,6 @@ def _configure_console_output() -> None:
                 pass
 
 
-def _deep_merge_dict(base: dict, override: dict) -> dict:
-    """Recursively merge controlled policy dictionaries without mutating inputs."""
-    merged = dict(base or {})
-    for key, value in (override or {}).items():
-        if isinstance(value, dict) and isinstance(merged.get(key), dict):
-            merged[key] = _deep_merge_dict(merged[key], value)
-        else:
-            merged[key] = value
-    return merged
-
-
 def _load_configured_qa_policy(
     profile_data: dict,
     *,
@@ -80,38 +69,14 @@ def _load_configured_qa_policy(
     product/domain flags. This keeps QA behavior observable and prevents the
     configuration file from becoming dead documentation.
     """
-    import yaml
+    from jonhon_taskbook.qa_policy import load_configured_qa_policy
 
-    config_path = ROOT / "config" / "qa_gate.yaml"
-    configured = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    rules = _deep_merge_dict(configured, profile_data.get("qa_gate") or {})
-    qa_profile = profile_data.get("qa_profile") or {}
-    normalized_domain = str(selected_product_domain or "").strip().lower()
-
-    if preserve_template_guidance:
-        block = rules.setdefault("block_if", {})
-        block["red_text_count_gt"] = 10**9
-        block["highlight_count_gt"] = 10**9
-        block["change_record_data_rows_gt"] = 10**9
-        block["template_phrases_exist"] = []
-
-    flags = {
-        "is_as9100": bool(
-            normalized_domain == "as9100"
-            or qa_profile.get("is_as9100", False)
-        ),
-        "is_civil_aircraft": bool(
-            normalized_domain in {"airworthiness", "civil_aviation"}
-            or qa_profile.get("is_civil_aircraft", False)
-        ),
-        "allow_landscape": bool(qa_profile.get("allow_landscape", False)),
-        "standard_sort_order": profile_data.get("std_sort_order", []),
-        "standards_heading_keywords": qa_profile.get(
-            "standards_heading_keywords",
-            ["适用的法律法规要求", "适用法律法规", "引用标准"],
-        ),
-    }
-    return rules, flags, str(config_path)
+    return load_configured_qa_policy(
+        profile_data,
+        preserve_template_guidance=preserve_template_guidance,
+        selected_product_domain=selected_product_domain,
+        config_path=ROOT / "config" / "qa_gate.yaml",
+    )
 
 
 def _run_configured_qa_gate(
@@ -120,6 +85,7 @@ def _run_configured_qa_gate(
     *,
     preserve_template_guidance: bool,
     selected_product_domain: str = "",
+    template_path: str = "",
 ) -> dict:
     """Execute the common configured QA gate and persist machine evidence."""
     import zipfile
@@ -131,6 +97,7 @@ def _run_configured_qa_gate(
         preserve_template_guidance=preserve_template_guidance,
         selected_product_domain=selected_product_domain,
     )
+    flags["template_path"] = template_path
     with zipfile.ZipFile(out_path) as package:
         root = etree.fromstring(package.read("word/document.xml"))
     checked = QAGate(rules, flags).check(root)
@@ -149,11 +116,13 @@ def _run_final_placeholder_sweep(
     out_path: str,
     result: dict,
     step: Callable[[str], None],
+    *,
+    source_paths: tuple[str, ...] = (),
 ) -> int:
     """Remove unresolved value placeholders and persist cleanup evidence."""
     from jonhon_taskbook.placeholder_cleanup import final_placeholder_sweep_docx
 
-    changed = final_placeholder_sweep_docx(out_path)
+    changed = final_placeholder_sweep_docx(out_path, source_paths=source_paths)
     stats = result.setdefault("meta", {}).setdefault("stats", {})
     stats["final_placeholder_sweep"] = changed
     if changed:
@@ -221,6 +190,7 @@ def _run_delivery_gate_stage(
 
     pipeline_report = {
         "meta": result.get("meta", {}),
+        "technical_requirements_mode": profile_data.get("technical_requirements_mode", "table"),
         "delivery_gate": delivery_policy,
         "indicator_table": _indicator_evidence_count(out_path),
         "interface_definition": _category_evidence_count(
@@ -238,6 +208,10 @@ def _run_delivery_gate_stage(
             "message": "缺少最终Word与受控指标账本一致性审查",
         }],
     }
+    if profile_data.get("technical_requirements_mode") == "sections":
+        # The delivery gate reads the current DOCX-bound semantic and coverage
+        # evidence itself.  No synthetic indicator decisions are manufactured.
+        value_gate = {"applicable": False, "blockers": []}
     gate = run_delivery_gate(
         out_path,
         pipeline_report,
@@ -246,6 +220,10 @@ def _run_delivery_gate_stage(
             "blockers": list(value_gate.get("blockers") or []),
         },
     )
+    if result.get("meta", {}).get("source_review_required"):
+        gate["passed"] = False
+        gate["deliverable"] = False
+        gate.setdefault("blockers", []).append("输入文档经过格式转换或 OCR，识别内容尚需逐页复核；请下载原件与识别证据，核对或修正后上传 DOCX 重新生成")
     sidecar = Path(out_path).with_suffix(".delivery_gate.json")
     sidecar.write_text(json.dumps(gate, ensure_ascii=False, indent=2), encoding="utf-8")
     gate["sidecar"] = str(sidecar)
@@ -278,6 +256,7 @@ def run_pipeline(
     organization_scope: str = "non_central_research",
     cover_phase: str = "",
     cb: Callable[[str], None] = print,
+    indicator_clarifications: dict[str, str] | None = None,
 ) -> dict:
     """
     执行完整流水线。
@@ -328,6 +307,7 @@ def run_pipeline(
             "product_series": product_series,
             "organization_scope": organization_scope,
             "cover_phase": cover_phase,
+            "indicator_clarifications": dict(indicator_clarifications or {}),
             "selected_product_domain": selected_product_domain,
             "preserve_unfilled_template": bool(preserve_unfilled_template),
             "formal_output": bool(formal_output),
@@ -339,6 +319,10 @@ def run_pipeline(
     t0 = time.time()
 
     def step(msg): cb(f"[{time.time()-t0:5.1f}s] {msg}")
+
+    # 开发逻辑 B56：无输入的模板内容保留，正式件与复核件遵循同一规则。
+    preserve_unfilled_template = True
+    result["meta"]["preserve_unfilled_template"] = True
 
     # ── 0. 参数校验 ────────────────────────────────────────────
     for label, p in [("技术要求", tech_path), ("产品规范", spec_path),
@@ -372,6 +356,39 @@ def run_pipeline(
         return result
 
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+
+    # 先归一化输入，再进行同一套语义分类；PDF/OCR 内容未经逐页复核
+    # 只能作为复核件，原页、坐标和置信度均保留在任务证据中。
+    from jonhon_taskbook.input_normalizer import InputNormalizationError, normalize_input
+    normalized_paths = {}
+    input_normalization = {}
+    result["meta"]["input_normalization"] = input_normalization
+    for role, source_path in (("tech", tech_path), ("spec", spec_path)):
+        step(f"📄 检查{'需求文件' if role == 'tech' else '产品规范'}输入格式…")
+        try:
+            normalized = normalize_input(source_path, Path(out_path).with_suffix(".input_evidence") / role)
+            normalized_paths[role] = str(normalized.path)
+            input_normalization[role] = {
+                "original_path": str(normalized.original_path),
+                "normalized_path": str(normalized.path),
+                "method": normalized.method,
+                "requires_review": normalized.requires_review,
+                "evidence_path": str(normalized.evidence_path) if normalized.evidence_path else "",
+                "warnings": list(normalized.warnings),
+            }
+            result["warnings"].extend(normalized.warnings)
+            if normalized.evidence_path:
+                result["sidecars"][f"{role}_input_evidence"] = str(normalized.evidence_path)
+        except InputNormalizationError as exc:
+            input_normalization[role] = {"original_path": str(source_path), "requires_review": True, "evidence_path": str(exc.evidence_path) if exc.evidence_path else "", "error": str(exc)}
+            result["error"] = f"输入识别失败：{exc}"
+            cb(f"❌ {result['error']}")
+            return result
+    tech_path, spec_path = normalized_paths["tech"], normalized_paths["spec"]
+    result["meta"]["source_review_required"] = any(item["requires_review"] for item in input_normalization.values())
+    normalization_audit = Path(out_path).with_suffix(".input_normalization.json")
+    normalization_audit.write_text(json.dumps(input_normalization, ensure_ascii=False, indent=2), encoding="utf-8")
+    result["sidecars"]["input_normalization"] = str(normalization_audit)
 
     # ── 0.4 需求原文块全量语义分类（LLM只返回ID与类别）────────
     classification_ok = True
@@ -415,7 +432,7 @@ def run_pipeline(
             if category_mapping_path:
                 result["error"] = (
                     f"{message}。为避免按章节号、章节顺序或旧配置猜测位置，"
-                    "受控语义流程已停止；请配置可用的 LLM 后重试。"
+                    "受控语义流程已停止；请根据上述具体错误处理后重试。"
                 )
                 cb(f"❌ {result['error']}")
                 return result
@@ -436,6 +453,9 @@ def run_pipeline(
                 category_mapping_path=category_mapping_path,
             )
             result["meta"]["semantic_plan"] = semantic_plan_path
+            for role_warning in semantic_plan.get("roles", {}).get("warnings", []):
+                result["warnings"].append(role_warning)
+                step(role_warning)
             result["meta"]["semantic_decision_count"] = len(
                 semantic_plan.get("decisions", [])
             )
@@ -509,6 +529,7 @@ def run_pipeline(
             product_series=product_series,
             organization_scope=organization_scope,
             cover_phase=cover_phase,
+            indicator_clarifications=indicator_clarifications,
         )
         _restore_print()
     except Exception as e:
@@ -559,11 +580,31 @@ def run_pipeline(
             result["meta"]["semantic_inserted_count"] = len(evidence["inserted"])
             result["meta"]["semantic_skipped_count"] = len(evidence["skipped"])
             result["meta"]["semantic_execution_passed"] = bool(evidence.get("passed"))
+            counts = evidence["counts"]
+            result["meta"]["semantic_verified_present_count"] = counts["verified_present"]
+            result["meta"]["semantic_safe_skipped_count"] = counts["safe_skipped"]
+            result["meta"]["semantic_blocking_skipped_count"] = counts["blocking_skipped"]
             step(
-                f"   原文复制: {len(evidence['inserted'])} 块；"
-                f"安全跳过: {len(evidence['skipped'])} 块"
+                f"   原文复制: {counts['inserted']} 块；"
+                f"已验证存在: {counts['verified_present']} 块；"
+                f"安全跳过: {counts['safe_skipped']} 项；"
+                f"阻断: {counts['blocking_skipped']} 项"
             )
             if not evidence.get("passed"):
+                for item in evidence.get("blocking_skipped", [])[:5]:
+                    source_ids = item.get("source_ids") or [item.get("source_id")]
+                    sources = ", ".join(str(sid) for sid in source_ids if sid) or "未提供"
+                    detail = (
+                        f"   阻断定位：目标槽位={item.get('target_slot', '未提供')}；"
+                        f"来源={sources}；原因={item.get('reason', 'unknown')}"
+                    )
+                    if "confidence" in item:
+                        detail += (
+                            f"；置信度={item['confidence']}"
+                            f"；最低要求={item.get('required_confidence', '未提供')}"
+                            f"；操作={item.get('operation', '未提供')}"
+                        )
+                    step(detail)
                 reasons = sorted({
                     str(item.get("reason", "unknown"))
                     for item in evidence.get("blocking_skipped", [])
@@ -620,9 +661,7 @@ def run_pipeline(
         from jonhon_taskbook.postprocess import postprocess
         ps = postprocess(
             out_path,
-            preserve_template_guidance=(
-                preserve_unfilled_template and not formal_output
-            ),
+            preserve_template_guidance=preserve_unfilled_template,
             selected_product_domain=selected_product_domain,
         )
         result["meta"]["stats"].update({
@@ -673,7 +712,9 @@ def run_pipeline(
     # Keep the final governed sweep outside the formatting exception boundary:
     # a post-processing failure must not allow unresolved values to reach QA.
     try:
-        _run_final_placeholder_sweep(out_path, result, step)
+        _run_final_placeholder_sweep(
+            out_path, result, step, source_paths=(tech_path, spec_path)
+        )
     except Exception as e:
         result["warnings"].append(f"最终占位符清扫警告: {e}")
 
@@ -692,10 +733,9 @@ def run_pipeline(
             tech_path,
             out_path,
             _qa_cfg,
-            preserve_template_guidance=(
-                preserve_unfilled_template and not formal_output
-            ),
+            preserve_template_guidance=preserve_unfilled_template,
             template_path=tpl_path,
+            selected_product_domain=selected_product_domain,
         )
         result["meta"]["qa_ok"] = bool(qa_ok)
         _gate_rpt = Path(out_path).with_suffix(".qa_gate_report.md")
@@ -726,10 +766,9 @@ def run_pipeline(
         configured_qa = _run_configured_qa_gate(
             out_path,
             profile_data,
-            preserve_template_guidance=(
-                preserve_unfilled_template and not formal_output
-            ),
+            preserve_template_guidance=preserve_unfilled_template,
             selected_product_domain=selected_product_domain,
+            template_path=tpl_path,
         )
         configured_qa_ok = bool(configured_qa.get("passed"))
         result["meta"]["configured_qa_ok"] = configured_qa_ok
@@ -764,6 +803,7 @@ def run_pipeline(
             semantic_plan,
             requirement_classification,
             category_mapping_path,
+            require_complete_source_checks=profile_data.get("technical_requirements_mode") == "sections",
         )
         semantic_integrity_ok = bool(semantic_integrity.get("passed"))
         result["meta"]["semantic_integrity_ok"] = semantic_integrity_ok
@@ -791,39 +831,43 @@ def run_pipeline(
 
     # 最终Word必须与本次受控指标裁决账本逐字段一致。该检查发生在全部
     # 后处理之后，防止正文生成正确、但表格装配/清理阶段又把值丢失。
-    business_value_audit: dict = {"passed": False, "blockers": []}
-    try:
-        from jonhon_taskbook.business_value_gate import audit_indicator_values
+    if profile_data.get("technical_requirements_mode") == "sections":
+        business_value_audit = {"applicable": False, "mode": "sections"}
+        result["meta"]["business_value_audit"] = business_value_audit
+    else:
+        business_value_audit: dict = {"passed": False, "blockers": []}
+        try:
+            from jonhon_taskbook.business_value_gate import audit_indicator_values
 
-        business_value_audit = audit_indicator_values(out_path)
-        result["meta"]["business_value_audit"] = {
-            "passed": bool(business_value_audit.get("passed")),
-            "checked_decisions": int(
-                business_value_audit.get("checked_decisions", 0) or 0
-            ),
-            "blocker_count": len(business_value_audit.get("blockers") or []),
-        }
-        result["sidecars"]["business_value_audit"] = business_value_audit.get(
-            "sidecar", ""
-        )
-        if not business_value_audit.get("passed"):
-            for blocker in business_value_audit.get("blockers", [])[:10]:
-                step(f"   ❌ 指标值门禁: {blocker.get('message', blocker)}")
-            result["warnings"].append("最终Word与受控指标账本不一致")
-    except Exception as e:
-        business_value_audit = {
-            "passed": False,
-            "blockers": [{
-                "code": "BUSINESS_VALUE_AUDIT_ERROR",
-                "message": f"指标值门禁执行失败: {e}",
-            }],
-        }
-        result["meta"]["business_value_audit"] = {
-            "passed": False,
-            "checked_decisions": 0,
-            "blocker_count": 1,
-        }
-        result["warnings"].append(f"指标值门禁执行失败: {e}")
+            business_value_audit = audit_indicator_values(out_path)
+            result["meta"]["business_value_audit"] = {
+                "passed": bool(business_value_audit.get("passed")),
+                "checked_decisions": int(
+                    business_value_audit.get("checked_decisions", 0) or 0
+                ),
+                "blocker_count": len(business_value_audit.get("blockers") or []),
+            }
+            result["sidecars"]["business_value_audit"] = business_value_audit.get(
+                "sidecar", ""
+            )
+            if not business_value_audit.get("passed"):
+                for blocker in business_value_audit.get("blockers", [])[:10]:
+                    step(f"   ❌ 指标值门禁: {blocker.get('message', blocker)}")
+                result["warnings"].append("最终Word与受控指标账本不一致")
+        except Exception as e:
+            business_value_audit = {
+                "passed": False,
+                "blockers": [{
+                    "code": "BUSINESS_VALUE_AUDIT_ERROR",
+                    "message": f"指标值门禁执行失败: {e}",
+                }],
+            }
+            result["meta"]["business_value_audit"] = {
+                "passed": False,
+                "checked_decisions": 0,
+                "blocker_count": 1,
+            }
+            result["warnings"].append(f"指标值门禁执行失败: {e}")
 
     # ── 6.2 正式交付门禁 ─────────────────────────────────────
     # 不能只把 Profile 的 delivery_gate 写进 meta；必须实际调用

@@ -1,7 +1,7 @@
 /** 拖拽上传区——tech/spec 两列。 */
 import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { useTaskbook } from '../../hooks/useTaskbook';
-import { selectedFileIdentity, describeSelectedFile, formatFileSize } from '../../lib/dom';
+import { describeSelectedFile, formatFileSize } from '../../lib/dom';
 
 type FileKey = 'tech' | 'spec';
 
@@ -9,12 +9,12 @@ const LABELS: Record<FileKey, { title: string; subtitle: string; hint: string }>
   tech: {
     title: '需求文件',
     subtitle: '技术要求 / 技术协议 / 沟通指导书 / 技术规格书',
-    hint: '支持一次选择或拖入多个 DOCX，首份文件用于建立语义主线',
+    hint: '每次一份文件，支持 DOCX、DOC、PDF 或图片；转换内容须核对',
   },
   spec: {
     title: '产品规范',
     subtitle: '',
-    hint: '可一次选择或拖入多个 DOCX，用于指标与引用标准补缺',
+    hint: '每次一份文件，支持 DOCX、DOC、PDF 或图片；用于指标与引用标准补缺',
   },
 };
 
@@ -43,21 +43,22 @@ export function DropZone({ fileKey }: { fileKey: FileKey }) {
   const applyFiles = (fileList: FileList | null) => {
     const incoming = Array.from(fileList || []);
     if (!incoming.length) return;
-    const valid = incoming.filter((f) => f.name.toLowerCase().endsWith('.docx'));
-    if (valid.length !== incoming.length) showToast('仅支持 DOCX，其他文件已忽略', 'warn');
-    const identities = new Set(uploadedFiles[fileKey].map((f) => selectedFileIdentity(f)));
-    const added = valid.filter((f) => !identities.has(selectedFileIdentity(f)));
-    if (!added.length) {
-      if (valid.length) showToast('所选文件已在列表中', 'warn');
+    const valid = incoming.filter((f) => /\.(docx?|pdf|png|jpe?g|bmp|tiff?|webp)$/i.test(f.name));
+    if (valid.length !== incoming.length) showToast('支持 DOCX、DOC、PDF 和常见图片，其他格式未添加', 'warn');
+    if (!valid.length) {
       return;
     }
-    const newList = [...uploadedFiles[fileKey], ...added];
+    if (valid.length > 1) {
+      showToast('每类输入仅接收一份文件，请单独选择；本次未添加', 'warn');
+      return;
+    }
+    const newList = [valid[0]];
     const newUploaded = { ...uploadedFiles, [fileKey]: newList };
     setUploadedFiles(newUploaded);
     const newFiles = { ...files, [fileKey]: newList[0] || null };
     setFiles(newFiles);
     addToValidationTouched('files');
-    showUploadNotice(added.length);
+    showUploadNotice(1);
   };
 
   const onFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -128,7 +129,7 @@ export function DropZone({ fileKey }: { fileKey: FileKey }) {
           </svg>
           <span>{notice || '上传完成'}</span>
         </div>
-        <input type="file" accept=".docx" id={`f-${fileKey}`} multiple ref={inputRef} onChange={onFileInput} />
+        <input type="file" accept=".docx,.doc,.pdf,.png,.jpg,.jpeg,.bmp,.tif,.tiff,.webp" id={`f-${fileKey}`} ref={inputRef} onChange={onFileInput} />
       </div>
       <div className="upload-file-list" id={`file-list-${fileKey}`} hidden={uploadedFiles[fileKey].length === 0} aria-live="polite">
         {uploadedFiles[fileKey].map((file, index) => (

@@ -1,0 +1,14 @@
+version: "1.0"
+# 系统集成、整机布线与座舱受控模板没有研制经费预算互斥章节。
+# 仅本策略明确允许空组；执行时仍核对实际 Word 中不存在预算标题。
+no_mutually_exclusive_sections: true
+fields:
+  organization_scope:
+    label: 产品归属范围
+    required: true
+    values:
+      non_central_research:
+        label: 非中央研究院产品
+      central_research:
+        label: 中央研究院产品
+mutually_exclusive_groups: []

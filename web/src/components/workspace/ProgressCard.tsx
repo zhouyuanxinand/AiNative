@@ -9,6 +9,7 @@ export function ProgressCard() {
     progressLiveClass,
     isRunning,
     isCancelled,
+    jobStatus,
     logs,
   } = useTaskbook();
 
@@ -17,7 +18,9 @@ export function ProgressCard() {
   return (
     <div className="card progress-wrap" id="progress-card">
       <h2>
-        <span className="section-kicker">RUNNING</span>正在执行受控工作流
+        {jobStatus === 'error' ? '受控工作流失败'
+          : jobStatus === 'cancelled' ? '本次任务已停止'
+            : '正在执行受控工作流'}
       </h2>
       <div className="prog-bar-bg">
         <div className="prog-bar" id="prog-bar" style={{ width: `${progressPercent}%` }} />

@@ -18,6 +18,7 @@ export function useDraft() {
     setFormField,
     selectedModelKey,
     setSelectedModelKey,
+    modelCatalog,
     setTemplateEditPlan,
     showToast,
   } = useTaskbook();
@@ -81,23 +82,44 @@ export function useDraft() {
       setFormField('coverPhase', payload.cover_phase || '');
       setFormField('productSeries', payload.product_series || '');
       setFormField('organizationScope', payload.organization_scope || 'non_central_research');
+      let savedModelUnavailable = false;
+      let hasFallbackModel = false;
       if (payload.model_provider && payload.model_name) {
         const key = modelSelectionKey({
           provider: payload.model_provider,
           name: payload.model_name,
           id: payload.model_id || '',
         });
-        setSelectedModelKey(key);
+        const savedModel = modelCatalog.find((item) => modelSelectionKey(item) === key);
+        if (savedModel) {
+          setSelectedModelKey(key);
+        } else {
+          const currentModel = modelCatalog.find((item) => modelSelectionKey(item) === selectedModelKey);
+          const fallback = (currentModel?.configured ? currentModel : null)
+            || modelCatalog.find((item) => item.configured)
+            || currentModel
+            || modelCatalog[0];
+          setSelectedModelKey(fallback ? modelSelectionKey(fallback) : '');
+          savedModelUnavailable = true;
+          hasFallbackModel = !!fallback;
+        }
       }
       setFormField('templateInstruction', payload.template_instruction || '');
       setFormField('failOnRegression', !!payload.fail_on_regression);
       if (payload.template_instruction) setTemplateEditPlan(null);
       if (showMessage) {
-        showToast('已恢复上次保存的选择（文件需重新上传）', 'ok');
+        showToast(
+          savedModelUnavailable
+            ? hasFallbackModel
+              ? '已恢复其他选择；原模型当前不可用，已选择当前目录中的模型（文件需重新上传）'
+              : '已恢复其他选择；原模型当前不可用，请重新选择模型（文件需重新上传）'
+            : '已恢复上次保存的选择（文件需重新上传）',
+          savedModelUnavailable ? 'warn' : 'ok',
+        );
       }
       return payload;
     },
-    [readStoredDraft, setFormField, setSelectedModelKey, setTemplateEditPlan, showToast],
+    [readStoredDraft, setFormField, setSelectedModelKey, selectedModelKey, modelCatalog, setTemplateEditPlan, showToast],
   );
 
   const clearDraft = useCallback(

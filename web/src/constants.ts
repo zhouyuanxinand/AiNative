@@ -22,8 +22,8 @@ export const PANEL_WIDTH_LIMITS = {
 export type PanelKind = 'left' | 'right';
 export type UIMode = 'compact' | 'expert';
 export type ReviewTab = 'result' | 'history' | 'status';
-export type ManagementKind = 'rules' | 'templates';
-export type WorkspaceView = 'generate' | 'rules' | 'templates';
+export type ManagementKind = 'rules' | 'templates' | 'failures';
+export type WorkspaceView = 'generate' | 'rules' | 'templates' | 'failures';
 
 /** 6 步流程的标签文本。 */
 export const FLOW_STEPS = ['业务选择', '文件预检', '语义路由', '模板装配', '质量门禁', '交付完成'] as const;

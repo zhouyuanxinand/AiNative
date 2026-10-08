@@ -1,9 +1,14 @@
 # -*- coding: utf-8 -*-
 """qa_gate.py — 质量门禁检查器"""
 from __future__ import annotations
-from collections import Counter
+
 import re
+import zipfile
+from collections import Counter
+from pathlib import Path
 from typing import Any, Dict, List
+
+from lxml import etree
 
 from jonhon_taskbook.standard_order import sort_standards
 
@@ -21,6 +26,73 @@ def _para_text(para) -> str:
 
 def _cell_text(cell) -> str:
     return "".join(t.text or "" for t in cell.findall(f".//{_W}t")).strip()
+
+
+def normalized_template_text(text: str) -> str:
+    """Ignore only the exact controlled B57 annotation, never arbitrary text."""
+    return str(text or "").replace(MANUAL_FILL_MARKER, "").strip()
+
+
+def load_template_baseline(template_path):
+    if not template_path or not Path(template_path).is_file():
+        return None
+    try:
+        with zipfile.ZipFile(template_path) as package:
+            return etree.fromstring(package.read("word/document.xml"))
+    except (OSError, KeyError, zipfile.BadZipFile, etree.XMLSyntaxError):
+        return None
+
+
+def paragraph_template_key(paragraph) -> tuple[str, str]:
+    in_cell = any(parent.tag == f"{_W}tc" for parent in paragraph.iterancestors())
+    return ("cell" if in_cell else "body", normalized_template_text(_para_text(paragraph)))
+
+
+def manual_marker_counts(element) -> tuple[int, int]:
+    """Count markers and invalid colors, including a marker split across runs."""
+    characters = []
+    red = []
+    for run in element.findall(f".//{_W}r"):
+        if element.tag == f"{_W}tc":
+            nearest_cell = next((parent for parent in run.iterancestors() if parent.tag == f"{_W}tc"), None)
+            if nearest_cell is not element:
+                continue
+        text = "".join(node.text or "" for node in run.findall(f".//{_W}t"))
+        color = run.find(f"./{_W}rPr/{_W}color")
+        value = str(color.get(f"{_W}val", "")).upper() if color is not None else ""
+        characters.extend(text)
+        red.extend([value in {"FF0000", "RED"}] * len(text))
+    matches = list(re.finditer(re.escape(MANUAL_FILL_MARKER), "".join(characters)))
+    invalid = sum(not all(red[match.start():match.end()]) for match in matches)
+    return len(matches), invalid
+
+
+def _format_signature(paragraph, kind: str) -> tuple:
+    characters = []
+    formatting = []
+    for run in paragraph.findall(f".//{_W}r"):
+        text = "".join(node.text or "" for node in run.findall(f".//{_W}t"))
+        property_name = "color" if kind == "red" else "highlight"
+        value_node = run.find(f"./{_W}rPr/{_W}{property_name}")
+        value = str(value_node.get(f"{_W}val", "")).upper() if value_node is not None else ""
+        active = value in _RED_VALUES | {"RED"} if kind == "red" else bool(value and value != "NONE")
+        characters.extend(text)
+        formatting.extend([value if active else ""] * len(text))
+    text = "".join(characters)
+    marker_positions = set()
+    if kind == "red":
+        for marker in (MANUAL_FILL_MARKER, ITALIC_ANNOTATION_MARKER):
+            for match in re.finditer(re.escape(marker), text):
+                marker_positions.update(range(match.start(), match.end()))
+    positions = []
+    position = 0
+    for index, (character, value) in enumerate(zip(characters, formatting, strict=True)):
+        if index in marker_positions:
+            continue
+        if value:
+            positions.append((position, character, value))
+        position += 1
+    return tuple(positions)
 
 
 def _visual_relationship_ids(element) -> list[str]:
@@ -61,6 +133,36 @@ class QAGate:
         self.block_rules = rules.get("block_if", {})
         self.warn_rules = rules.get("warn_if", {})
         self.flags = flags
+        self.preserve_template_guidance = bool(flags.get("preserve_template_guidance"))
+        self.template_root = load_template_baseline(flags.get("template_path")) if self.preserve_template_guidance else None
+
+    def _new_formatting_count(self, root, kind: str) -> int:
+        baseline = Counter()
+        if self.template_root is not None:
+            for paragraph in self.template_root.findall(f".//{_W}p"):
+                signature = _format_signature(paragraph, kind)
+                if signature:
+                    baseline[(paragraph_template_key(paragraph), signature)] += 1
+        count = 0
+        for paragraph in root.findall(f".//{_W}p"):
+            signature = _format_signature(paragraph, kind)
+            if not signature:
+                continue
+            key = (paragraph_template_key(paragraph), signature)
+            if baseline[key] > 0:
+                baseline[key] -= 1
+            else:
+                for run in paragraph.findall(f".//{_W}r"):
+                    property_name = "color" if kind == "red" else "highlight"
+                    node = run.find(f"./{_W}rPr/{_W}{property_name}")
+                    value = str(node.get(f"{_W}val", "")).upper() if node is not None else ""
+                    text = "".join(item.text or "" for item in run.findall(f".//{_W}t"))
+                    if kind == "red":
+                        text = text.replace(MANUAL_FILL_MARKER, "").replace(ITALIC_ANNOTATION_MARKER, "")
+                        count += bool(text.strip() and value in _RED_VALUES | {"RED"})
+                    else:
+                        count += bool(text.strip() and value and value != "NONE")
+        return count
 
     def _count_red(self, root) -> int:
         """Count uncontrolled red runs, excluding the governed manual marker.
@@ -71,24 +173,10 @@ class QAGate:
         gate exempt only the exact controlled marker while every other red
         run remains a blocker.
         """
-        count = 0
-        for run in root.findall(f".//{_W}r"):
-            color = run.find(f"./{_W}rPr/{_W}color")
-            if color is None:
-                continue
-            val = (color.get(f"{_W}val") or "").upper()
-            if val not in _RED_VALUES:
-                continue
-            text = "".join(
-                node.text or "" for node in run.findall(f".//{_W}t")
-            ).strip()
-            if text == MANUAL_FILL_MARKER or text == ITALIC_ANNOTATION_MARKER:
-                continue
-            count += 1
-        return count
+        return self._new_formatting_count(root, "red")
 
     def _count_highlight(self, root) -> int:
-        return len(root.findall(f".//{_W}highlight"))
+        return self._new_formatting_count(root, "highlight")
 
     def _full_text(self, root) -> str:
         return " ".join(t.text or "" for t in root.findall(f".//{_W}t"))
@@ -497,12 +585,11 @@ class QAGate:
             looks_like_heading = (
                 outline
                 or bool(re.search(r"(?:Heading|标题|目录)", style, re.I))
-                # Many controlled Chinese templates name heading styles with
-                # numeric IDs such as "2", "3" and "4".  A non-empty custom
-                # style on a short top-level paragraph is therefore valid
-                # heading evidence even when the localized style name is not
-                # present in document.xml.
-                or bool(style and len(text) <= 64)
+                # Controlled heading styles can have numeric IDs ("2", "3").
+                # An arbitrary short custom-styled paragraph is not a heading:
+                # imported source prose often has its own style and may repeat
+                # below two genuine section headings.
+                or bool(style.isdecimal() and len(text) <= 64)
                 or bool(re.match(r"^\s*\d+(?:\.\d+)*\s+\S", text))
             )
             if not looks_like_heading:
@@ -592,11 +679,28 @@ class QAGate:
         br = self.block_rules
         wr = self.warn_rules
 
+        baseline_paragraphs = Counter()
+        if self.template_root is not None:
+            baseline_paragraphs.update(paragraph_template_key(p) for p in self.template_root.findall(f".//{_W}p"))
+        elif self.preserve_template_guidance:
+            block_reasons.append("受控模板基线缺失或不可读，无法验证模板保留内容")
+        new_paragraphs = []
+        for paragraph in root.findall(f".//{_W}p"):
+            key = paragraph_template_key(paragraph)
+            if baseline_paragraphs[key] > 0:
+                baseline_paragraphs[key] -= 1
+            else:
+                new_paragraphs.append(_para_text(paragraph))
+            _, invalid_markers = manual_marker_counts(paragraph)
+            if invalid_markers:
+                block_reasons.append(f"受控【人工填写】标记必须为红色：{invalid_markers} 处")
+        new_text = "\n".join(new_paragraphs)
+
         unresolved_value_tokens = sorted(
             set(
                 re.findall(
                     r"(?i)(?:\[\s*XXh\s*\]|（\s*XXh\s*）|\(\s*XXh\s*\)|\bXXh\b)",
-                    full_txt,
+                    new_text,
                 )
             )
         )
@@ -607,9 +711,9 @@ class QAGate:
 
         red_count = self._count_red(root)
         hl_count = self._count_highlight(root)
-        if br.get("red_text_count_gt", 0) == 0 and red_count > 0:
+        if red_count > int(br.get("red_text_count_gt", 0)):
             block_reasons.append(f"残余红字 run 数：{red_count}")
-        if br.get("highlight_count_gt", 0) == 0 and hl_count > 0:
+        if hl_count > int(br.get("highlight_count_gt", 0)):
             block_reasons.append(f"残余高亮数：{hl_count}")
 
         for phrase in br.get("template_phrases_exist", []):
@@ -621,10 +725,11 @@ class QAGate:
                 str(phrase),
             ):
                 continue
-            if phrase in full_txt:
+            if phrase in new_text:
                 block_reasons.append(f"模板词残留：「{phrase}」")
-        for phrase in self._contains_any_phrase(root, br.get("forbidden_phrases_exist", [])):
-            block_reasons.append(f"跨项目/污染词残留：「{phrase}」")
+        for phrase in br.get("forbidden_phrases_exist", []):
+            if phrase in new_text:
+                block_reasons.append(f"跨项目/污染词残留：「{phrase}」")
         for phrase in self._missing_required_phrases(root, br.get("required_phrases_all", [])):
             block_reasons.append(f"关键内容缺失：「{phrase}」")
         for group in self._missing_phrase_groups(root, br.get("required_phrase_groups", [])):
@@ -660,6 +765,8 @@ class QAGate:
 
         cr_rows = self._change_record_data_rows(root)
         limit = br.get("change_record_data_rows_gt", 1)
+        if self.template_root is not None:
+            limit = max(limit, self._change_record_data_rows(self.template_root))
         if cr_rows > limit:
             block_reasons.append(f"变更记录数据行 {cr_rows} > {limit}（只允许 A 版新发）")
 
@@ -680,8 +787,16 @@ class QAGate:
                 block_reasons.append(f"技术指标表数据行结构错位：{defect}")
 
         if br.get("indicator_instruction_exists"):
+            baseline_instructions = Counter(
+                normalized_template_text(text)
+                for text in self._indicator_instruction_paragraphs(self.template_root)
+            ) if self.template_root is not None else Counter()
             for prompt in self._indicator_instruction_paragraphs(root):
-                block_reasons.append(f"技术指标表上方残留模板提示：{prompt[:80]}")
+                key = normalized_template_text(prompt)
+                if baseline_instructions[key] > 0:
+                    baseline_instructions[key] -= 1
+                else:
+                    block_reasons.append(f"技术指标表上方残留模板提示：{prompt[:80]}")
 
         if br.get("indicator_change_record_contamination"):
             for text in self._indicator_change_record_contamination(root):

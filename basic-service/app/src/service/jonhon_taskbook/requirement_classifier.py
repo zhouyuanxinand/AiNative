@@ -52,6 +52,7 @@ def _classification_cache_key(requirement_path: str, mapping_path: str) -> str:
         "source_block_parser": _file_sha256(
             Path(__file__).with_name("semantic_orchestrator.py")
         ),
+        "source_scope": _file_sha256(Path(__file__).with_name("source_scope.py")),
         "requirement": _file_sha256(requirement_path),
         "mapping": _file_sha256(mapping_path),
         "model": model_values,
@@ -249,6 +250,20 @@ def _apply_configured_heading_constraints(
     return constrained
 
 
+def _is_atomic_source_module(block: dict[str, Any], category_rule: dict[str, Any]) -> bool:
+    """Keep an explicitly governed source chapter, including its children, intact."""
+    phrases = category_rule.get("atomic_source_heading_keywords", []) or []
+    if isinstance(phrases, str):
+        phrases = [phrases]
+    headings = [str(block.get(key, "")) for key in ("heading_text", "section")]
+    headings.extend(str(value) for value in block.get("parent_headings", []) or [])
+    return any(
+        str(phrase).strip() and str(phrase).strip() in heading
+        for phrase in phrases
+        for heading in headings
+    )
+
+
 def _apply_configured_content_constraints(
     blocks: list[dict[str, Any]],
     assignments: list[dict[str, Any]],
@@ -288,10 +303,14 @@ def _apply_configured_content_constraints(
     for assignment in assignments:
         source_id = str(assignment.get("source_id", ""))
         block = block_by_id.get(source_id, {})
+        category_rule = categories.get(str(assignment.get("category", "")), {})
+        atomic = isinstance(category_rule, dict) and _is_atomic_source_module(block, category_rule)
+        allowed_overrides = set(category_rule.get("atomic_content_overrides", []) or []) if atomic else set()
         text = str(block.get("text", "")).strip()
         matches = [
             item for item in compiled
             if text and item[4].search(text)
+            and (not atomic or item[2] in allowed_overrides)
         ]
         if not matches:
             refined.append(assignment)
@@ -452,16 +471,7 @@ def _partition_mixed_blocks_with_llm(
         category_rule = categories.get(category, {})
         if not isinstance(category_rule, dict):
             return False
-        phrases = category_rule.get("atomic_source_heading_keywords", []) or []
-        if isinstance(phrases, str):
-            phrases = [phrases]
-        semantic_heading = " ".join(
-            str(block.get(key, "")) for key in ("heading_text", "section")
-        )
-        return any(
-            str(phrase).strip() and str(phrase).strip() in semantic_heading
-            for phrase in phrases
-        )
+        return _is_atomic_source_module(block, category_rule)
 
     candidates = [
         block for block in blocks
@@ -789,12 +799,25 @@ def build_requirement_classification(
         Path(output_path).parent / f".{cache_key}.classification.cache.json"
         if output_path else None
     )
+    structure_audit_path = (
+        Path(output_path).with_suffix(".source_structure.json") if output_path else None
+    )
     if use_llm and cache_path and cache_path.is_file():
         try:
             envelope = json.loads(cache_path.read_text(encoding="utf-8"))
             if envelope.get("cache_key") == cache_key:
                 cached = envelope["report"]
                 if cached.get("passed"):
+                    # Identical content can be uploaded under a new job path
+                    # after the previous upload has been cleaned up. Preserve
+                    # cached classifications, but bind evidence to this input.
+                    for block in cached.get("source_blocks", []):
+                        block["source_path"] = str(Path(requirement_path).resolve())
+                    if structure_audit_path and isinstance(cached.get("source_structure_audit"), dict):
+                        structure_audit_path.write_text(
+                            json.dumps(cached["source_structure_audit"], ensure_ascii=False, indent=2),
+                            encoding="utf-8",
+                        )
                     if output_path:
                         Path(output_path).write_text(
                             json.dumps(cached, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -811,11 +834,15 @@ def build_requirement_classification(
         )
     if chat_json_fn is None:
         from jonhon_taskbook.llm_client import chat_json as chat_json_fn
+    extraction_options = (
+        {"structure_audit_path": str(structure_audit_path)} if structure_audit_path else {}
+    )
     all_blocks = extract_source_blocks(
         requirement_path,
         "tech",
         chat_json_fn=chat_json_fn,
         require_llm_structure=True,
+        **extraction_options,
     )
     protected_ids = protected_source_block_ids(all_blocks)
     body_blocks = [
@@ -975,6 +1002,10 @@ def build_requirement_classification(
         },
         "passed": len(blocks) == len(assignments) == len(set(ids)),
     }
+    if structure_audit_path and structure_audit_path.is_file():
+        report["source_structure_audit"] = json.loads(
+            structure_audit_path.read_text(encoding="utf-8")
+        )
     if output_path:
         cache_path.write_text(
             json.dumps({"cache_key": cache_key, "report": report}, ensure_ascii=False, indent=2),

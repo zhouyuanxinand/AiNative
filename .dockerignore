@@ -30,6 +30,7 @@ runtime-*.log
 docs/
 *.md
 !README.md
+!basic-service/app/src/service/prompts/*.md
 
 # 前端构建依赖与临时文件（Stage 1 在镜像内安装）
 web/node_modules/

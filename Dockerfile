@@ -3,12 +3,12 @@
 # 前端使用 React 18 + Vite + TypeScript，构建产物 dist/ 由 nginx 提供。
 
 # ── Stage 1: 前端构建 ──────────────────────────────────
-FROM node:20-slim AS frontend
+FROM node:20-bookworm-slim AS frontend
 WORKDIR /build
 
 # 先复制依赖文件以利用层缓存
-COPY web/package.json web/package-lock.json* web/pnpm-lock.yaml* ./
-RUN npm install --frozen-lockfile 2>/dev/null || npm install
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
 
 # 复制源码并构建
 COPY web/ .
@@ -31,6 +31,11 @@ RUN apt-get update \
         nginx \
         curl \
         ca-certificates \
+        libreoffice-writer \
+        fonts-noto-cjk \
+        fonts-liberation \
+        libgl1 \
+        libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/* \
     && rm -f /etc/nginx/sites-enabled/default
 
@@ -52,8 +57,7 @@ COPY basic-service/app/resources /opt/local/agent-develop-task-doc/basic-service
 # 按交付要求将服务根 .env 固化进镜像。llm_client 会从该固定位置读取，
 # 无需依赖容器编排平台额外注入；文件权限在后续 RUN 中收紧为 0600。
 COPY .env /opt/local/agent-develop-task-doc/basic-service/app/src/service/.env
-# 运行期数据目录（首次建卷时由 entrypoint 创建子目录）。
-COPY basic-service/app/data /opt/local/agent-develop-task-doc/basic-service/app/data
+# 运行期数据目录由下方 RUN 与 entrypoint 创建，不要求工作区已有历史任务数据。
 
 # 前端构建产物（从 Stage 1 复制 dist/）。
 COPY --from=frontend /build/dist /opt/local/agent-develop-task-doc/basic-service/app/web/dist
@@ -71,6 +75,7 @@ RUN mkdir -p \
         /opt/local/agent-develop-task-doc/basic-service/app/runtime/template_releases \
     && chown -R agent-taskbook:agent-taskbook /opt/local/agent-develop-task-doc \
     && chmod 600 /opt/local/agent-develop-task-doc/basic-service/app/src/service/.env \
+    && sed -i 's/\r$//' /usr/local/bin/entrypoint.sh \
     && chmod +x /usr/local/bin/entrypoint.sh \
     && find /opt/local/agent-develop-task-doc -type d -name __pycache__ -prune -exec rm -rf {} + \
     && nginx -t

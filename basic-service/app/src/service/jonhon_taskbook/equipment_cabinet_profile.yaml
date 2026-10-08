@@ -1,0 +1,36 @@
+schema_version: '3.1'
+profile_id: equipment_cabinet
+product_type: 设备柜
+integration_status: available
+technical_requirements_mode: sections
+template_variant_policy: non_budget_template_variant_policy.yaml
+template_source:
+  file: system_integration_taskbook.docx
+  sha256: 2fa65c7dfe0322598a55812d46a7d06cfdbf77e0b66a611f01a139111ee55a90
+  indicator_policy: 章节式技术要求；原文按真实语义章节复制，保留表格及图片，不转换为不存在的指标表
+semantic_routing:
+  category_mapping: system_integration_requirement_categories.yaml
+  chapter_numbers_are_identity: false
+  source_order_is_identity: false
+  copy_source_text_only: true
+semantic_structures: {}
+indicator_sources:
+  workbook: false
+  reference_families: []
+standards_policy: merge_template
+spec_model_filter:
+  enabled: true
+delivery_gate:
+  min_indicator_rows: 0
+  min_interface_fills: 0
+  required_headings: &id001
+  - 适用的法律法规要求
+  - 技术要求
+  - 任务书编制依据
+  - 产品功能
+  - 绝缘电阻
+  - 任务周期
+indicator_map: {}
+qa_profile:
+  required_headings: *id001
+  forbidden_phrases: []

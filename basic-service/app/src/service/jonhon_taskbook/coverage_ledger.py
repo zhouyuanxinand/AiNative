@@ -17,8 +17,21 @@ import re
 import zipfile
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Dict, List, Sequence
+from typing import Any, Dict, List, Sequence
 from lxml import etree
+import yaml
+from .figure_pairing import pair_figure_captions
+from .source_scope import (
+    has_substantive_heading_content,
+    is_unvalued_historical_result_caption,
+    is_source_heading,
+    source_exclusion_reasons,
+    source_heading_label,
+    normalize_source_display_text,
+    review_reference_source_ids,
+)
+from .standard_references import extract_standard_references, is_reference_heading
+from .indicator_identity import canonical_indicator_name
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _W = f"{{{W}}}"
@@ -86,18 +99,7 @@ def _has_drawing(elem) -> bool:
 
 
 def _is_heading(element, text: str | None = None) -> bool:
-    if element.tag != _wtag("p"):
-        return False
-    text = _para_text(element) if text is None else text
-    ppr = element.find(_wtag("pPr"))
-    style = ppr.find(_wtag("pStyle")) if ppr is not None else None
-    outline = ppr.find(_wtag("outlineLvl")) if ppr is not None else None
-    style_value = style.get(_wtag("val"), "") if style is not None else ""
-    return bool(
-        re.search(r"heading|标题", style_value, re.I)
-        or outline is not None
-        or _HEADING.match(text)
-    )
+    return is_source_heading(element, text)
 
 
 def _semantic_heading(text: str) -> str:
@@ -117,17 +119,7 @@ _STANDARD_REFERENCE_LINE = re.compile(
     re.I,
 )
 _STANDARDS_SECTION = re.compile(r"标准|规范|法律法规|引用文件|适用文件")
-_HEADING = re.compile(r"^\d+(\.\d+)*\s+\S")
 _IMG_CAPTION = re.compile(r"图\s*\d+|Fig\.", re.I)
-
-# 模板结构段：这些段落不代表技术要求内容，解析时跳过
-_TEMPLATE_SKIP = re.compile(
-    r"^(研\s*制\s*任\s*务\s*书|变更记录|编\s*号[：:]|版本[：:]|"
-    r"密\s*级[：:]|研制阶段[：:]|使用单位[：:]|研制单位[：:]|"
-    r"名\s*称[：:]|20\d{2}\s*年|\d{4}\s*年\s*\d{1,2}\s*月|"
-    r"中航光电|JONHON|目\s*录|第\s*\d+\s*页)"
-)
-
 
 # ── 数据结构 ──────────────────────────────────────────────────────────────────
 
@@ -140,7 +132,7 @@ def _coverage_text(text: str) -> str:
     The figure ordinal is not a technical fact; every other number, unit and
     threshold remains part of the exact coverage evidence.
     """
-    compact = re.sub(r"\s+", "", text or "")
+    compact = normalize_source_display_text(text)
     compact = re.sub(r"图\d+", "图#", compact)
     # 受控装配只允许目标模板统一句末标点。“；”与“。”的
     # 句末形式差异不代表原文证据丢失，但内容中间的数值、单位、
@@ -172,6 +164,7 @@ class InputBlock:
     output_caption_order: str = ""
     output_evidence_hash: str = ""
     image_caption_order: str = ""
+    source_body_index: int = -1
 
 
 @dataclass
@@ -183,6 +176,13 @@ class CoverageLedger:
     # but it is not a writable requirement and therefore does not belong in
     # the exact-copy coverage denominator.
     excluded_structural_headings: List[Dict[str, str]] = field(default_factory=list)
+    # Business rules can require keeping the target template instead of copying
+    # a source block. Preserve the complete source evidence without claiming
+    # that it was written or counting it in the exact-copy denominator.
+    excluded_rule_sources: list[dict[str, Any]] = field(default_factory=list)
+    # Historical measurement artifacts are retained for review, not claimed as
+    # copied requirements. Keep their exact source coordinates and media hash.
+    review_only_sources: list[dict[str, Any]] = field(default_factory=list)
     # Package media without a visible document.xml body reference are audit
     # facts only.  They must never satisfy image coverage.
     unreferenced_output_media: List[str] = field(default_factory=list)
@@ -219,6 +219,8 @@ class CoverageLedger:
                 "source_file": self.source_file,
                 "blocks": [asdict(b) for b in self.blocks],
                 "excluded_structural_headings": self.excluded_structural_headings,
+                "excluded_rule_sources": self.excluded_rule_sources,
+                "review_only_sources": self.review_only_sources,
                 "unreferenced_output_media": self.unreferenced_output_media,
             },
             ensure_ascii=False, indent=2
@@ -232,6 +234,8 @@ class CoverageLedger:
             excluded_structural_headings=list(
                 data.get("excluded_structural_headings", [])
             ),
+            excluded_rule_sources=list(data.get("excluded_rule_sources", [])),
+            review_only_sources=list(data.get("review_only_sources", [])),
             unreferenced_output_media=list(data.get("unreferenced_output_media", [])),
         )
         for bd in data["blocks"]:
@@ -289,8 +293,33 @@ class CoverageLedger:
                 "",
             ]
 
+        if self.excluded_rule_sources:
+            lines += [
+                "## 业务规则保留模板（原输入留档，不计入覆盖分母）",
+                "",
+                *[
+                    f"- [{item['block_id']}] body={item['source_body_index']} "
+                    f"{item['rule_ref']} | {item['source_section']} | {item['summary']}"
+                    for item in self.excluded_rule_sources
+                ],
+                "",
+            ]
+
+        if self.review_only_sources:
+            lines += [
+                "## 历史测试资料（仅供审阅，不计入正文覆盖率）",
+                "",
+                *[
+                    f"- [{item['block_id']}] {item['source_file']} | "
+                    f"正文位置 {item['source_body_index'] + 1} | {item['source_section']} | "
+                    f"{item['summary']} | 来源ID：{','.join(item['semantic_source_ids'])}"
+                    for item in self.review_only_sources
+                ],
+                "",
+            ]
+
         if self.passed():
-            lines += ["## ✅ 质量门禁：通过（输入内容全部转入）", ""]
+            lines += ["## ✅ 质量门禁：通过（应转入的输入内容全部转入）", ""]
         else:
             lines += [
                 f"## ❌ 质量门禁：未通过（{len(self.uncovered)} 块未转入）",
@@ -466,27 +495,11 @@ def _document_facts(docx_path: str) -> _DocumentFacts:
                 )
             )
 
-        def adjacent_caption(body_index: int) -> tuple[str, int, str]:
-            same = _caption_text(body_texts[body_index])
-            if same:
-                return same, body_index, "same"
-            # Empty paragraphs are layout-only.  The first meaningful body
-            # node on either side is the only admissible adjacent caption.
-            for candidate in range(body_index + 1, len(children)):
-                if not body_texts[candidate] and not body_rids[candidate]:
-                    continue
-                caption = _caption_text(body_texts[candidate])
-                if caption:
-                    return caption, candidate, "after"
-                break
-            for candidate in range(body_index - 1, -1, -1):
-                if not body_texts[candidate] and not body_rids[candidate]:
-                    continue
-                caption = _caption_text(body_texts[candidate])
-                if caption:
-                    return caption, candidate, "before"
-                break
-            return "", -1, ""
+        figure_pairs = pair_figure_captions(
+            body_texts,
+            {index for index, rids in enumerate(body_rids) if rids},
+            _caption_text,
+        )
 
         images: list[_ImageEvidence] = []
         referenced_media_paths: set[str] = set()
@@ -500,7 +513,9 @@ def _document_facts(docx_path: str) -> _DocumentFacts:
                     continue
                 media_path, artifact_hash = part
                 image_index += 1
-                caption, caption_index, caption_order = adjacent_caption(body_index)
+                caption, caption_index, caption_order = figure_pairs.get(
+                    body_index, ("", -1, "")
+                )
                 referenced_media_paths.add(media_path)
                 images.append(
                     _ImageEvidence(
@@ -537,41 +552,39 @@ def parse_docx_to_ledger(docx_path: str) -> CoverageLedger:
     ledger = CoverageLedger(source_file=str(docx_path))
     para_idx = table_idx = img_idx = ind_idx = 0
     current_section = "（文档开头）"
-    signature_zone = False
 
     facts = _document_facts(docx_path)
     body = facts.body
+    exclusions = source_exclusion_reasons(list(body))
     images_by_body_index: Dict[int, List[_ImageEvidence]] = {}
     for image in facts.images:
         images_by_body_index.setdefault(image.body_index, []).append(image)
 
     for body_index, child in enumerate(body):
+        if body_index in exclusions:
+            continue
         tag = child.tag
 
         if tag == _wtag("p"):
             text = _para_text(child)
             is_heading = _is_heading(child, text)
 
-            if is_heading and len(text) < 80:
-                current_section = text[:60]
-                signature_zone = False
-
-            # 跳过封面/变更记录/纯标题行等模板结构段
-            if _TEMPLATE_SKIP.search(text) and len(text) < 60:
-                continue
-            # 跳过纯章节标题（只有编号+标题文字，无实质内容）
-            if is_heading and len(text) < 80:
+            substantive = has_substantive_heading_content(text)
+            if is_heading and (not substantive or source_heading_label(text) != text):
+                current_section = source_heading_label(text)
+            # A numbered clause may contain the complete requirement.  Only
+            # pure structural headings may be absent from the coverage ledger.
+            if is_heading and not substantive and not _has_drawing(child):
                 continue
 
             body_images = images_by_body_index.get(body_index, [])
             if body_images:
-                if signature_zone:
-                    continue
                 for image in body_images:
                     img_idx += 1
                     caption = image.caption or (text[:60] if text else f"图片{img_idx}")
                     ledger.blocks.append(InputBlock(
                         block_id=f"TR-IMG-{img_idx:03d}",
+                        source_body_index=body_index,
                         block_type="image",
                         source_section=current_section,
                         summary=caption,
@@ -594,6 +607,7 @@ def parse_docx_to_ledger(docx_path: str) -> CoverageLedger:
                 caption = text[:60] if text else f"图片{img_idx}"
                 ledger.blocks.append(InputBlock(
                     block_id=f"TR-IMG-{img_idx:03d}",
+                    source_body_index=body_index,
                     block_type="image",
                     source_section=current_section,
                     summary=caption,
@@ -625,6 +639,7 @@ def parse_docx_to_ledger(docx_path: str) -> CoverageLedger:
                 ind_idx += 1
                 ledger.blocks.append(InputBlock(
                     block_id=f"TR-IND-{ind_idx:03d}",
+                    source_body_index=body_index,
                     block_type="indicator",
                     source_section=current_section,
                     summary=text[:120],
@@ -633,13 +648,10 @@ def parse_docx_to_ledger(docx_path: str) -> CoverageLedger:
                 ))
                 continue
 
-            # 跳过合同/协议签署条款（不属于技术要求，无需追踪覆盖）
-            if any(kw in text for kw in ["一式贰份", "友好协商", "甲乙双方各保存", "技术协调单"]):
-                continue
-
             para_idx += 1
             ledger.blocks.append(InputBlock(
                 block_id=f"TR-PARA-{para_idx:03d}",
+                source_body_index=body_index,
                 block_type="paragraph",
                 source_section=current_section,
                 summary=text[:120],
@@ -648,22 +660,13 @@ def parse_docx_to_ledger(docx_path: str) -> CoverageLedger:
 
         elif tag == _wtag("tbl"):
             raw = _table_to_json(child)
-            if (
-                any(marker in raw for marker in ("使用单位签署", "使用单位签字"))
-                and any(
-                    marker in raw
-                    for marker in ("研制单位签署", "研制或试制单位签署", "签字/盖章")
-                )
-            ):
-                # 签字盖章区不是技术正文，不参与语义搬运或覆盖率统计。
-                signature_zone = True
-                continue
             # Images embedded in table cells are first-class source evidence.
             for image in images_by_body_index.get(body_index, []):
                 img_idx += 1
                 caption = image.caption or f"图片{img_idx}"
                 ledger.blocks.append(InputBlock(
                     block_id=f"TR-IMG-{img_idx:03d}",
+                    source_body_index=body_index,
                     block_type="image",
                     source_section=current_section,
                     summary=caption,
@@ -674,16 +677,10 @@ def parse_docx_to_ledger(docx_path: str) -> CoverageLedger:
                 ))
             table_idx += 1
             summary = _table_summary(child)
-            # 跳过封面表（包含产品名称/使用单位/研制单位字样且行数少）
-            if any(kw in raw for kw in ["产品名称", "使用单位", "研制单位", "中航光电科技", "密级", "研制阶段"]) \
-                    and raw.count("[[") <= 4:
-                continue
-            # 跳过变更记录表（第一行含"版本"和"章条编号"）
-            if "版本" in raw and "章条编号" in raw:
-                continue
             has_ind = bool(_IND_KEYWORDS.search(raw))
             ledger.blocks.append(InputBlock(
                 block_id=f"TR-TABLE-{table_idx:03d}",
+                source_body_index=body_index,
                 block_type="table",
                 source_section=current_section,
                 summary=summary,
@@ -829,6 +826,29 @@ def mark_covered_from_output(ledger: CoverageLedger, out_path: str) -> CoverageL
                 used_body_evidence.add(node.body_index)
                 matched_indices = [node.body_index]
                 matched_slot = node.slot
+        elif (references := extract_standard_references(
+            block.raw_text or "", reference_context=is_reference_heading(block.source_section),
+        )):
+            # A labelled source list is deliberately rendered as individual
+            # normative references.  The label is presentation; every complete
+            # identifier, title and condition must still have output evidence.
+            reference_nodes = []
+            for reference in references:
+                normalized_reference = _coverage_text(reference)
+                reference_node = next((
+                    candidate for candidate in facts.nodes
+                    if candidate.kind == "paragraph"
+                    and normalized_reference in candidate.normalized_text
+                ), None)
+                if reference_node is None:
+                    reference_nodes = []
+                    break
+                reference_nodes.append(reference_node)
+            covered = len(reference_nodes) == len(references)
+            if covered:
+                matched_indices = list(dict.fromkeys(node.body_index for node in reference_nodes))
+                used_body_evidence.update(matched_indices)
+                matched_slot = reference_nodes[0].slot
         else:
             raw = _coverage_text(block.raw_text or "")
             node = next(
@@ -886,63 +906,9 @@ def mark_covered_from_output(ledger: CoverageLedger, out_path: str) -> CoverageL
                     covered = True
                     matched_indices = unique_indices
                     matched_slot = clause_nodes[0].slot
-            if not covered and raw:
-                # 技术指标段允许拆成多行结构化指标，但每个数值事实必须仍在
-                # 输出中出现。这里只接受至少两个且全部命中的“数字+单位/阈值”
-                # 证据，不能用章节计划或宽松关键词虚构覆盖。
-                metric_tokens = list(dict.fromkeys(re.findall(
-                    r"(?:[≤≥<>]|不小于|不大于|不超过)?\s*\d+(?:\.\d+)?(?:\s*[~～]\s*\d+(?:\.\d+)?)?\s*(?:芯|A|mA|V|N|g|kg|Kg|s|Hz|℃|次|mm|°)",
-                    block.raw_text or "",
-                    re.I,
-                )))
-                normalized_tokens = [re.sub(r"\s+", "", token) for token in metric_tokens]
-                token_indices: list[int] = []
-                for token in normalized_tokens:
-                    token_node = next(
-                        (
-                            candidate
-                            for candidate in facts.nodes
-                            if token in candidate.normalized_text
-                        ),
-                        None,
-                    )
-                    if token_node is None:
-                        token_indices = []
-                        break
-                    token_indices.append(token_node.body_index)
-                unique_indices = list(dict.fromkeys(token_indices))
-                covered = (
-                    len(normalized_tokens) >= 2
-                    and bool(unique_indices)
-                    and not any(index in used_body_evidence for index in unique_indices)
-                )
-                if covered:
-                    used_body_evidence.update(unique_indices)
-                    matched_indices = unique_indices
-                    matched_slot = next(
-                        candidate.slot
-                        for candidate in facts.nodes
-                        if candidate.body_index == unique_indices[0]
-                    )
-            if not covered and block.raw_text:
-                m = re.match(r"^((?:GJB|GB/T|GB|Q/\w+|KJB|MIL|SAE)\s*[\w./\-]+)", block.raw_text.strip())
-                if m:
-                    std_id = re.sub(r"\s+", "", m.group(1))
-                    node = next(
-                        (
-                            candidate
-                            for candidate in facts.nodes
-                            if candidate.body_index not in used_body_evidence
-                            and std_id
-                            and std_id in candidate.normalized_text
-                        ),
-                        None,
-                    )
-                    covered = node is not None
-                    if node is not None:
-                        used_body_evidence.add(node.body_index)
-                        matched_indices = [node.body_index]
-                        matched_slot = node.slot
+            # Structured indicator rows are verified separately, with source
+            # coordinates, identity and complete user-cell evidence. Matching
+            # numeric tokens elsewhere cannot prove conditions were preserved.
         if covered:
             block.covered = True
             block.action = "placed"
@@ -992,7 +958,24 @@ def exclude_semantic_structure_headings(
             continue
         heading_candidates.setdefault(key, []).append(chapter)
 
-    if not heading_candidates:
+    # Parent chapters with no direct content do not appear in source_chapters.
+    # Use the parser's position audit for those headings, requiring the same
+    # source document and no classified body content at that position.
+    audit = classification.get("source_structure_audit") or {}
+    audited_positions: set[int] = set()
+    if isinstance(audit, dict) and audit.get("source_path") and Path(audit["source_path"]).resolve() == Path(ledger.source_file).resolve():
+        body_positions = {
+            item.get("body_index") for item in classification.get("source_blocks", []) or []
+            if isinstance(item, dict)
+        }
+        audited_positions = {
+            item["body_index"] for item in audit.get("headings", []) or []
+            if isinstance(item, dict) and type(item.get("body_index")) is int
+            and item.get("action") == "structure_only"
+            and item["body_index"] not in body_positions
+        }
+
+    if not heading_candidates and not audited_positions:
         return []
 
     excluded: List[Dict[str, str]] = []
@@ -1000,10 +983,12 @@ def exclude_semantic_structure_headings(
     for block in ledger.blocks:
         key = _coverage_text(block.raw_text)
         candidates = heading_candidates.get(key, [])
-        if block.block_type != "paragraph" or not candidates:
+        audited_heading = (block.source_body_index in audited_positions
+                           and not has_substantive_heading_content(block.raw_text))
+        if block.block_type != "paragraph" or not (candidates or audited_heading):
             kept.append(block)
             continue
-        chapter = candidates.pop(0)
+        chapter = candidates.pop(0) if candidates else {}
         excluded.append({
             "block_id": block.block_id,
             "text": block.raw_text,
@@ -1021,6 +1006,154 @@ def exclude_semantic_structure_headings(
     ledger.excluded_structural_headings.extend(
         item for item in excluded if item["block_id"] not in existing_ids
     )
+    return excluded
+
+
+def exclude_review_reference_sources(
+    ledger: CoverageLedger,
+    classification: dict | None,
+) -> list[dict[str, Any]]:
+    """Keep raw historical test artifacts as review references, not requirements.
+
+    Only historical tables/images and unvalued result labels in an explicitly
+    identified test-results section qualify. Technical clauses and requirement
+    tables elsewhere remain subject to exact-copy/indicator verification.
+    File and position must match; neither similar text nor an LLM category
+    alone can waive coverage.
+    """
+    if not isinstance(classification, dict):
+        return []
+    review_ids = review_reference_source_ids(classification)
+    source_path = Path(ledger.source_file).resolve()
+    sources_by_position: dict[int, list[dict]] = {}
+    for source in classification.get("source_blocks", []) or []:
+        if not isinstance(source, dict) or source.get("source") != "tech":
+            continue
+        position = source.get("body_index")
+        path = source.get("source_path")
+        if type(position) is not int or position < 0 or not path or Path(path).resolve() != source_path:
+            continue
+        sources_by_position.setdefault(position, []).append(source)
+
+    references, kept = [], []
+    for block in ledger.blocks:
+        sources = sources_by_position.get(block.source_body_index, [])
+        all_review_ids = bool(sources) and all(
+            str(source.get("id")) in review_ids for source in sources
+        )
+        qualifies = all_review_ids and block.block_type in {"table", "image"}
+        if all_review_ids and block.block_type == "paragraph":
+            qualifies = all(is_unvalued_historical_result_caption(
+                block.raw_text,
+                " / ".join([
+                    *(str(heading) for heading in source.get("parent_headings", [])),
+                    str(source.get("heading_text") or ""),
+                    str(source.get("section") or block.source_section),
+                ]),
+            ) for source in sources)
+        if not qualifies:
+            kept.append(block)
+            continue
+        references.append({
+            **asdict(block),
+            "action": "review_reference_only",
+            "covered": False,
+            "rule_ref": "historical_test_artifacts_review_only",
+            "source_file": str(source_path),
+            "semantic_source_ids": [str(source["id"]) for source in sources],
+            "source_section": " / ".join(dict.fromkeys([
+                *(str(h) for h in sources[0].get("parent_headings", [])),
+                str(sources[0].get("section") or block.source_section),
+            ])),
+            "reason": (
+                "历史测试结果无数值引导段仅供审阅；质量报告保留来源引用，不作为任务书正文缺失"
+                if block.block_type == "paragraph" else
+                "历史测试图片及原始数据表仅供审阅；质量报告保留来源引用，不作为任务书正文缺失"
+            ),
+        })
+    ledger.blocks = kept
+    ledger.review_only_sources.extend(references)
+    return references
+
+
+def exclude_preserved_template_sources(
+    ledger: CoverageLedger,
+    classification: dict | None,
+    category_mapping_path: str | Path | None,
+) -> list[dict[str, Any]]:
+    """Audit source blocks intentionally not copied under a template-only rule.
+
+    Source document identity and body position are mandatory; equal text in a
+    different paragraph cannot inherit the exclusion. Mixed-role source blocks
+    remain in coverage unless their exact fragments can be individually proved.
+    """
+    if not classification or not category_mapping_path:
+        return []
+    mapping = yaml.safe_load(Path(category_mapping_path).read_text(encoding="utf-8")) or {}
+    roles = {
+        str(role): rule
+        for group in (mapping.get("categories") or {}, mapping.get("semantic_roles") or {})
+        for role, rule in group.items()
+        if isinstance(rule, dict) and rule.get("write_mode") == "preserve_template"
+    }
+    if not roles:
+        return []
+    assignments: dict[str, set[str]] = {}
+    for assignment in classification.get("classifications", []):
+        if isinstance(assignment, dict) and assignment.get("source_id"):
+            assignments.setdefault(str(assignment["source_id"]), set()).add(str(assignment.get("category") or ""))
+    source_path = Path(ledger.source_file).resolve()
+    source_by_position: dict[int, list[dict]] = {}
+    for source in classification.get("source_blocks", []):
+        if not isinstance(source, dict):
+            continue
+        position = source.get("body_index")
+        if type(position) is not int or position < 0:
+            continue
+        path = str(source.get("source_path") or "")
+        if not path or Path(path).resolve() != source_path:
+            continue
+        source_by_position.setdefault(position, []).append(source)
+
+    kept: list[InputBlock] = []
+    excluded: list[dict[str, Any]] = []
+    for block in ledger.blocks:
+        sources = source_by_position.get(block.source_body_index, [])
+        categories = [assignments.get(str(source.get("id")), set()) for source in sources]
+        # Never exempt a paragraph merely because one of its fragments is a
+        # progress clause: all of its independently routed text must qualify.
+        if not sources or any(not assigned or not assigned.issubset(roles) for assigned in categories):
+            kept.append(block)
+            continue
+        if any(source.get("parent_source_id") for source in sources):
+            fragments = sorted(sources, key=lambda source: int(source.get("source_span_start", -1)))
+            reconstructed = ""
+            valid = block.block_type in {"paragraph", "indicator"}
+            for fragment in fragments:
+                text = str(fragment.get("text") or "")
+                start, end = fragment.get("source_span_start"), fragment.get("source_span_end")
+                if start != len(reconstructed) or end != len(reconstructed) + len(text):
+                    valid = False
+                    break
+                reconstructed += text
+            if not valid or _coverage_text(reconstructed) != _coverage_text(block.raw_text):
+                kept.append(block)
+                continue
+        selected_roles = sorted({role for assigned in categories for role in assigned})
+        refs = [str(roles[role].get("rule_ref") or ("开发逻辑!C26/D46" if role == "schedule" else "受控模板保留策略")) for role in selected_roles]
+        record = {
+            **asdict(block),
+            "action": "excluded_by_business_rule",
+            "covered": False,
+            "rule_ref": "、".join(dict.fromkeys(refs)),
+            "categories": selected_roles,
+            "semantic_source_ids": [str(source.get("id")) for source in sources],
+            "source_file": str(source_path),
+            "reason": "按业务规则保留目标模板，由设计填写；输入原文留档，不宣称已转入",
+        }
+        excluded.append(record)
+    ledger.blocks = kept
+    ledger.excluded_rule_sources.extend(excluded)
     return excluded
 
 
@@ -1082,7 +1215,7 @@ def mark_exact_fragment_coverage(
             (
                 block for block in ledger.blocks
                 if not block.covered
-                and block.block_type == "paragraph"
+                and block.block_type in {"paragraph", "indicator"}
                 and _coverage_text(block.raw_text) == _coverage_text(reconstructed)
             ),
             None,
@@ -1136,250 +1269,160 @@ def mark_structured_indicator_coverage(
     ledger: CoverageLedger,
     out_path: str,
 ) -> CoverageLedger:
-    """Credit an audited many-to-one indicator-table transformation.
+    """Prove original indicator coverage independently of adoption approval.
 
-    Several source indicators may be written into one output table node.  The
-    ordinary exact-copy matcher reserves a body node for one source block, so
-    it cannot express that transformation.  This path still requires a passed
-    per-artifact indicator audit plus the semantic label and exact source fact
-    in the final output table.
+    The workbook requires the user input column before comparing/adopting a
+    specification value. Pending design confirmation therefore cannot erase
+    source coverage. Every credited fact still needs a unique consumption,
+    matching source coordinates/text and its identified visible user row.
     """
     audit_path = Path(out_path).with_suffix(".indicator_audit.json")
-    if not audit_path.is_file():
-        return ledger
     try:
         audit = json.loads(audit_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, TypeError):
         return ledger
-    if not audit.get("passed"):
+    if not isinstance(audit, dict):
+        return ledger
+    source_facts = [item for item in audit.get("input_indicator_facts", []) or []
+                    if isinstance(item, dict)]
+    decisions = [item for item in audit.get("comparison_decisions", []) or []
+                 if isinstance(item, dict)]
+    if not source_facts or not decisions:
         return ledger
 
-    input_names = [
-        str(value).strip()
-        for value in audit.get("input_indicator_names", [])
-        if str(value).strip()
-    ]
-    output_names = {
-        str(value).strip()
-        for value in audit.get("output_indicator_names", [])
-        if str(value).strip()
-    }
-    if not input_names or not output_names:
-        return ledger
-    source_heading_aliases = {
-        str(source).strip(): str(target).strip()
-        for source, target in (audit.get("source_heading_aliases") or {}).items()
-        if str(source).strip() and str(target).strip()
-    }
-    comparison_decisions = [
-        item
-        for item in audit.get("comparison_decisions", [])
-        if isinstance(item, dict)
-    ]
-
-    # The coverage parser and the semantic classifier intentionally use
-    # different stable ID namespaces (``TR-*`` versus ``tech-p-*``).  Build a
-    # content-addressed crosswalk instead of comparing those IDs directly.
-    # This lets an audited indicator atom point back to the exact source
-    # paragraph without coupling either parser to the other's numbering.
-    classification_blocks: dict[str, str] = {}
-    for suffix in (
-        ".effective_requirement_classification.json",
-        ".requirement_classification.json",
-    ):
-        classification_path = Path(out_path).with_suffix(suffix)
-        if not classification_path.is_file():
-            continue
+    classification_blocks: dict[str, dict] = {}
+    for suffix in (".requirement_classification.json", ".effective_requirement_classification.json"):
         try:
-            classification = json.loads(
-                classification_path.read_text(encoding="utf-8")
-            )
+            payload = json.loads(Path(out_path).with_suffix(suffix).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError, TypeError):
             continue
-        for item in classification.get("source_blocks", []) or []:
-            if not isinstance(item, dict):
-                continue
-            source_id = str(item.get("id", "")).strip()
-            source_text = _coverage_text(str(item.get("text", "")))
-            if source_id and source_text:
-                classification_blocks[source_id] = source_text
+        for item in payload.get("source_blocks", []) or []:
+            if isinstance(item, dict) and item.get("id"):
+                classification_blocks[str(item["id"])] = item
 
-    facts = _output_facts(out_path)
-    table_nodes = [node for node in facts.nodes if node.kind == "table"]
+    output_facts = _output_facts(out_path)
+    output_rows: dict[str, list[tuple[_BodyNodeEvidence, int, str]]] = {}
+    for node in output_facts.nodes:
+        if node.kind != "table":
+            continue
+        rows = json.loads(node.table_json)
+        user_column = None
+        for row_index, row in enumerate(rows):
+            columns = [i for i, cell in enumerate(row) if "用户要求" in _coverage_text(str(cell))]
+            if columns and (user_column is None or _coverage_text(str(row[0])) in {"项目", "指标", "指标项", "指标名称"}):
+                user_column = columns[0]
+                continue
+            if user_column is None or len(row) <= user_column or not row:
+                continue
+            identity = canonical_indicator_name(str(row[0]))
+            if identity:
+                output_rows.setdefault(identity, []).append((node, row_index, str(row[user_column])))
+
+    facts_by_id: dict[str, list[dict]] = {}
+    consumers: dict[str, list[dict]] = {}
+    for fact in source_facts:
+        facts_by_id.setdefault(str(fact.get("fact_id", "")), []).append(fact)
+    for decision in decisions:
+        for fact_id in decision.get("user_fact_ids", []) or []:
+            consumers.setdefault(str(fact_id), []).append(decision)
+
     audit_hash = hashlib.sha256(audit_path.read_bytes()).hexdigest()
-
-    for block in ledger.uncovered:
-        if block.block_type in {"image", "table"}:
+    claimed_facts: set[str] = set()
+    claimed_spans: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    for block in ledger.blocks:
+        if block.covered or block.block_type in {"image", "table"} or block.source_body_index < 0:
             continue
-        semantic_heading = _semantic_heading(block.source_section)
-        label = source_heading_aliases.get(semantic_heading, "") or next(
-            (
-                name
-                for name in input_names
-                if name in semantic_heading or semantic_heading.endswith(name)
-            ),
-            "",
-        )
-        if not label:
-            continue
-        candidate_labels = {
-            label,
-            *(
-                name
-                for name in output_names
-                if name == label or name in semantic_heading or label in name
-            ),
-        }
-        source_fact = _coverage_text(block.raw_text)
-        # A design-input paragraph frequently contains both a test method and
-        # one concise indicator fact.  The indicator table must contain only
-        # that fact, not the complete method paragraph.  Credit this controlled
-        # atomisation only when the passed audit, the source paragraph and the
-        # final table all agree on the exact same verbatim atom.  This is
-        # intentionally stricter than a semantic/keyword match and therefore
-        # cannot turn a generated or modified value into coverage evidence.
-        audited_atom_match = None
-        for decision in comparison_decisions:
-            decision_label = str(decision.get("indicator_name", "")).strip()
-            if decision_label not in candidate_labels:
-                continue
-            user_atom = _coverage_text(str(decision.get("user_requirement", "")))
-            if not user_atom:
-                continue
-            source_ids = [
-                str(value).strip()
-                for value in decision.get("user_source_ids", []) or []
-                if str(value).strip()
-            ]
-            exact_source_anchor = any(
-                classification_blocks.get(source_id) == source_fact
-                for source_id in source_ids
-            )
-            atom_metric_tokens = list(dict.fromkeys(
-                re.sub(r"\s+", "", token)
-                for token in re.findall(
-                    r"(?:[≤≥<>]|不小于|不大于|不超过)?\s*"
-                    r"\d+(?:\.\d+)?(?:\s*[~～]\s*\d+(?:\.\d+)?)?\s*"
-                    r"(?:MΩ|mΩ|Ω|芯|A|mA|V|N|g|kg|Kg|s|Hz|℃|次|mm|°)",
-                    str(decision.get("user_requirement", "")),
-                    re.I,
-                )
-            ))
-            atom_is_source_backed = user_atom in source_fact or (
-                exact_source_anchor
-                and bool(atom_metric_tokens)
-                and all(token in source_fact for token in atom_metric_tokens)
-            )
-            if not atom_is_source_backed:
-                continue
-            node = next(
-                (
-                    candidate
-                    for candidate in table_nodes
-                    if _coverage_text(decision_label) in candidate.normalized_text
-                    and user_atom in candidate.normalized_text
-                ),
-                None,
-            )
-            if node is not None:
-                audited_atom_match = (decision, user_atom, node)
+        original = _coverage_text(block.raw_text)
+        candidates = [fact for fact in source_facts if
+                      (fact.get("source_coordinates") or {}).get("body_index") == block.source_body_index]
+        evidence: list[dict] = []
+        local_spans: dict[tuple[int, int], list[tuple[int, int]]] = {}
+        source_spans: list[tuple[int, int]] = []
+        nodes: list[_BodyNodeEvidence] = []
+        for fact in candidates:
+            fact_id = str(fact.get("fact_id", ""))
+            value = _coverage_text(str(fact.get("source_value", "")))
+            identity = canonical_indicator_name(str(fact.get("indicator_name", "")))
+            if (not fact_id or not value or not identity or fact_id in claimed_facts
+                    or len(facts_by_id.get(fact_id, [])) != 1 or len(consumers.get(fact_id, [])) != 1):
                 break
-        if audited_atom_match is not None:
-            decision, user_atom, node = audited_atom_match
-            block.covered = True
-            block.action = "structured_indicator_atom"
-            block.assigned_section = node.slot or "技术指标（结构化表格）"
-            block.confidence = 1.0
-            block.output_slot = node.slot
-            block.output_body_indices = [node.body_index]
-            block.output_evidence_hash = hashlib.sha256(
-                json.dumps(
-                    {
-                        "source_id": block.block_id,
-                        "classification_source_ids": decision.get(
-                            "user_source_ids", []
-                        ),
-                        "source_text": source_fact,
-                        "evidence_mode": (
-                            "audited_exact_source_atom"
-                            if user_atom in source_fact
-                            else "audited_classification_source_crosswalk"
-                        ),
-                        "source_atom": user_atom,
-                        "source_metric_tokens": atom_metric_tokens,
-                        "indicator_label": decision.get("indicator_name", label),
-                        "adopted_requirement": decision.get(
-                            "adopted_requirement", ""
-                        ),
-                        "output_body_index": node.body_index,
-                        "indicator_audit_sha256": audit_hash,
-                    },
-                    ensure_ascii=False,
-                    sort_keys=True,
-                ).encode("utf-8")
-            ).hexdigest()
+            coordinate = fact.get("source_coordinates") or {}
+            start, end = coordinate.get("start"), coordinate.get("end")
+            if start is None and end is None and value == original:
+                start, end = 0, len(block.raw_text)
+            if (type(start) is not int or type(end) is not int or not 0 <= start < end <= len(block.raw_text)
+                    or _coverage_text(block.raw_text[start:end]) != value):
+                break
+            decision = consumers[fact_id][0]
+            if canonical_indicator_name(str(decision.get("indicator_name", ""))) != identity:
+                break
+            source_ids = [str(item) for item in fact.get("source_ids", []) or []]
+            if source_ids:
+                if not set(source_ids).issubset(set(map(str, decision.get("user_source_ids", []) or []))):
+                    break
+                anchors = [classification_blocks.get(source_id, {}) for source_id in source_ids]
+                if any(anchor.get("body_index") != block.source_body_index
+                       or not _coverage_text(str(anchor.get("text", "")))
+                       or _coverage_text(str(anchor.get("text", ""))) not in original for anchor in anchors):
+                    break
+            user_requirement = _coverage_text(str(decision.get("user_requirement", "")))
+            matching_rows = output_rows.get(identity, [])
+            if len(matching_rows) != 1 or value not in user_requirement:
+                break
+            node, row_index, user_cell = matching_rows[0]
+            display_value = value
+            display_requirement = user_requirement
+            if decision.get("display_labels"):
+                from jonhon_taskbook.indicator_identity import indicator_display_value
+                labels = decision["display_labels"]
+                name = str(decision.get("indicator_name", ""))
+                display_value = _coverage_text(indicator_display_value(str(fact["source_value"]), name, labels))
+                display_requirement = _coverage_text(indicator_display_value(str(decision["user_requirement"]), name, labels))
+            actual_user = _coverage_text(user_cell)
+            if actual_user != display_requirement or not display_value:
+                break
+            row_key = (node.body_index, row_index)
+            occupied = claimed_spans.get(row_key, []) + local_spans.get(row_key, [])
+            output_start = actual_user.find(display_value)
+            while output_start >= 0 and any(output_start < b and output_start + len(display_value) > a for a, b in occupied):
+                output_start = actual_user.find(display_value, output_start + 1)
+            if output_start < 0:
+                break
+            local_spans.setdefault(row_key, []).append((output_start, output_start + len(display_value)))
+            source_spans.append((start, end))
+            nodes.append(node)
+            evidence.append({
+                "fact_id": fact_id, "indicator_identity": identity,
+                "source_coordinates": coordinate, "source_ids": source_ids,
+                "source_text": value, "display_text": display_value, "output_body_index": node.body_index,
+                "output_row_index": row_index, "output_user_cell": user_cell,
+            })
+        if not candidates or len(evidence) != len(candidates):
             continue
-        metric_tokens = list(dict.fromkeys(
-            re.sub(r"\s+", "", token)
-            for token in re.findall(
-                r"(?:[≤≥<>]|不小于|不大于|不超过)?\s*"
-                r"\d+(?:\.\d+)?(?:\s*[~～]\s*\d+(?:\.\d+)?)?\s*"
-                r"(?:芯|A|mA|V|N|g|kg|Kg|s|Hz|℃|次|mm|°)",
-                block.raw_text or "",
-                re.I,
-            )
-        ))
-        node = next(
-            (
-                candidate
-                for candidate in table_nodes
-                if any(
-                    _coverage_text(candidate_label) in candidate.normalized_text
-                    for candidate_label in candidate_labels
-                )
-                and (
-                    (source_fact and source_fact in candidate.normalized_text)
-                    or (
-                        len(metric_tokens) >= 2
-                        and all(
-                            token in candidate.normalized_text
-                            for token in metric_tokens
-                        )
-                    )
-                )
-            ),
-            None,
-        )
-        if node is None:
-            continue
-        block.covered = True
-        exact_fact = bool(source_fact and source_fact in node.normalized_text)
-        block.action = (
-            "structured_indicator"
-            if exact_fact
-            else "structured_indicator_fragments"
-        )
-        block.assigned_section = node.slot or "技术指标（结构化表格）"
-        block.confidence = 1.0
-        block.output_slot = node.slot
-        block.output_body_indices = [node.body_index]
-        block.output_evidence_hash = hashlib.sha256(
-            json.dumps(
-                {
-                    "source_id": block.block_id,
-                    "source_text": source_fact,
-                    "evidence_mode": "exact" if exact_fact else "all_metric_tokens",
-                    "metric_tokens": metric_tokens,
-                    "indicator_label": label,
-                    "output_body_index": node.body_index,
+        cursor = 0
+        for start, end in sorted(source_spans):
+            # Separators may move between rows; no substantive source words,
+            # conditions or numbers may disappear between extracted facts.
+            if start < cursor or re.search(r"[^\s；;。]", block.raw_text[cursor:start]):
+                break
+            cursor = end
+        else:
+            if not re.search(r"[^\s；;。]", block.raw_text[cursor:]):
+                claimed_facts.update(item["fact_id"] for item in evidence)
+                for key, spans in local_spans.items():
+                    claimed_spans.setdefault(key, []).extend(spans)
+                block.covered = True
+                block.action = "structured_indicator_exact_fact"
+                block.assigned_section = " / ".join(dict.fromkeys(node.slot for node in nodes if node.slot)) or "技术指标（结构化表格）"
+                block.confidence = 1.0
+                block.output_slot = block.assigned_section
+                block.output_body_indices = list(dict.fromkeys(node.body_index for node in nodes))
+                block.output_evidence_hash = hashlib.sha256(json.dumps({
+                    "source_id": block.block_id, "source_body_index": block.source_body_index,
+                    "source_text": original, "facts": evidence,
                     "indicator_audit_sha256": audit_hash,
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            ).encode("utf-8")
-        ).hexdigest()
+                }, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
     return ledger
-
 
 # ── 标记工具（供 extract_sections 调用） ─────────────────────────────────────
 

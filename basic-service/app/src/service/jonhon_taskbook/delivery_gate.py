@@ -2,6 +2,7 @@
 完整性交付门禁：全文未填完整 → 不予交付，移入「未通过审查」。
 """
 import json
+import hashlib
 import os
 import posixpath
 import re
@@ -10,19 +11,29 @@ import zipfile
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 from lxml import etree
 
 from .config import BASE_DIR, W
+from .document_zone_detector import (
+    contains_unresolved_xxx, is_table_sequence_ellipsis, scan_document_zones,
+)
 from .docx_io import MANUAL_FILL_MARKER, get_cell_text, get_para_text
-from .renderer.table_style_engine import THICK_BORDER_SIZE, THIN_BORDER_SIZE
+from .failure_table_schema import has_independent_failure_cells, has_ordered_failure_fields, is_failure_table
+from .indicator_identity import canonical_indicator_name
 from .final_reviewer import (
     HALLUCINATION_PATTERNS,
     compare_to_ground_truth,
     validate_v3_user_column,
 )
-from .document_zone_detector import scan_document_zones
+from .qa_gate import (
+    load_template_baseline,
+    manual_marker_counts,
+    normalized_template_text,
+    paragraph_template_key,
+)
+from .renderer.table_style_engine import THICK_BORDER_SIZE, THIN_BORDER_SIZE
 
 REJECTED_DIR = os.path.join(BASE_DIR, "未通过审查")
 
@@ -174,14 +185,14 @@ def _manual_review_gate_findings(
     """Reconcile typed manual-review decisions with visible Word markers."""
 
     expected_names = [
-        _normalized_table_text(item.get("indicator_name", ""))
+        canonical_indicator_name(item.get("indicator_name", ""))
         for item in indicator_audit.get("manual_review_required", [])
         if isinstance(item, dict) and item.get("indicator_name")
     ]
     actual_names = [
-        _normalized_table_text(value)
+        canonical_indicator_name(value)
         for value in scan.get("manual_indicator_names", [])
-        if _normalized_table_text(value)
+        if canonical_indicator_name(value)
     ]
     expected = Counter(expected_names)
     actual = Counter(actual_names)
@@ -274,6 +285,78 @@ def _delivery_threshold(report: Dict[str, Any], key: str, default: int) -> int:
         return default
 
 
+def _explicitly_absent_variant_groups(audit: dict[str, Any], docx_path: str) -> bool:
+    """An empty group list requires a live controlled absence policy and DOCX proof."""
+    if audit.get("groups") != [] or audit.get("no_mutually_exclusive_sections") is not True:
+        return False
+    from docx import Document
+    from .template_variant_policy import ROOT, budget_headings, load_template_variant_policy
+
+    policy_path = Path(str(audit.get("policy_path", ""))).resolve()
+    if policy_path.parent != (ROOT / "config").resolve():
+        return False
+    try:
+        policy = load_template_variant_policy(policy_path)
+        return bool(
+            policy.get("no_mutually_exclusive_sections") is True
+            and policy.get("mutually_exclusive_groups") == []
+            and audit.get("policy_sha256") == hashlib.sha256(policy_path.read_bytes()).hexdigest()
+            and not budget_headings(Document(docx_path))
+        )
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def _section_evidence_findings(docx_path: str) -> list[dict[str, str]]:
+    """Chapter templates need exact target evidence and complete source coverage."""
+    defects: list[dict[str, str]] = []
+
+    def reject(code: str, message: str, detail: str = "") -> None:
+        defects.append({"code": code, "severity": "BLOCKER", "location": "技术要求章节审计",
+                        "label": message, "text": detail[:500]})
+
+    semantic_path = Path(docx_path).with_suffix(".semantic_integrity_gate.json")
+    coverage_path = Path(docx_path).with_suffix(".coverage_ledger.json")
+    try:
+        semantic = json.loads(semantic_path.read_text(encoding="utf-8"))
+        if not isinstance(semantic, dict):
+            raise ValueError("语义审计不是对象")
+        checks = semantic.get("checked")
+        expected = semantic.get("expected_source_ids")
+        valid = (
+            semantic.get("passed") is True
+            and semantic.get("violations") == []
+            and semantic.get("require_complete_source_checks") is True
+            and semantic.get("output_sha256") == hashlib.sha256(Path(docx_path).read_bytes()).hexdigest()
+            and bool((semantic.get("policy") or {}).get("exact_categories"))
+            and isinstance(checks, list) and isinstance(expected, list)
+            and all(isinstance(check, dict) and check.get("target_matches_category") is True
+                    and check.get("exact_evidence_in_target") is True for check in checks)
+        )
+        if valid:
+            checked_ids = {check.get("source_id") for check in checks}
+            valid = set(expected).issubset(checked_ids)
+        if not valid:
+            reject("SEMANTIC_INTEGRITY_AUDIT", "技术要求未完成逐项原文落章核验，或审计与当前Word不一致")
+    except (OSError, ValueError, TypeError, AttributeError) as exc:
+        semantic = {}
+        reject("SEMANTIC_INTEGRITY_AUDIT", "缺少或无法读取技术要求章节审计", str(exc))
+
+    try:
+        coverage_bytes = coverage_path.read_bytes()
+        coverage = json.loads(coverage_bytes)
+        blocks = coverage.get("blocks") if isinstance(coverage, dict) else None
+        if not isinstance(blocks, list) or any(
+            not isinstance(block, dict) or block.get("covered") is not True for block in blocks
+        ):
+            reject("SOURCE_COVERAGE_AUDIT", "存在未传递的来源内容，或覆盖账本不完整")
+        if semantic.get("coverage_ledger_sha256") != hashlib.sha256(coverage_bytes).hexdigest():
+            reject("SOURCE_COVERAGE_AUDIT", "覆盖账本与本次语义落章审计不一致")
+    except (OSError, ValueError, TypeError) as exc:
+        reject("SOURCE_COVERAGE_AUDIT", "缺少或无法读取来源覆盖账本", str(exc))
+    return defects
+
+
 def _scan_text_defects(text: str, location: str) -> List[Dict[str, str]]:
     defects = []
     if not text or not text.strip():
@@ -283,6 +366,8 @@ def _scan_text_defects(text: str, location: str) -> List[Dict[str, str]]:
         return defects
     for pat, label in INCOMPLETE_PATTERNS:
         if re.search(pat, text, re.I):
+            if label == "xxx占位符" and not contains_unresolved_xxx(text):
+                continue
             defects.append({
                 "code": "INCOMPLETE",
                 "severity": "BLOCKER",
@@ -301,50 +386,6 @@ def _scan_text_defects(text: str, location: str) -> List[Dict[str, str]]:
                 "text": text[:120],
             })
     return defects
-
-
-def _text_runs_are_all_italic(element) -> bool:
-    """Return True when every visible text run is explicitly italic."""
-    visible_runs = []
-    for run in element.findall(f".//{{{W}}}r"):
-        text = "".join(node.text or "" for node in run.findall(f".//{{{W}}}t"))
-        if text.strip():
-            visible_runs.append(run)
-    if not visible_runs:
-        return False
-    for run in visible_runs:
-        rpr = run.find(f"{{{W}}}rPr")
-        italic = None if rpr is None else rpr.find(f"{{{W}}}i")
-        italic_cs = None if rpr is None else rpr.find(f"{{{W}}}iCs")
-        marker = italic if italic is not None else italic_cs
-        if marker is None:
-            return False
-        value = str(marker.get(f"{{{W}}}val", "1")).strip().lower()
-        if value in {"0", "false", "off", "no"}:
-            return False
-    return True
-
-
-def _template_baseline_texts(template_path: str | None) -> set[str]:
-    """Read exact controlled-template paragraph/cell text for preservation QA."""
-    if not template_path or not os.path.isfile(template_path):
-        return set()
-    try:
-        with zipfile.ZipFile(template_path) as package:
-            root = etree.fromstring(package.read("word/document.xml"))
-    except (OSError, KeyError, zipfile.BadZipFile, etree.XMLSyntaxError):
-        return set()
-    texts = {
-        get_para_text(node).strip()
-        for node in root.findall(f".//{{{W}}}p")
-        if get_para_text(node).strip()
-    }
-    texts.update(
-        get_cell_text(node).strip()
-        for node in root.findall(f".//{{{W}}}tc")
-        if get_cell_text(node).strip()
-    )
-    return texts
 
 
 def _referenced_package_parts(package: zipfile.ZipFile) -> set[str]:
@@ -444,22 +485,34 @@ def scan_document_completeness(
     manual_indicator_names: list[str] = []
     manual_marker_locations: list[str] = []
     invalid_manual_marker_locations: list[str] = []
-    template_texts = (
-        _template_baseline_texts(template_path)
-        if preserve_template_guidance
-        else set()
-    )
+    template_root = load_template_baseline(template_path) if preserve_template_guidance else None
+    template_paragraphs = Counter()
+    template_cells = Counter()
+    if template_root is not None:
+        template_paragraphs.update(
+            paragraph_template_key(p)
+            for p in template_root.findall(f".//{{{W}}}p")
+            if not any(parent.tag == f"{{{W}}}tc" for parent in p.iterancestors())
+        )
+        template_cells.update(normalized_template_text(get_cell_text(cell)) for cell in template_root.findall(f".//{{{W}}}tc"))
+    elif preserve_template_guidance:
+        defects.append({"code": "MISSING_TEMPLATE_BASELINE", "severity": "BLOCKER", "location": "受控模板",
+                        "label": "模板基线缺失或不可读，无法验证原有保留内容", "text": str(template_path or "")})
 
     for i, p in enumerate(root.findall(f".//{{{W}}}p")):
+        if any(parent.tag == f"{{{W}}}tc" for parent in p.iterancestors()):
+            continue
         t = get_para_text(p)
         full_text_parts.append(t)
-        preserved = bool(
-            preserve_template_guidance
-            and (
-                _text_runs_are_all_italic(p)
-                or (t.strip() and t.strip() in template_texts)
-            )
-        )
+        occurrences, invalid = manual_marker_counts(p)
+        location = f"paragraph#{i}"
+        manual_marker_count += occurrences
+        manual_marker_locations.extend([location] * occurrences)
+        invalid_manual_marker_locations.extend([location] * invalid)
+        key = paragraph_template_key(p)
+        preserved = template_paragraphs[key] > 0
+        if preserved:
+            template_paragraphs[key] -= 1
         if not preserved:
             defects.extend(_scan_text_defects(t, f"段落#{i}"))
 
@@ -487,55 +540,28 @@ def scan_document_completeness(
                         "label": "Controlled table border contract is not satisfied",
                         "text": "; ".join(border_errors[:20]),
                     })
-            if (
-                "失效部位" in header_texts
-                and any(text.startswith("失效模式") for text in header_texts)
-            ):
-                expected = [
-                    "数据所属产品的产品名称",
-                    "失效部位",
-                    "失效模式（故障现象）",
-                    "失效分析",
-                    "可靠性设计方法（设计改进措施）",
-                ]
-                normalized = [re.sub(r"\s+", "", text) for text in header_texts]
-                if normalized != expected:
+            if is_failure_table(header_texts):
+                independent_cells = has_independent_failure_cells(table)
+                if not has_ordered_failure_fields(header_texts) or not independent_cells:
                     defects.append({
                         "code": "FAILURE_TABLE_SCHEMA",
                         "severity": "BLOCKER",
                         "location": f"表格{ti}",
-                        "label": "失效模式表必须严格使用7-22五列表头",
+                        "label": "失效模式表须依次包含产品名称或型号、失效部位、故障现象、失效分析及改进措施五个独立字段",
                         "text": " | ".join(header_texts),
                     })
         for ri, row in enumerate(table.findall(f"{{{W}}}tr")):
             for ci, cell in enumerate(row.findall(f"{{{W}}}tc")):
                 t = get_cell_text(cell)
                 full_text_parts.append(t)
-                marker_occurrences = t.count(MANUAL_FILL_MARKER)
+                marker_occurrences, invalid_markers = manual_marker_counts(cell)
                 if marker_occurrences:
                     location = f"table#{ti}:row={ri}:cell={ci}"
                     manual_marker_count += marker_occurrences
                     manual_marker_locations.extend(
                         [location] * marker_occurrences
                     )
-                    red_occurrences = 0
-                    for run in cell.findall(f".//{{{W}}}r"):
-                        run_text = "".join(
-                            node.text or ""
-                            for node in run.findall(f".//{{{W}}}t")
-                        )
-                        color = run.find(f"./{{{W}}}rPr/{{{W}}}color")
-                        color_value = (
-                            str(color.get(f"{{{W}}}val") or "").upper()
-                            if color is not None
-                            else ""
-                        )
-                        if color_value in {"FF0000", "RED"}:
-                            red_occurrences += run_text.count(MANUAL_FILL_MARKER)
-                    if red_occurrences < marker_occurrences:
-                        invalid_manual_marker_locations.extend(
-                            [location] * (marker_occurrences - red_occurrences)
-                        )
+                    invalid_manual_marker_locations.extend([location] * invalid_markers)
                     if table_kind == "indicator" and ri > 0:
                         item_cells = row.findall(f"{{{W}}}tc")
                         item_name = (
@@ -546,18 +572,19 @@ def scan_document_completeness(
                         manual_indicator_names.extend(
                             [item_name] * marker_occurrences
                         )
-                preserved = bool(
-                    preserve_template_guidance
-                    and (
-                        _text_runs_are_all_italic(cell)
-                        or (t.strip() and t.strip() in template_texts)
-                    )
-                )
-                if not preserved:
+                key = normalized_template_text(t)
+                preserved = template_cells[key] > 0
+                if preserved:
+                    template_cells[key] -= 1
+                if not preserved and not is_table_sequence_ellipsis(cell):
                     defects.extend(_scan_text_defects(t, f"表格{ti}行{ri}列{ci}"))
                 # 7-22 受控规则允许故障库无精确产品/系列记录时，在五列表格
                 # 第一列写入唯一标识。其合法性由 failure_mode_audit 与矩阵门禁
                 # 共同验证，这里不再把该受控状态误判为模板污染。
+
+    for location in dict.fromkeys(invalid_manual_marker_locations):
+        defects.append({"code": "INVALID_MANUAL_MARKER", "severity": "BLOCKER", "location": location,
+                        "label": "【人工填写】必须使用完整的红色受控标记", "text": MANUAL_FILL_MARKER})
 
     # DOCX 包内存在未被正文关系引用的媒体，通常说明删节后遗留了
     # 图片二进制。它会扩大文件并破坏“可见内容即审计内容”的证据边界。
@@ -658,16 +685,13 @@ def run_delivery_gate(
             if str(heading).strip() not in excluded_required_headings
         ]
     meta = pipeline_report.get("meta") or {}
-    formal_output = bool(
-        isinstance(meta, dict) and meta.get("formal_output", True)
-    )
     preserve_template_guidance = bool(
         policy.get("preserve_template_guidance")
         or (
             isinstance(meta, dict)
             and meta.get("preserve_unfilled_template")
         )
-    ) and not formal_output
+    )
     template_path = (
         str(meta.get("template_path", ""))
         if isinstance(meta, dict)
@@ -682,6 +706,7 @@ def run_delivery_gate(
     )
     defects = scan["defects"]
     warnings: list[str] = []
+    section_mode = pipeline_report.get("technical_requirements_mode") == "sections"
 
     # 模板互斥分支必须由配置驱动的审计证明已正确裁剪。
     # 没有审计、审计损坏或审计未通过都不能交付；否则可能出现
@@ -712,6 +737,8 @@ def run_delivery_gate(
                 for group in groups
             )
         )
+        if not group_passed:
+            group_passed = _explicitly_absent_variant_groups(variant_audit, docx_path)
         if variant_audit.get("passed") is not True or not group_passed:
             defects.append({
                 "code": "TEMPLATE_VARIANT_POLICY",
@@ -726,41 +753,44 @@ def run_delivery_gate(
 
     # 技术指标和引用标准使用独立审计真源。正文中“看起来有值”不能证明
     # 该值经过受控目录、适用条件和版本冲突检查。
-    indicator_audit_path = Path(docx_path).with_suffix(".indicator_audit.json")
-    try:
-        indicator_audit = json.loads(
-            indicator_audit_path.read_text(encoding="utf-8")
-        )
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        defects.append({
-            "code": "INDICATOR_AUDIT",
-            "severity": "BLOCKER",
-            "location": "技术指标审计",
-            "label": "缺少或无法读取技术指标审计",
-            "text": f"{indicator_audit_path}: {type(exc).__name__}",
-        })
+    if section_mode:
+        defects.extend(_section_evidence_findings(docx_path))
     else:
-        manual_defects, manual_warnings, manual_only = (
-            _manual_review_gate_findings(scan, indicator_audit)
-        )
-        defects.extend(manual_defects)
-        warnings.extend(manual_warnings)
-        if indicator_audit.get("passed") is not True and not manual_only:
+        indicator_audit_path = Path(docx_path).with_suffix(".indicator_audit.json")
+        try:
+            indicator_audit = json.loads(
+                indicator_audit_path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             defects.append({
                 "code": "INDICATOR_AUDIT",
                 "severity": "BLOCKER",
                 "location": "技术指标审计",
-                "label": "存在未受控指标、无原文证据或条件规范待人工复核",
-                "text": json.dumps({
-                    "unbacked_output_names": indicator_audit.get("unbacked_output_names", []),
-                    "unmapped_review_required_count": indicator_audit.get(
-                        "unmapped_review_required_count", 0
-                    ),
-                    "manual_review_required_count": indicator_audit.get(
-                        "manual_review_required_count", 0
-                    ),
-                }, ensure_ascii=False),
+                "label": "缺少或无法读取技术指标审计",
+                "text": f"{indicator_audit_path}: {type(exc).__name__}",
             })
+        else:
+            manual_defects, manual_warnings, manual_only = (
+                _manual_review_gate_findings(scan, indicator_audit)
+            )
+            defects.extend(manual_defects)
+            warnings.extend(manual_warnings)
+            if indicator_audit.get("passed") is not True and not manual_only:
+                defects.append({
+                    "code": "INDICATOR_AUDIT",
+                    "severity": "BLOCKER",
+                    "location": "技术指标审计",
+                    "label": "存在未受控指标、无原文证据或条件规范待人工复核",
+                    "text": json.dumps({
+                        "unbacked_output_names": indicator_audit.get("unbacked_output_names", []),
+                        "unmapped_review_required_count": indicator_audit.get(
+                            "unmapped_review_required_count", 0
+                        ),
+                        "manual_review_required_count": indicator_audit.get(
+                            "manual_review_required_count", 0
+                        ),
+                    }, ensure_ascii=False),
+                })
 
     standards_audit_path = Path(docx_path).with_suffix(".standards_audit.json")
     try:
@@ -859,7 +889,7 @@ def run_delivery_gate(
     interface_count = _metric_count(
         pipeline_report, "interface_definition", "interface_fill_count", "interface_42"
     )
-    if indicator_count < min_indicator_rows:
+    if not section_mode and indicator_count < min_indicator_rows:
         defects.append({
             "code": "INSUFFICIENT_INDICATORS",
             "severity": "BLOCKER",
@@ -935,29 +965,32 @@ def run_delivery_gate(
 
     # 待填区域扫描（封面/空章节/模板说明）
     zone_scan = pipeline_report.get("zone_scan") or scan_document_zones(docx_path)
-    normalized_template_texts = {
-        re.sub(r"\s+", "", text)
-        for text in _template_baseline_texts(template_path)
-        if text.strip()
-    }
 
-    def _is_preserved_template_zone(zone: Dict[str, Any]) -> bool:
-        if not preserve_template_guidance or not normalized_template_texts:
+    def _zone_key(zone: dict[str, Any]) -> tuple[str, str, str, str]:
+        return (
+            str(zone.get("zone_type", "")),
+            re.sub(r"\s+", "", normalized_template_text(zone.get("heading", ""))),
+            re.sub(r"\s+", "", normalized_template_text(zone.get("snippet", ""))),
+            str(zone.get("field_key", "")),
+        )
+
+    baseline_zones = Counter()
+    if preserve_template_guidance and template_path and load_template_baseline(template_path) is not None:
+        baseline_scan = scan_document_zones(template_path)
+        baseline_zones.update(_zone_key(zone) for zone in baseline_scan.get("zones", []))
+    zone_decisions = {}
+
+    def _is_preserved_template_zone(zone: dict[str, Any]) -> bool:
+        if not preserve_template_guidance:
             return False
-        candidates = [
-            str(zone.get("heading", "")).strip(),
-            str(zone.get("snippet", "")).strip(),
-        ]
-        for candidate in candidates:
-            normalized = re.sub(r"\s+", "", candidate)
-            if not normalized:
-                continue
-            if any(
-                normalized in template_text or template_text in normalized
-                for template_text in normalized_template_texts
-            ):
-                return True
-        return False
+        key = _zone_key(zone)
+        identity = (str(zone.get("location", "")), key)
+        if identity not in zone_decisions:
+            preserved = baseline_zones[key] > 0
+            zone_decisions[identity] = preserved
+            if preserved:
+                baseline_zones[key] -= 1
+        return zone_decisions[identity]
 
     for z in zone_scan.get("blockers", []):
         if _is_preserved_template_zone(z):

@@ -78,7 +78,9 @@ export function RightPanel() {
 }
 
 function ResultEmpty() {
-  const { resultEmpty } = useTaskbook();
+  const { resultEmpty, jobStatus } = useTaskbook();
+  const failed = jobStatus === 'error';
+  const cancelled = jobStatus === 'cancelled';
   if (!resultEmpty) return null;
   return (
     <div className="review-empty review-empty-state" id="result-empty">
@@ -88,8 +90,10 @@ function ResultEmpty() {
           <path d="M14 3v4h4M9 12h6M9 16h4" />
         </svg>
       </div>
-      <strong>尚未生成结果</strong>
-      <span>完成业务选择并上传来源文件后，生成结果与质量报告将在这里展示。</span>
+      <strong>{failed ? '生成失败，未产生交付文件' : cancelled ? '任务已停止' : '尚未生成结果'}</strong>
+      <span>{failed ? '请查看任务日志中的失败原因，处理后返回重新选择并重试。'
+        : cancelled ? '本次任务未完成，可返回重新选择后重试。'
+          : '完成业务选择并上传来源文件后，生成结果与质量报告将在这里展示。'}</span>
     </div>
   );
 }

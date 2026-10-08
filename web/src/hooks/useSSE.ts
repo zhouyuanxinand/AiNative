@@ -26,13 +26,14 @@ export function useSSE(callbacks: UseSSECallbacks) {
     setProgressLiveText,
     setProgressLiveClass,
     setIsRunning,
-    setIsCancelled,
-    showToast,
+    setJobStatus,
   } = useTaskbook();
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastLogCountRef = useRef(0);
+  const lastLogTextRef = useRef('');
+  const terminalReceivedRef = useRef(false);
 
   const clearAll = useCallback(() => {
     if (eventSourceRef.current) {
@@ -47,7 +48,9 @@ export function useSSE(callbacks: UseSSECallbacks) {
 
   const handleLog = useCallback(
     (msg: string, eventNumber = 0) => {
-      if (!eventNumber || eventNumber > lastLogCountRef.current) addLog(msg);
+      if (eventNumber && eventNumber <= lastLogCountRef.current) return;
+      addLog(msg);
+      lastLogTextRef.current = msg;
       lastLogCountRef.current = Math.max(
         lastLogCountRef.current,
         eventNumber || lastLogCountRef.current + 1,
@@ -57,7 +60,7 @@ export function useSSE(callbacks: UseSSECallbacks) {
         if (kws.some((kw) => msg.includes(kw))) {
           const step = parseInt(stepStr, 10);
           setCurrentStep(step);
-          setProgressPercent((step / 6) * 100);
+          setProgressPercent(((step - 1) / 5) * 100);
         }
       }
     },
@@ -66,12 +69,8 @@ export function useSSE(callbacks: UseSSECallbacks) {
 
   const handleMessage = useCallback(
     (d: SSEMessage) => {
-      if (d.type === 'log') {
-        handleLog(d.msg || '', Number((window.EventSource as unknown as { lastEventId?: string }) || 0) || 0);
-        // EventSource 的 lastEventId 在 e.lastEventId 上
-      }
+      if (terminalReceivedRef.current) return;
       if (d.type === 'heartbeat') {
-        lastLogCountRef.current = Math.max(lastLogCountRef.current, Number(d.log_count || 0));
         const elapsed = Number(d.elapsed || 0);
         const seconds = Math.floor(elapsed);
         const mins = Math.floor(seconds / 60);
@@ -85,8 +84,12 @@ export function useSSE(callbacks: UseSSECallbacks) {
           `${d.stage || '正在处理'} · 已耗时 ${mins}:${rest} · 已收到 ${lastLogCountRef.current} 条进度${noNewLogHint}`,
         );
       }
+      if (['done', 'blocked', 'error', 'cancelled'].includes(d.type)) {
+        terminalReceivedRef.current = true;
+      }
       if (d.type === 'done') {
         clearAll();
+        setJobStatus('done');
         setProgressLiveClass('progress-live ok');
         setProgressLiveText('受控工作流已完成，正在加载交付结果…');
         setIsRunning(false);
@@ -94,6 +97,7 @@ export function useSSE(callbacks: UseSSECallbacks) {
       }
       if (d.type === 'blocked') {
         clearAll();
+        setJobStatus('blocked');
         setProgressLiveClass('progress-live err');
         setProgressLiveText('文件已生成，但未通过交付门禁；可下载复核件');
         setIsRunning(false);
@@ -101,14 +105,20 @@ export function useSSE(callbacks: UseSSECallbacks) {
       }
       if (d.type === 'error') {
         clearAll();
+        setJobStatus('error');
         setProgressLiveClass('progress-live err');
         setProgressLiveText('受控工作流失败');
         setIsRunning(false);
-        addLog('❌ ' + (d.msg || ''), 'err');
+        const message = d.msg || '任务失败';
+        const normalizeError = (text: string) => text.trim().replace(/^❌\s*/, '');
+        if (normalizeError(lastLogTextRef.current) !== normalizeError(message)) {
+          addLog('❌ ' + message, 'err');
+        }
         callbacks.onError(d);
       }
       if (d.type === 'cancelled') {
         clearAll();
+        setJobStatus('cancelled');
         setIsRunning(false);
         callbacks.onCancelled();
       }
@@ -117,8 +127,8 @@ export function useSSE(callbacks: UseSSECallbacks) {
       addLog,
       callbacks,
       clearAll,
-      handleLog,
       setIsRunning,
+      setJobStatus,
       setProgressLiveClass,
       setProgressLiveText,
     ],
@@ -127,44 +137,44 @@ export function useSSE(callbacks: UseSSECallbacks) {
   const startProgressPolling = useCallback(
     (jid: string) => {
       if (pollTimerRef.current) return;
+      const source = eventSourceRef.current;
       pollTimerRef.current = setInterval(async () => {
         try {
           const data = await getJobStatus(jid, lastLogCountRef.current);
+          if (source !== eventSourceRef.current || terminalReceivedRef.current) return;
           const base = Number(data.log_offset || 0);
           const skip = Math.max(0, lastLogCountRef.current - base);
-          (data.log || []).slice(skip).forEach((msg) => addLog(msg));
+          (data.log || []).slice(skip).forEach((msg, index) => handleLog(msg, base + skip + index + 1));
           lastLogCountRef.current = Math.max(
             lastLogCountRef.current,
             Number(data.log_count || 0),
           );
           if (data.status === 'done') {
-            clearAll();
-            callbacks.onDone({ type: 'done', jid, result: data.result });
+            handleMessage({ type: 'done', jid, result: data.result });
           } else if (data.status === 'blocked') {
-            clearAll();
-            callbacks.onBlocked({ type: 'blocked', jid, result: data.result });
+            handleMessage({ type: 'blocked', jid, result: data.result });
           } else if (data.status === 'error') {
-            clearAll();
-            addLog('❌ ' + (data.error || '任务失败'), 'err');
-            setIsRunning(false);
-            callbacks.onError({ type: 'error', msg: data.error });
+            handleMessage({ type: 'error', msg: data.error });
           } else if (data.status === 'cancelled') {
-            clearAll();
-            setIsRunning(false);
-            callbacks.onCancelled();
+            handleMessage({ type: 'cancelled' });
           }
         } catch {
           /* SSE 仍会负责重连；轮询不再打断用户界面 */
         }
       }, 3000);
     },
-    [addLog, callbacks, clearAll, setIsRunning],
+    [handleLog, handleMessage],
   );
 
   const listenSSE = useCallback(
     (jid: string, eventSource: EventSource) => {
+      clearAll();
+      terminalReceivedRef.current = false;
+      lastLogCountRef.current = 0;
+      lastLogTextRef.current = '';
       eventSourceRef.current = eventSource;
       eventSource.onmessage = (e: MessageEvent) => {
+        if (eventSourceRef.current !== eventSource || terminalReceivedRef.current) return;
         let d: SSEMessage;
         try {
           d = JSON.parse(e.data) as SSEMessage;
@@ -173,36 +183,25 @@ export function useSSE(callbacks: UseSSECallbacks) {
           return;
         }
         if (d.type === 'log') {
-          const eventNumber = Number(e.lastEventId || 0);
-          if (!eventNumber || eventNumber > lastLogCountRef.current) addLog(d.msg || '');
-          lastLogCountRef.current = Math.max(
-            lastLogCountRef.current,
-            eventNumber || lastLogCountRef.current + 1,
-          );
-          // 步骤检测
-          for (const [stepStr, kws] of Object.entries(STEP_KEYWORDS)) {
-            if (kws.some((kw) => (d.msg || '').includes(kw))) {
-              const step = parseInt(stepStr, 10);
-              setCurrentStep(step);
-              setProgressPercent((step / 6) * 100);
-            }
-          }
+          handleLog(d.msg || '', Number(e.lastEventId || 0));
           return;
         }
         handleMessage(d);
       };
       eventSource.onerror = () => {
+        if (eventSourceRef.current !== eventSource || terminalReceivedRef.current) return;
         addLog('⚠ 进度连接暂时中断，改用状态轮询并等待自动重连', 'warn');
         startProgressPolling(jid);
       };
       startProgressPolling(jid);
     },
-    [addLog, callbacks, handleMessage, setCurrentStep, setProgressPercent, startProgressPolling],
+    [addLog, clearAll, handleLog, handleMessage, startProgressPolling],
   );
 
   const resetSSE = useCallback(() => {
     clearAll();
     lastLogCountRef.current = 0;
+    lastLogTextRef.current = '';
   }, [clearAll]);
 
   return { listenSSE, resetSSE, clearAll };

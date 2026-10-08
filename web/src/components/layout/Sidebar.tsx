@@ -1,10 +1,10 @@
-/** 左侧边栏——品牌 logo、新建任务、历史列表、用户行、拖拽手柄、帮助按钮。 */
+/** 左侧边栏——品牌 logo、新建任务、历史列表、用户行、拖拽手柄、服务凭证设置。 */
 import { useTaskbook } from '../../hooks/useTaskbook';
 import { usePanelResize } from '../../hooks/usePanelResize';
-import { HelpPopover } from '../ui/HelpPopover';
+import { ServiceCredentialsSettings } from '../ui/ServiceCredentialsSettings';
 import type { HistoryItem } from '../../types';
 
-export function Sidebar() {
+export function Sidebar({ onCredentialsSaved }: { onCredentialsSaved: () => Promise<void> }) {
   const { toggleSidebar, sidebarExpanded, history } = useTaskbook();
   const { beginResize, resetPanelWidth } = usePanelResize();
 
@@ -72,7 +72,7 @@ export function Sidebar() {
           <b>当前用户</b>
           <span>web-user</span>
         </div>
-        <HelpPopover />
+        <ServiceCredentialsSettings onSaved={onCredentialsSaved} />
       </div>
       <button
         className="resize-handle resize-handle-left"
@@ -107,6 +107,7 @@ function SidebarHistoryItem({ item }: { item: HistoryItem }) {
       >
         <span>{label}</span>
       </button>
+      {item.jid && (item.status === 'done' || item.status === 'blocked' || item.output_name) && <a className="sidebar-review-link" href={`/review/${encodeURIComponent(item.jid)}`} aria-label={`审阅 ${item.product || item.output_name || '历史任务'}`}>审阅</a>}
     </div>
   );
 }

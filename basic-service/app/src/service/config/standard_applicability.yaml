@@ -17,10 +17,32 @@ prefix_allowed_domains:
   AS9100: [airworthiness, civil_aviation, as9100]
 
 marker_allowed_domains:
-  民机项目保留: [civil_aviation, airworthiness]
+  民机项目保留: [civil_aviation]
   航空军品保留: [military]
   所有军品均保留: [military]
-  AS9100产品适用: [as9100, civil_aviation, airworthiness]
+  AS9100产品适用: [as9100]
+
+# 开发逻辑 C55 的章节选择与上面的标准适用范围分开治理。
+# “引用标准”内的 AS9100 文献不等于 AS9100 专用章节。
+reference_heading_markers: [引用标准, 规范性引用文件, 编制依据, 参考文献]
+domain_section_rules:
+  - id: airworthiness
+    heading_markers: [适航]
+    allowed_domains: [airworthiness]
+  - id: civil_aviation
+    heading_markers: [民机]
+    allowed_domains: [civil_aviation]
+  - id: as9100
+    heading_markers: [AS9100, 原材料/元器件过时淘汰风险]
+    allowed_domains: [as9100]
+
+# 进度章节仍按 C26/D46 保留供人工填写。仅删除其中明确标注属于未选
+# 领域的说明段及直属表；通用/军品进度表和引用标准正文不受此规则影响。
+domain_table_branch_rules:
+  - id: civil_aviation_schedule
+    section_markers: [任务进度要求, 进度要求]
+    paragraph_patterns: ['^[（(]?(?:对于|针对|适用于)民机产品[，,、]?任务进度要求按下表格式填写']
+    allowed_domains: [civil_aviation]
 
 marker_excluded_domains:
   军品删除: [military]

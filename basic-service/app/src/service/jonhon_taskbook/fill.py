@@ -31,6 +31,8 @@ from jonhon_taskbook.indicator_catalog_loader import (
 from jonhon_taskbook.indicator_identity import canonical_indicator_name
 from jonhon_taskbook.standard_order import sort_standards
 from jonhon_taskbook.renderer.table_style_engine import apply_table_style
+from jonhon_taskbook.renderer.paragraph_style_engine import normalize_copied_body_paragraph
+from jonhon_taskbook.source_scope import review_reference_source_ids
 try:
     from jonhon_taskbook.template_scanner import (
         build_semantic_heading_map as _build_semantic_hmap,
@@ -273,6 +275,22 @@ def _fill_indicator_table(tpl, ind_rows: list, excluded_names: list[str] | None 
         t_el = etree.SubElement(r_el,  f"{_W}t")
         t_el.text = text
         t_el.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+        if "【人工填写】" in text:
+            p_el.remove(r_el)
+            for index, fragment in enumerate(text.split("【人工填写】")):
+                if index:
+                    marker_run = etree.SubElement(p_el, f"{_W}r")
+                    marker_props = etree.SubElement(marker_run, f"{_W}rPr")
+                    etree.SubElement(marker_props, f"{_W}color").set(f"{_W}val", "FF0000")
+                    etree.SubElement(marker_props, f"{_W}i").set(f"{_W}val", "0")
+                    etree.SubElement(marker_run, f"{_W}t").text = "【人工填写】"
+                if fragment:
+                    value_run = etree.SubElement(p_el, f"{_W}r")
+                    if sample_rpr is not None:
+                        value_run.append(copy.deepcopy(sample_rpr))
+                    value_text = etree.SubElement(value_run, f"{_W}t")
+                    value_text.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+                    value_text.text = fragment
 
     def _auto_height(tr_el):
         """指标数据行自适应，且不得继承模板占位行的重复表头标记。"""
@@ -450,6 +468,19 @@ def _fill_indicator_table(tpl, ind_rows: list, excluded_names: list[str] | None 
         col1 = "".join(t.text or "" for t in tcs[1].findall(f".//{_W}t")).strip()
         if not col1:
             _write_tc(tcs[1], "\\")
+        # 模板的正文样式可能继承“与下段同页”，长指标跨页后会把
+        # 后续数据行连带推至下一页。仅解除本次指标表数据单元格的
+        # 段落绑定；表头、分类行和模板公共样式仍保持原样。
+        for tc in tcs:
+            for paragraph in tc.findall(f"{_W}p"):
+                p_pr = paragraph.find(f"{_W}pPr")
+                if p_pr is None:
+                    p_pr = etree.Element(f"{_W}pPr")
+                    paragraph.insert(0, p_pr)
+                keep_next = p_pr.find(f"{_W}keepNext")
+                if keep_next is None:
+                    keep_next = etree.SubElement(p_pr, f"{_W}keepNext")
+                keep_next.set(f"{_W}val", "0")
 
     return written
 
@@ -701,48 +732,10 @@ def _has_metric_value(text: str) -> bool:
 
 
 def _refine_adopted(tv: str, stdv: str) -> tuple[str, str]:
-    """
-    提炼拟采用值。返回 (adopted, audit_note)。
-    规则：
-      1. 用户值和标准值完全相同 → 采用用户值
-      2. 同量纲、同向阈值可确定比较 → 下限取较大、上限取较小
-      3. 无法可靠比较 → 暂按用户值，明确记录人工复核，禁止静默选值
-      4. 只有其一 → 采用有值的一方
-    """
-    tv = (tv or "").strip()
-    stdv = (stdv or "").strip()
-    tv_has = _has_metric_value(tv)
-    std_has = _has_metric_value(stdv)
+    from jonhon_taskbook.indicator_comparison import compare_indicator_values
 
-    if tv and stdv:
-        if tv_has and std_has:
-            tv_norm = re.sub(r"\s+", "", tv)
-            std_norm = re.sub(r"\s+", "", stdv)
-            if tv_norm == std_norm:
-                return tv, ""
-            # 同一量纲、同向阈值时采用更严格值：下限取更大，上限取更小。
-            # 例如机械寿命 用户≥20次 / 规范≥25次 → 拟采用≥25次。
-            threshold_pattern = (
-                r"(不小于|不少于|≥|>=|不大于|不超过|≤|<=)\s*"
-                r"(-?\d+(?:\.\d+)?)\s*([a-zA-ZμΩ℃%]+|次|小时|h|年)?"
-            )
-            t_cmp = re.search(threshold_pattern, tv)
-            s_cmp = re.search(threshold_pattern, stdv)
-            if t_cmp and s_cmp:
-                lower_ops = {"不小于", "不少于", "≥", ">="}
-                upper_ops = {"<=", "≤", "不大于", "不超过"}
-                same_unit = (t_cmp.group(3) or "").lower() == (s_cmp.group(3) or "").lower()
-                if same_unit and t_cmp.group(1) in lower_ops and s_cmp.group(1) in lower_ops:
-                    return (stdv if float(s_cmp.group(2)) > float(t_cmp.group(2)) else tv), "[严格值裁决] 同向下限取较大值"
-                if same_unit and t_cmp.group(1) in upper_ops and s_cmp.group(1) in upper_ops:
-                    return (stdv if float(s_cmp.group(2)) < float(t_cmp.group(2)) else tv), "[严格值裁决] 同向上限取较小值"
-            return tv, f"[人工复核] 用户要求与标准要求无法自动择严：用户要求={tv}；标准要求={stdv}"
-        if not tv_has and std_has:
-            return tv, f"[人工复核] 用户要求缺少可比较阈值：用户要求={tv}；标准要求={stdv}"
-        if re.sub(r"\s+", "", tv) != re.sub(r"\s+", "", stdv):
-            return tv, f"[人工复核] 用户要求与标准要求均无法量化比较：用户要求={tv}；标准要求={stdv}"
-        return tv, ""
-    return (tv or stdv), ""
+    decision = compare_indicator_values(tv, stdv)
+    return decision.adopted, decision.audit_note
 
 
 def _indicator_basis(adopted: str, user_value: str, standard_value: str, spec_basis: str) -> str:
@@ -902,6 +895,19 @@ def _semantic_heading_text(value: str) -> str:
     return text.strip(" ：:")
 
 
+def _is_appendix_heading(paragraph: Paragraph) -> bool:
+    title = _semantic_heading_text(_txt(paragraph))
+    style = str(paragraph.style.name if paragraph.style else "")
+    return title.startswith("附录") and (
+        _is_heading(paragraph) or "附录" in re.sub(r"\s+", "", style)
+    )
+
+
+def _semantic_section_level(paragraph: Paragraph) -> int:
+    # Controlled templates give appendices a dedicated style without outlineLvl.
+    return _heading_level(paragraph) or (1 if _is_appendix_heading(paragraph) else 0)
+
+
 def _remove_semantic_section(doc, keywords: list[str] | tuple[str, ...] | str) -> int:
     """Remove a heading subtree using title/outline semantics only."""
     if isinstance(keywords, str):
@@ -925,24 +931,24 @@ def _remove_semantic_section(doc, keywords: list[str] | tuple[str, ...] | str) -
     paragraphs = list(doc.paragraphs)
     paragraph_levels = {}
     for paragraph in paragraphs:
-        paragraph_levels[id(paragraph._p)] = _heading_level(paragraph)
+        paragraph_levels[id(paragraph._p)] = _semantic_section_level(paragraph)
         title = _semantic_heading_text(_txt(paragraph))
-        style_name = str(paragraph.style.name if paragraph.style else "")
-        is_appendix_anchor = (
-            "附录" in re.sub(r"\s+", "", style_name)
-            and title.startswith("附录")
-        )
+        is_appendix_anchor = _is_appendix_heading(paragraph)
         if (
             target is None
             and (_is_heading(paragraph) or is_appendix_anchor)
-            and any(key in title for key in wanted)
+            and any(
+                re.match(re.escape(key) + r"(?![A-Za-z0-9])", title)
+                if is_appendix_anchor else key in title
+                for key in wanted
+            )
         ):
             target = paragraph._p
             # Some controlled Word templates use a dedicated appendix style
             # without OOXML outlineLvl.  Treat that semantic appendix marker
             # as a top-level section anchor; identity still comes from its
             # real title, never from a hard-coded chapter number.
-            target_level = paragraph_levels[id(paragraph._p)] or (1 if is_appendix_anchor else 0)
+            target_level = paragraph_levels[id(paragraph._p)]
     if target is None:
         return 0
     removed = 0
@@ -977,10 +983,25 @@ def _remove_semantic_section(doc, keywords: list[str] | tuple[str, ...] | str) -
     return removed
 
 
+def _failure_mode_columns(table) -> dict[str, int]:
+    """Identify historical evidence fields from physical header cells."""
+    from .failure_table_schema import failure_mode_columns
+
+    rows = list(table._tbl.findall(qn("w:tr")))
+    if not rows:
+        return {}
+    return failure_mode_columns([
+        "".join(node.text or "" for node in cell.findall(".//" + qn("w:t")))
+        for cell in rows[0].findall(qn("w:tc"))
+    ])
+
+
 def _find_failure_mode_table(doc):
     for table in doc.tables:
-        header = "".join(cell.text for cell in table.rows[0].cells) if table.rows else ""
-        if "数据所属产品" in header and "失效部位" in header and "失效模式" in header:
+        columns = _failure_mode_columns(table)
+        if ("product_name" in columns or "product_series" in columns) and {
+            "failure_location", "failure_mode", "failure_analysis", "reliability_design_method",
+        }.issubset(columns):
             return table
     return None
 
@@ -993,58 +1014,43 @@ def _write_failure_cell(tc, text: str) -> None:
             tc.remove(child)
     p = OxmlElement("w:p")
     r = OxmlElement("w:r")
-    t = OxmlElement("w:t")
-    t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
-    t.text = str(text or "")
-    r.append(t)
+    lines = str(text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    for index, line in enumerate(lines):
+        if index:
+            r.append(OxmlElement("w:br"))
+        t = OxmlElement("w:t")
+        t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+        t.text = line
+        r.append(t)
     p.append(r)
     tc.append(p)
 
 
 def _normalize_failure_mode_table(table) -> None:
-    """Rebuild the failure table to the exact five-field 7-22 schema."""
+    """Keep five aligned fields; normalize incompatible legacy structures."""
     import copy as _copy
+    from .failure_table_schema import has_independent_failure_cells
 
+    columns = _failure_mode_columns(table)
+    identity = "product_name" if "product_name" in columns else "product_series"
+    fields = (identity, "failure_location", "failure_mode", "failure_analysis", "reliability_design_method")
+    if any(field not in columns for field in fields):
+        return
     canonical_headers = (
-        "数据所属产品的产品名称",
+        "数据所属产品的产品名称" if identity == "product_name" else "产品型号",
         "失效部位",
         "失效模式（故障现象）",
         "失效分析",
         "可靠性设计方法（设计改进措施）",
     )
-    aliases = (
-        ("数据所属产品的产品名称", "数据所属产品"),
-        ("失效部位",),
-        ("失效模式（故障现象）", "失效模式", "故障现象"),
-        ("失效分析", "故障原因"),
-        ("可靠性设计方法（设计改进措施）", "可靠性设计方法", "设计改进措施"),
-    )
     rows = list(table._tbl.findall(qn("w:tr")))
     if not rows:
         return
-    header_cells = rows[0].findall(qn("w:tc"))
-    header_texts = [
-        re.sub(
-            r"\s+",
-            "",
-            "".join(node.text or "" for node in cell.findall(".//" + qn("w:t"))),
-        )
-        for cell in header_cells
-    ]
-    selected: list[int] = []
-    for field_aliases in aliases:
-        index = next(
-            (
-                position
-                for position, text in enumerate(header_texts)
-                if position not in selected
-                and any(re.sub(r"\s+", "", alias) in text for alias in field_aliases)
-            ),
-            None,
-        )
-        if index is None:
-            index = min(len(selected), max(len(header_cells) - 1, 0))
-        selected.append(index)
+    if has_independent_failure_cells(table._tbl):
+        # One semantic field may span several grid columns (the supplied
+        # optical-cable analysis field does). Keep its wording and width.
+        return
+    selected = [columns[field] for field in fields]
 
     for row in rows:
         cells = row.findall(qn("w:tc"))
@@ -1105,7 +1111,13 @@ def _fill_failure_mode_table(
     table = _find_failure_mode_table(doc)
     if table is None:
         return 0
+    # Only the first data row is used as the layout for generated evidence.
+    # Unused blank rows in an older template can have inconsistent spans;
+    # discard them before deciding whether the retained layout needs repair.
+    for unused_row in list(table._tbl.findall(qn("w:tr")))[2:]:
+        table._tbl.remove(unused_row)
     _normalize_failure_mode_table(table)
+    columns = _failure_mode_columns(table)
     rows = list(table._tbl.findall(qn("w:tr")))
     if not rows:
         return 0
@@ -1114,19 +1126,14 @@ def _fill_failure_mode_table(
         table._tbl.remove(row)
     rows_to_write = list(records)
     if not rows_to_write and no_match_message:
-        rows_to_write = [{"product_name": no_match_message}]
+        identity = "product_name" if "product_name" in columns else "product_series"
+        rows_to_write = [{identity: no_match_message}]
     for record in rows_to_write:
         row = _copy.deepcopy(template_row)
         cells = row.findall(qn("w:tc"))
-        values = (
-            record.get("product_name", ""),
-            record.get("failure_location", ""),
-            record.get("failure_mode", ""),
-            record.get("failure_analysis", ""),
-            record.get("reliability_design_method", ""),
-        )
-        for cell, value in zip(cells, values):
-            _write_failure_cell(cell, value)
+        for field, index in columns.items():
+            if index < len(cells):
+                _write_failure_cell(cells[index], record.get(field, ""))
         table._tbl.append(row)
     apply_table_style(table, "failure")
     return len(rows_to_write)
@@ -1261,6 +1268,8 @@ def _classification_has_quality_evidence(
         role = str(item.get("category", ""))
         source_id = str(item.get("source_id", ""))
         block = blocks.get(source_id, {})
+        if not block or not (str(block.get("text") or "").strip() or block.get("has_drawing") or block.get("image_refs")):
+            continue
         chapter = chapters.get(
             str(item.get("chapter_id") or block.get("chapter_id") or ""), {}
         )
@@ -1275,7 +1284,7 @@ def _classification_has_quality_evidence(
         )
         if role in role_set or (
             role == "performance_indicator"
-            and any(signal in evidence_text for signal in indicator_signals)
+            and any(signal.casefold() in evidence_text.casefold() for signal in indicator_signals)
         ):
             matched.append(source_id)
     return bool(matched), list(dict.fromkeys(matched))
@@ -1284,14 +1293,82 @@ def _classification_has_quality_evidence(
 def _apply_process_specific_sections(doc, classification: dict | None, process: str, product_label: str, product_series: str, out_path: str) -> dict:
     """Apply 7-22 process rules without binding behavior to section numbers."""
     from jonhon_taskbook.development_process_policy import (
+        failure_mode_section_titles,
         new_process_manual_section_rules,
         non_new_remove_section_rules,
         normalize_development_process,
         quality_section_evidence_rules,
+        quality_section_parent_titles,
+        section_retention_rules,
     )
     from jonhon_taskbook.failure_mode_matcher import match_failure_modes_with_audit
     from jonhon_taskbook.failure_mode_policy import failure_no_match_policy
+    from jonhon_taskbook.template_scanner import semantic_title
     process = normalize_development_process(process)
+    controlled_paragraphs = None
+    controlled_levels = {}
+
+    def remove_controlled_sections(titles, *, parents=(), top_level=False, empty_parent=False):
+        """Delete complete matching subtrees inside their business parent only.
+
+        Exact titles may carry a parenthetical template note. Substrings such
+        as a test plan that mentions reliability are not the quality section.
+        Keep bound Paragraph objects and stop at every same/higher heading or
+        final section properties, even for nested system-integration templates.
+        """
+        nonlocal controlled_paragraphs, controlled_levels
+        compact = lambda value: re.sub(r"\s+", "", semantic_title(str(value)))
+        wanted = tuple(compact(title) for title in titles)
+        parent_titles = {compact(title) for title in parents}
+        # These passes only remove subtrees; reuse bound heading metadata and
+        # ignore detached paragraphs instead of rescanning styles six times.
+        if controlled_paragraphs is None:
+            controlled_paragraphs = list(doc.paragraphs)
+            controlled_levels = {p._p: _semantic_section_level(p) for p in controlled_paragraphs}
+        paragraphs = [p for p in controlled_paragraphs if p._p.getparent() == doc.element.body]
+        levels = controlled_levels
+        stack = []
+        targets = []
+        for paragraph in paragraphs:
+            level = levels[paragraph._p]
+            if not level:
+                continue
+            while stack and stack[-1][0] >= level:
+                stack.pop()
+            title = compact(paragraph.text)
+            matches = any(
+                title == key or (
+                    title.startswith(key)
+                    and title[len(key):].startswith(("(", "（"))
+                    and title.endswith((")", "）"))
+                ) for key in wanted
+            )
+            if matches and (not top_level or not stack) and (
+                not parent_titles or (stack and stack[-1][1] in parent_titles)
+            ):
+                targets.append((paragraph, level))
+            stack.append((level, title))
+        removed = 0
+        deleted_titles = []
+        for target, depth in reversed(targets):
+            nodes = [target._p]
+            node = target._p.getnext()
+            has_child = False
+            while node is not None and node.tag in {qn("w:p"), qn("w:tbl")}:
+                level = levels.get(node, 0)
+                if level and level <= depth:
+                    break
+                has_child = has_child or bool(level)
+                nodes.append(node)
+                node = node.getnext()
+            if empty_parent and has_child:
+                continue
+            for node in nodes:
+                _remove_body_element(node)
+            removed += len(nodes)
+            deleted_titles.append(semantic_title(target.text))
+        return removed, list(reversed(deleted_titles))
+
     audit: dict = {
         "process": process,
         "product_label": product_label,
@@ -1300,11 +1377,35 @@ def _apply_process_specific_sections(doc, classification: dict | None, process: 
         # 这里只记录真实发生的语义标题删除，不记录章节号。
         "deleted_semantic_headings": [],
     }
+    audit["section_retention_rules"] = []
+    for rule in section_retention_rules():
+        keep = process in rule["keep_processes"]
+        decision = {
+            **rule,
+            "action": "retain" if keep else "delete",
+            "removed_nodes": 0,
+            "linked_removed_nodes": 0,
+        }
+        if not keep:
+            for title_key, count_key in (
+                ("semantic_titles", "removed_nodes"),
+                ("linked_semantic_titles", "linked_removed_nodes"),
+            ):
+                # Delete linked sections even if the primary heading is absent.
+                # Repeat for duplicate headings, keeping all sibling boundaries.
+                while count := _remove_semantic_section(doc, rule[title_key]):
+                    decision[count_key] += count
+                if decision[count_key]:
+                    audit["deleted_semantic_headings"].extend(rule[title_key])
+        audit["section_retention_rules"].append(decision)
+
     if process in {"改型II", "改型III"}:
         audit["failure_mode_records"] = []
         audit["failure_mode_action"] = "delete"
         audit["potential_failure_mode_rows"] = 0
-        audit["deleted_failure_section_nodes"] = _remove_semantic_section(doc, "初步的失效模式分析")
+        count, titles = remove_controlled_sections(failure_mode_section_titles(), top_level=True)
+        audit["deleted_failure_section_nodes"] = count
+        audit["deleted_semantic_headings"].extend(titles)
     else:
         records, failure_match_audit = match_failure_modes_with_audit(
             product_label,
@@ -1329,9 +1430,8 @@ def _apply_process_specific_sections(doc, classification: dict | None, process: 
             )
         audit["potential_failure_mode_action"] = "manual"
         audit["potential_failure_mode_rows"] = 0
-        audit["potential_failure_mode_cells_cleared"] = (
-            _prepare_manual_potential_failure_analysis_table(doc)
-        )
+        # 开发逻辑 C53/C54：潜在失效分析保持模板，由设计填写。
+        audit["potential_failure_mode_cells_cleared"] = 0
 
     if process == "全新":
         manual_sections = []
@@ -1377,14 +1477,17 @@ def _apply_process_specific_sections(doc, classification: dict | None, process: 
             title = rule["semantic_title"]
             has_evidence, source_ids = _classification_has_quality_evidence(
                 classification,
-                rule["evidence_roles"],
+                rule["evidence_roles"] + rule["leaf_evidence_roles"],
                 rule["indicator_signals"],
             )
             if not has_evidence:
-                count = _remove_semantic_section(doc, title)
+                count, titles = remove_controlled_sections(
+                    rule["semantic_titles"], parents=quality_section_parent_titles(),
+                )
                 if count:
                     deleted.append(title)
-                    audit["deleted_semantic_headings"].append(title)
+                    audit["deleted_semantic_headings"].extend(titles)
+                    audit["deleted_semantic_headings"].extend(rule["semantic_titles"])
             else:
                 retained_quality_evidence.append(
                     {
@@ -1395,10 +1498,16 @@ def _apply_process_specific_sections(doc, classification: dict | None, process: 
                 )
         audit["deleted_quality_sections"] = deleted
         audit["retained_quality_evidence"] = retained_quality_evidence
-        if len(deleted) == len(quality_sections):
-            audit["deleted_quality_parent_nodes"] = _remove_semantic_section(doc, "通用质量特性要求")
+        if not retained_quality_evidence:
+            count, titles = remove_controlled_sections(
+                quality_section_parent_titles(), empty_parent=True,
+            )
+            audit["deleted_quality_parent_nodes"] = count
             if audit["deleted_quality_parent_nodes"]:
-                audit["deleted_semantic_headings"].append("通用质量特性要求")
+                audit["deleted_semantic_headings"].extend(titles)
+                # Catalog QA uses the canonical quality-parent title while a
+                # supplied template may spell its synonym with an extra 可.
+                audit["deleted_semantic_headings"].extend(quality_section_parent_titles())
     audit["deleted_semantic_headings"] = list(dict.fromkeys(audit["deleted_semantic_headings"]))
     Path(out_path).with_suffix(".process_rule_audit.json").write_text(
         json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -1430,28 +1539,9 @@ def _apply_process_specific_sections(doc, classification: dict | None, process: 
 
 def _apply_domain_specific_sections(doc, domain: str, out_path: str) -> dict:
     """Prune domain-only template subtrees by semantic heading, never number."""
-    normalized = str(domain or "").strip().lower()
-    audit = {"domain": normalized, "deleted_sections": []}
-    rules = (
-        (
-            normalized not in {"airworthiness", "civil_aviation"},
-            ("适航要求",),
-            "适航要求",
-        ),
-        (
-            normalized != "as9100",
-            ("原材料/元器件过时淘汰风险",),
-            "原材料/元器件过时淘汰风险（AS9100）",
-        ),
-    )
-    for should_delete, keywords, label in rules:
-        if not should_delete:
-            continue
-        removed = _remove_semantic_section(doc, keywords)
-        if removed:
-            audit["deleted_sections"].append(
-                {"semantic_heading": label, "removed_nodes": removed}
-            )
+    from jonhon_taskbook.domain_sections import apply_domain_sections
+
+    audit = apply_domain_sections(doc, domain)
     Path(out_path).with_suffix(".domain_rule_audit.json").write_text(
         json.dumps(audit, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -1481,13 +1571,14 @@ def _apply_compilation_basis(
     lines: list[str] = []
     seen: set[tuple[str, str]] = set()
     for kind, source_path, identity in identities:
-        title = str(identity.get("title", "")).strip() or source_path.stem
+        title = str(identity.get("title", "")).strip()
         number = str(identity.get("number", "")).strip()
         key = (title, number)
         if key in seen:
             continue
         seen.add(key)
-        line = f"《{title}》，编号：{number}；" if number else f"《{title}》；"
+        display_title = title or ("[待补需求文件标题]" if kind == "tech" else "[待补产品规范标题]")
+        line = f"《{display_title}》，编号：{number}；" if number else f"《{display_title}》；"
         lines.append(line)
         sources.append(
             {
@@ -1518,7 +1609,10 @@ def _apply_compilation_basis(
         scan_level = 0
         if scan.tag == qn("w:p"):
             paragraph = Paragraph(scan, heading._parent)
-            scan_level = _heading_level(paragraph) or _heading_depth_sv(paragraph)
+            scan_level = _semantic_section_level(paragraph) or _heading_depth_sv(paragraph)
+        elif scan.tag != qn("w:tbl"):
+            # The document's final sectPr owns page size, margins and headers.
+            break
         if scan_level and scan_level <= level:
             break
         parent = scan.getparent()
@@ -1559,7 +1653,7 @@ def _canonical_indicator_category(category: str) -> str:
     """收敛指标清单与模板的性能域名称，避免同类指标拆成两个分组。"""
     value = re.sub(r"\s+", "", str(category or ""))
     aliases = (
-        (("电性能", "电气性能"), "电性能"),
+        (("电性能", "电气性能", "电气性能要求", "电性能要求"), "电性能"),
         (("机械性能", "机械性能要求"), "机械性能"),
         (("环境性能", "环境性能要求"), "环境性能"),
         (("光性能", "光学性能"), "光性能"),
@@ -1743,18 +1837,18 @@ def _indicator_value_is_source_backed(value: str, source_blob: str) -> bool:
     emitted fragment separately instead of requiring the newly joined value to
     occur as one contiguous source substring.
     """
-    normalized_value = re.sub(r"\s+", "", str(value or ""))
-    if not normalized_value:
+    value = str(value or "")
+    if not value.strip():
         return True
     # A governed row may combine two non-adjacent fragments from the same
     # original clause, for example the product scope prefix and its rated
     # current after the intervening pulse-current fragment is routed to a
     # separate row.  Each punctuation-delimited atom must still be verbatim.
     fragments = [
-        fragment.strip("，,。；;")
-        for fragment in re.split(r"[；;，,。]", normalized_value)
-        if fragment.strip("，,。；;")
+        re.sub(r"\s+", "", fragment)
+        for fragment in re.split(r"[\r\n；;，,。]", value)
     ]
+    fragments = [fragment for fragment in fragments if fragment]
     return bool(fragments) and all(fragment in source_blob for fragment in fragments)
 
 
@@ -1763,8 +1857,8 @@ def _build_spec_table_ledger(spec_path: str) -> dict[str, list[dict]]:
     ledger: dict[str, list[dict]] = {}
     if not spec_path:
         return ledger
-    from jonhon_taskbook.spec_extractor import extract_spec_chapter3_tables
-    for item in extract_spec_chapter3_tables(spec_path):
+    from jonhon_taskbook.spec_extractor import extract_spec_chapter3_tables, extract_spec_paragraph_requirements
+    for item in [*extract_spec_chapter3_tables(spec_path), *extract_spec_paragraph_requirements(spec_path)]:
         key = _canonical_indicator_name(item.item_name)
         metric_value = str(item.spec or "").strip()
         if not metric_value:
@@ -1781,6 +1875,12 @@ def _build_spec_table_ledger(spec_path: str) -> dict[str, list[dict]]:
             "section": item.source_section,
             "caption": item.table_caption,
             "scope": item.applicable_model or item.category_or_series,
+            "condition": item.condition,
+            "qualifiers": getattr(item, "qualifiers", {}),
+            "value_kind": getattr(item, "value_kind", ""),
+            "unit": getattr(item, "unit", ""),
+            "excluded_models": list(getattr(item, "excluded_models", ())),
+            "source_evidence": item.raw_row,
         })
     return ledger
 
@@ -1791,8 +1891,11 @@ def _extract_spec_identifier(spec, spec_path: str) -> str:
     for table in getattr(spec, "tables", []):
         texts.extend(cell.text for row in table.rows for cell in row.cells)
     joined = "\n".join(texts)
+    labelled = re.search(r"(?:规范编号|文件编号|文件代号|规范号)\s*[:：]?\s*([A-Za-z0-9][A-Za-z0-9/_. -]*\d(?:[A-Za-z0-9/_.-]*))", joined)
+    if labelled:
+        return labelled.group(1).strip()
     patterns = (
-        r"Q/[0-9A-Z]+(?:[./-][0-9A-Z]+)*-\d{4}",
+        r"Q/[0-9A-Z]+(?:\s+\d[0-9A-Z.]*)?(?:[./-][0-9A-Z]+)*-\d{4}",
         r"(?:GJB(?:/Z)?|GB/T|GB|KJB)\s*[0-9A-Z.]+(?:-\d{4})?",
     )
     for pattern in patterns:
@@ -1862,6 +1965,10 @@ def _match_spec_table_indicator(
     product_label: str = "",
     product_series: str = "",
     allow_scoped: bool = True,
+    user_requirement: str = "",
+    source_context: str = "",
+    model_context: str = "",
+    clarification: str = "",
 ) -> dict | None:
     direct_names = (
         [indicator.get("name", "")]
@@ -1869,6 +1976,13 @@ def _match_spec_table_indicator(
         + list(indicator.get("spec_kws", []))
     )
     related_names = list(indicator.get("related_kws", []))
+
+    def _signature(item: dict) -> tuple[str, ...]:
+        return tuple(str(item.get(field, "")) for field in (
+            "name", "value", "display_value", "test_method", "scope", "section", "caption",
+            "condition", "value_kind", "unit",
+        )) + (json.dumps(item.get("qualifiers") or {}, ensure_ascii=False, sort_keys=True),
+            json.dumps(sorted(item.get("excluded_models") or []), ensure_ascii=False))
 
     def _collect(names: list[str]) -> list[dict]:
         candidates: list[dict] = []
@@ -1879,9 +1993,7 @@ def _match_spec_table_indicator(
         unique_candidates: list[dict] = []
         seen_candidates: set[tuple[str, ...]] = set()
         for item in candidates:
-            signature = tuple(str(item.get(field, "")) for field in (
-                "name", "value", "display_value", "test_method", "scope", "section", "caption",
-            ))
+            signature = _signature(item)
             if signature not in seen_candidates:
                 seen_candidates.add(signature)
                 unique_candidates.append(item)
@@ -1898,11 +2010,6 @@ def _match_spec_table_indicator(
     # 关联词只作为直接指标名没有可用规范行时的检索回退，不能改变用户
     # 指标的身份。例如“工作电流”可以从规范表的“额定电流”行取标准值，
     # 但不会因此额外创建一个“额定电流”用户指标。
-    condition_terms = (
-        "仅适用于", "适用于", "不适用于", "验收级", "鉴定级", "准鉴定级",
-        "等级", "某型", "某系列",
-    )
-
     groups = [
         ("direct", direct_candidates),
         ("related", related_candidates),
@@ -1911,15 +2018,115 @@ def _match_spec_table_indicator(
     all_seen: set[tuple[str, ...]] = set()
     for _, group in groups:
         for item in group:
-            signature = tuple(str(item.get(field, "")) for field in (
-                "name", "value", "display_value", "test_method", "scope", "section", "caption",
-            ))
+            signature = _signature(item)
             if signature not in all_seen:
                 all_seen.add(signature)
                 all_candidates.append(item)
 
     if not all_candidates:
         return None
+
+    from jonhon_taskbook.spec_applicability import validate_clarification
+    validate_clarification(f"{user_requirement}\n{source_context}", clarification, all_candidates)
+
+    def explicit_model(scope: str, context: str) -> bool:
+        for token in re.findall(r"[A-Za-z][A-Za-z0-9]*(?:[-/][A-Za-z0-9]+)*", str(scope)):
+            if re.search(r"\d", token) and re.search(
+                rf"(?<![A-Za-z0-9/-]){re.escape(token)}(?![A-Za-z0-9/-])", context, flags=re.IGNORECASE,
+            ):
+                return True
+        return False
+
+    original_models = {str(item.get("scope")) for item in all_candidates if explicit_model(item.get("scope", ""), model_context)}
+    clarified_models = {str(item.get("scope")) for item in all_candidates if explicit_model(item.get("scope", ""), clarification)}
+    if len(original_models) == 1 and clarified_models and not clarified_models.issubset(original_models):
+        raise ValueError("澄清型号与原技术要求冲突，请修订设计输入后重新提交。")
+
+    def scope_rank(scope: str) -> int:
+        scope = str(scope or "").strip()
+        # Sheet1 C5: the source's exact model wins over a family-wide row.
+        if explicit_model(scope, clarification):
+            return 4
+        if explicit_model(scope, model_context):
+            return 3
+        return _scope_match_rank(scope, product_label, product_series)
+
+    def allowed_default(item: dict) -> bool:
+        excluded = item.get("excluded_models") or []
+        return not any(explicit_model(model, model_context) or explicit_model(model, clarification)
+            for model in excluded)
+
+    exceptions = [item for item in all_candidates if item.get("excluded_models")]
+    scoped_paragraphs = [item for item in all_candidates
+        if item.get("scope") and (item.get("source_evidence") or {}).get("_source_text")]
+    # This context includes technical paragraphs, standards and dimensions;
+    # only model stems declared by the candidate scopes or controlled series
+    # identify additional product models. GJB identifiers/M2 hardware are not
+    # evidence for choosing a life-cycle model exception.
+    model_prefixes = set()
+    if exceptions or scoped_paragraphs:
+        declared = [product_series] + [str(item.get("scope") or "") for item in all_candidates]
+        declared += [model for item in exceptions for model in item["excluded_models"]]
+        for declaration in declared:
+            for token in re.findall(r"[A-Za-z][A-Za-z0-9/-]*", declaration):
+                prefix = re.match(r"[A-Za-z]+", token)
+                if prefix:
+                    model_prefixes.add(prefix.group(0).casefold())
+    coverage_context = []
+    declared_scopes = [str(item.get("scope") or "") for item in all_candidates]
+    declared_scopes += [model for item in exceptions for model in item["excluded_models"]]
+    title_pattern = re.compile(
+        r"\s*([A-Za-z]+\d+(?:-\d+)*)\s*(?:系列)?\s*(?:连接器|产品)?"
+        r"\s*(?:技术要求|技术协议|产品规范|技术规范)(?:草案)?\s*",
+    )
+    identity_lines = f"{model_context}\n{clarification}".splitlines()
+    body_identity_context = "\n".join(line for line in identity_lines if not title_pattern.fullmatch(line))
+    declared_models = {token for scope in declared_scopes
+        for token in re.findall(r"[A-Za-z][A-Za-z0-9]*(?:[-/][A-Za-z0-9]+)*", scope)
+        if re.search(r"\d", token)}
+
+    def supported_document_title(identifier: str) -> bool:
+        base, *variants = identifier.split("-")
+        for model in declared_models:
+            if not re.match(re.escape(base) + r"(?!\d)", model, re.IGNORECASE):
+                continue
+            # Retain an unexplained numerical suffix (e.g. CY43-99). A title
+            # cannot disappear just because its alphabetic/series root matches.
+            model_variants = re.findall(r"\d+", model[len(base):])
+            if variants != model_variants[:len(variants)]:
+                continue
+            if explicit_model(model, body_identity_context):
+                return True
+        return False
+
+    for line in identity_lines:
+        title = title_pattern.fullmatch(line)
+        # A standalone family/document title such as “CY43-6连接器技术要求”
+        # is not a third explicitly declared product. Keep exact known models
+        # and every occurrence outside this narrow title form, including a
+        # product-model table or an unknown full model declaration.
+        if (title and not any(explicit_model(scope, title.group(1)) for scope in declared_scopes)
+            and supported_document_title(title.group(1))):
+            continue
+        coverage_context.append(line)
+    context_models = {
+        token for token in re.findall(r"[A-Za-z][A-Za-z0-9]*(?:[-/][A-Za-z0-9]+)*", "\n".join(coverage_context))
+        if any(re.match(re.escape(prefix) + r"\d", token, re.IGNORECASE) for prefix in model_prefixes)
+        and token.casefold() != str(product_series or "").casefold()
+    }
+    if exceptions and not context_models:
+        return {"value": "", "display_value": "", "basis": "", "items": [],
+            "candidate_items": all_candidates, "rejected_items": all_candidates,
+            "manual_review_required": True, "status": "SPEC_MODEL_UNSPECIFIED",
+            "inapplicable": False, "reason": "规范含明确型号例外，需确认本指标的产品型号。"}
+    for item in exceptions:
+        excluded_context = {model for model in context_models
+            if any(explicit_model(excluded, model) for excluded in item["excluded_models"])}
+        if excluded_context and excluded_context != context_models:
+            return {"value": "", "display_value": "", "basis": "", "items": [],
+                "candidate_items": all_candidates, "rejected_items": all_candidates,
+                "manual_review_required": True, "status": "SPEC_MULTIPLE_MODELS",
+                "inapplicable": False, "reason": "输入同时涉及默认型号和例外型号，需分别确认本指标。"}
 
     chosen: list[dict] = []
     selection = "none"
@@ -1928,9 +2135,9 @@ def _match_spec_table_indicator(
         if not candidates:
             continue
         scoped = [
-            (_scope_match_rank(item.get("scope", ""), product_label, product_series), item)
+            (scope_rank(item.get("scope", "")), item)
             for item in candidates
-            if item.get("scope")
+            if item.get("scope") and allowed_default(item)
         ]
         applicable_scoped = (
             [(rank, item) for rank, item in scoped if rank > 0]
@@ -1946,8 +2153,7 @@ def _match_spec_table_indicator(
 
         general = [
             item for item in candidates
-            if not item.get("scope")
-            and not any(term in str(item.get("value", "")) for term in condition_terms)
+            if not item.get("scope") and allowed_default(item)
         ]
         if general:
             chosen = general
@@ -1964,24 +2170,56 @@ def _match_spec_table_indicator(
             "rejected_items": all_candidates,
             "selection": "none",
             "match_origin": match_origin,
+            "candidate_items": all_candidates,
+            "manual_review_required": not bool(product_series),
+            "status": "SPEC_MODEL_UNSPECIFIED" if not product_series else "SPEC_MODEL_NOT_APPLICABLE",
+            "reason": "需澄清适用型号。" if not product_series else "规范型号与本次产品不匹配。",
         }
-    value = "；".join(dict.fromkeys(str(item["value"]) for item in chosen if item.get("value")))
-    display_value = "；".join(dict.fromkeys(
-        str(item.get("display_value") or item.get("value") or "")
-        for item in chosen
-        if item.get("display_value") or item.get("value")
-    ))
+    chosen_paragraphs = [item for item in chosen if item in scoped_paragraphs]
+    if chosen_paragraphs and any(not any(explicit_model(item["scope"], model)
+        for item in chosen_paragraphs) for model in context_models):
+        return {"value": "", "display_value": "", "basis": "", "items": [],
+            "candidate_items": all_candidates, "rejected_items": all_candidates,
+            "manual_review_required": True, "status": "SPEC_MODEL_COVERAGE_UNRESOLVED",
+            "inapplicable": False, "reason": "规范正文的明确型号范围未覆盖输入全部产品，需逐型号确认。"}
+    from jonhon_taskbook.spec_applicability import (
+        formal_display_value,
+        select_applicable_candidates,
+    )
+
+    if selection == "scoped" and len({str(item.get("scope")) for item in chosen}) > 1:
+        return {"value": "", "basis": "", "items": [], "candidate_items": chosen,
+                "inapplicable": False, "manual_review_required": True,
+                "status": "SPEC_MULTIPLE_MODELS", "reason": "输入涉及多个适用型号，需明确本指标对应的型号。"}
+
+    applicability = select_applicable_candidates(
+        chosen, user_requirement=user_requirement, source_context=f"{source_context}\n{clarification}",
+        indicator_name=str(indicator.get("name") or ""),
+    )
+    applicable_items = applicability["items"]
+    # A condition mismatch has no applicable formal standard.  Unrelated
+    # condition rows remain available through candidate_items/rejected_items
+    # for diagnosis, but must not be projected into the taskbook table.
+    if applicability["status"] == "SPEC_CONDITION_MISMATCH":
+        visible_items = []
+    else:
+        visible_items = (
+            chosen if applicability["manual_review_required"] else applicable_items
+        )
+    value = applicability["value"]
+    display_value = formal_display_value(visible_items)
     basis = "、".join(dict.fromkeys(
         f"{item.get('section', '')}{' ' + item.get('caption', '') if item.get('caption') else ''}".strip()
         for item in chosen
     ))
     return {
+        **applicability,
         "value": value,
         "display_value": display_value,
         "basis": basis,
-        "items": chosen,
+        "items": applicable_items,
         "inapplicable": False,
-        "rejected_items": [item for item in all_candidates if item not in chosen],
+        "rejected_items": [item for item in all_candidates if item not in applicable_items],
         "selection": selection,
         "match_origin": match_origin,
     }
@@ -2293,9 +2531,53 @@ def _table_indicator_row_values(
     return list(dict.fromkeys(values)), matched
 
 
+def _indicator_signal_matches(
+    text: str,
+    signal: str,
+    *,
+    strict: bool = False,
+    competing_names: tuple[str, ...] = (),
+) -> bool:
+    """Keep an explicit vocabulary term distinct from a longer metric name."""
+    compact = re.sub(r"\s+", "", str(text or ""))
+    signal = re.sub(r"\s+", "", str(signal or ""))
+    if not signal:
+        return False
+    if not strict:
+        return signal in compact
+    # A metric can be followed by punctuation, its value, or requirement/test
+    # wording. A longer noun such as “耐压深度” does not identify “耐压”.
+    matches = re.finditer(
+        re.escape(signal)
+        + r"(?=$|[^\u4e00-\u9fffA-Za-z]|要求|试验|测试|应|须|需|为|不|至少|至多|大于|小于|满足|符合)",
+        compact,
+    )
+    # “冲击” inside the distinct governed name “温度冲击” belongs to that
+    # longer metric. Use the current product vocabulary rather than a Chinese
+    # left-word boundary, which would also reject normal prose “产品重量”.
+    longer_names = {
+        re.sub(r"\s+", "", name)
+        for name in competing_names
+        if signal in re.sub(r"\s+", "", name)
+        and re.sub(r"\s+", "", name) != signal
+    }
+    blocked_spans = [
+        (match.start(), match.end())
+        for name in longer_names
+        for match in re.finditer(re.escape(name), compact)
+    ]
+    return any(
+        not any(start <= match.start() and match.end() <= end for start, end in blocked_spans)
+        for match in matches
+    )
+
+
 def _classified_indicator_evidence(
     classification: dict | None,
     keywords: list[str] | tuple[str, ...] | set[str],
+    *,
+    strict_keywords: bool = False,
+    competing_names: tuple[str, ...] = (),
 ) -> tuple[str, str, list[str]]:
     """从已经完成的语义分类中提取技术指标原文证据。
 
@@ -2344,7 +2626,6 @@ def _classified_indicator_evidence(
         records.append((body_index, item, block, chapter))
     records.sort(key=lambda value: value[0])
 
-    normalized = lambda text: re.sub(r"\s+", "", str(text or ""))
     # A classified table is one semantic block for the LLM, but its rows are
     # independent governed indicators.  Exact row-label evidence therefore
     # takes precedence over chapter and flattened-text matching.
@@ -2385,20 +2666,29 @@ def _classified_indicator_evidence(
 
     # First use the semantic chapter title.  A heading such as “工作电压” owns
     # all classified blocks in that chapter, including a value-only paragraph.
+    def chapter_key(record: tuple) -> str:
+        _, item, block, _ = record
+        # Synthetic inputs and isolated blocks may have no chapter id. They
+        # must not all share the empty string as one evidence-bearing chapter.
+        return str(item.get("chapter_id") or block.get("chapter_id") or block.get("id"))
+
     matched_chapters = {
-        str(item.get("chapter_id") or block.get("chapter_id") or "")
-        for _, item, block, chapter in records
+        chapter_key(record)
+        for record in records
         if any(
-            signal in normalized(
+            _indicator_signal_matches(
                 " ".join(
                     str(value or "")
                     for value in (
-                        chapter.get("heading_text"),
-                        chapter.get("section"),
-                        block.get("heading_text"),
-                        block.get("section"),
+                        record[3].get("heading_text"),
+                        record[3].get("section"),
+                        record[2].get("heading_text"),
+                        record[2].get("section"),
                     )
-                )
+                ),
+                signal,
+                strict=strict_keywords,
+                competing_names=competing_names,
             )
             for signal in signals
         )
@@ -2407,8 +2697,7 @@ def _classified_indicator_evidence(
         record
         for record in records
         if (
-            str(record[1].get("chapter_id") or record[2].get("chapter_id") or "")
-            in matched_chapters
+            chapter_key(record) in matched_chapters
         )
     ]
     if not selected:
@@ -2416,7 +2705,13 @@ def _classified_indicator_evidence(
             record
             for record in records
             if str(record[2].get("id")) not in structured_table_ids
-            and any(signal in normalized(record[2].get("text")) for signal in signals)
+            and any(
+                _indicator_signal_matches(
+                    record[2].get("text"), signal,
+                    strict=strict_keywords, competing_names=competing_names,
+                )
+                for signal in signals
+            )
         ]
     if not selected:
         return "", "", []
@@ -2593,7 +2888,7 @@ def _collect_standards(
     include_template: bool = True, domain: str = "", audit: dict | None = None,
 ) -> list[str]:
     """合并标准并建立来源优先、占位过滤和版本冲突审计。"""
-    prefixes = ("GJB", "GB", "Q/", "KJB", "MIL", "SAE", "CCAR", "TE-", "AS9")
+    from jonhon_taskbook.standard_references import extract_standard_references, is_reference_heading, standard_code
     records: list[dict[str, str | int]] = []
     evidence_parts: list[str] = []
     template_paras = parse_doc(template_doc) if template_doc is not None else []
@@ -2611,19 +2906,49 @@ def _collect_standards(
     )
 
     def canonical_code(line: str) -> str:
-        match = re.match(
-            r"^((?:GJB(?:/Z)?|GB(?:/T)?|KJB|MIL|SAE|CCAR|TE-|AS)\s*"
-            r"[A-Z0-9./-]+|Q/[A-Z0-9./-]+)",
-            line,
-            re.I,
-        )
-        return re.sub(r"\s+", "", match.group(1)).upper() if match else ""
+        return standard_code(line)
+
+    def source_texts_with_context(doc, paras):
+        if doc is None:
+            yield from ((para.text, False) for para in paras)
+            return
+        from docx.table import Table
+        from docx.text.paragraph import Paragraph
+        from jonhon_taskbook.source_scope import has_substantive_heading_content, is_source_heading
+        from jonhon_taskbook.template_scanner import heading_level
+
+        # Keep reference context in original document order, including tables.
+        # Depth establishes scope only; displayed section numbers are not the
+        # identity of a reference section.
+        by_element = {para.raw: para for para in paras}
+        reference_depth = None
+        for element in doc.element.body:
+            para = by_element.get(element)
+            if para is not None:
+                substantive = has_substantive_heading_content(para.text)
+                is_reference = is_reference_heading(para.text)
+                structural_depth = heading_level(Paragraph(element, doc))
+                # A styled/outlined peer heading ends the reference chapter
+                # even when it also carries a requirement. Numbered reference
+                # list items alone do not establish such a boundary.
+                if structural_depth or (not substantive and (is_reference or is_source_heading(element, para.text))):
+                    depth = structural_depth or para.depth or 1
+                    if reference_depth is not None and depth <= reference_depth:
+                        reference_depth = None
+                    if is_reference:
+                        reference_depth = depth if reference_depth is None else min(depth, reference_depth)
+                yield para.text, reference_depth is not None
+            elif element.tag == qn("w:tbl"):
+                for row in Table(element, doc).rows:
+                    for cell in row.cells:
+                        for line in cell.text.splitlines():
+                            yield line, reference_depth is not None
 
     rejected: list[dict[str, str]] = []
     for source_name, priority, doc, paras in sources:
-        for para in paras:
-            line = _standard_line(para.text, prefixes)
-            if line:
+        for source_text, reference_context in source_texts_with_context(doc, paras):
+            references = extract_standard_references(source_text, reference_context=reference_context)
+            for line in references:
                 if placeholder_pattern.search(line):
                     rejected.append(
                         {"source": source_name, "text": line, "reason": "placeholder"}
@@ -2635,36 +2960,11 @@ def _collect_standards(
                             "priority": priority,
                             "text": line,
                             "code": canonical_code(line),
+                            "source_text": source_text,
                         }
                     )
-            elif doc is not template_doc and (para.text or "").strip():
-                evidence_parts.append((para.text or "").strip())
-        if doc is not None:
-            for table in doc.tables:
-                for row in table.rows:
-                    for cell in row.cells:
-                        for line_text in cell.text.splitlines():
-                            line = _standard_line(line_text, prefixes)
-                            if line:
-                                if placeholder_pattern.search(line):
-                                    rejected.append(
-                                        {
-                                            "source": source_name,
-                                            "text": line,
-                                            "reason": "placeholder",
-                                        }
-                                    )
-                                else:
-                                    records.append(
-                                        {
-                                            "source": source_name,
-                                            "priority": priority,
-                                            "text": line,
-                                            "code": canonical_code(line),
-                                        }
-                                    )
-                            elif doc is not template_doc and line_text.strip():
-                                evidence_parts.append(line_text.strip())
+            if not references and doc is not template_doc and (source_text or "").strip():
+                evidence_parts.append(source_text.strip())
 
     # 只对“同一条标准文本”做来源优先去重：技术要求 > 产品规范 > 模板。
     #
@@ -2704,11 +3004,10 @@ def _collect_standards(
     selected_family_index: dict[str, int] = {}
     for record in selected_by_code.values():
         code = str(record["code"])
-        family = re.sub(r"-\d{4}[A-Z]?$", "", code)
-        is_versioned = bool(family and family != code)
-        if not is_versioned:
-            selected_records.append(record)
-            continue
+        family = re.sub(r"[-:]\d{4}[A-Z]?$", "", code)
+        # A reference without a year participates in the same source-priority
+        # merge, but does not assert a second explicit edition. Preserve the
+        # authoritative spelling rather than borrowing a template's year.
         previous_index = selected_family_index.get(family)
         if previous_index is None:
             selected_family_index[family] = len(selected_records)
@@ -2743,8 +3042,8 @@ def _collect_standards(
     version_groups: dict[str, set[str]] = {}
     for record in selected_records:
         code = str(record["code"])
-        family = re.sub(r"-\d{4}[A-Z]?$", "", code)
-        if family and code:
+        family = re.sub(r"[-:]\d{4}[A-Z]?$", "", code)
+        if family and family != code:
             version_groups.setdefault(family, set()).add(code)
     version_conflicts = [
         {"family": family, "versions": sorted(versions)}
@@ -2759,6 +3058,7 @@ def _collect_standards(
                 "rejected_placeholders": rejected,
                 "deduplicated": duplicates,
                 "version_conflicts": version_conflicts,
+                "source_references": selected_records,
             }
         )
     applicable = _filter_standards_by_domain(
@@ -2775,11 +3075,24 @@ def _runtime_indicator_map(
     tech_paras: list,
     classification: dict | None = None,
 ) -> dict[str, list[dict]]:
-    """Merge the profile vocabulary with matching entries from the 7-22 list.
+    """Merge the profile vocabulary with its selected controlled sources.
 
     The external workbook contributes names and categories only.  Numeric
     values still have to exist in the user's technical requirement.
     """
+    sources = cfg.get("indicator_sources", {})
+    if not isinstance(sources, dict):
+        raise TypeError("indicator_sources 必须是对象")
+    use_workbook = sources.get("workbook", True)
+    if not isinstance(use_workbook, bool):
+        raise TypeError("indicator_sources.workbook 必须是布尔值")
+    reference_families = sources.get("reference_families")
+    if "reference_families" in sources and not isinstance(reference_families, list):
+        raise TypeError("indicator_sources.reference_families 必须是列表")
+    # Resolve and validate explicit source choices even when the current input
+    # has no performance evidence. A misspelled family cannot silently use the
+    # connector defaults or become an apparently valid empty vocabulary.
+    reference_entries = load_reference_indicator_catalog(families=reference_families)
     excluded = {
         _canonical_indicator_name(name)
         for name in (cfg.get("indicator_excluded_names") or [])
@@ -2869,13 +3182,13 @@ def _runtime_indicator_map(
     }
     controlled_entries: list[tuple[str, dict]] = [
         (_canonical_indicator_category(str(category)), dict(entry))
-        for category, entries in taxonomy_indicator_map().items()
+        for category, entries in (taxonomy_indicator_map() if use_workbook else {}).items()
         for entry in entries
         if isinstance(entry, dict)
     ]
     controlled_entries.extend(
         (_canonical_indicator_category(str(entry.get("category", "其他") or "其他")), dict(entry))
-        for entry in load_reference_indicator_catalog()
+        for entry in reference_entries
         if isinstance(entry, dict)
     )
     for category, entry in controlled_entries:
@@ -2894,7 +3207,7 @@ def _runtime_indicator_map(
             if len(re.sub(r"\s+", "", alias)) >= 2
         ]
         if not name or not any(
-            re.sub(r"\s+", "", signal) in source_text
+            _indicator_signal_matches(source_text, signal, strict="indicator_sources" in cfg)
             for signal in signals
             if signal
         ):
@@ -2931,166 +3244,141 @@ def _dynamic_unlisted_indicator_rows(
     *,
     product_label: str = "",
     product_series: str = "",
+    indicator_clarifications: dict[str, str] | None = None,
+    model_context: str = "",
+    allow_scoped: bool = True,
+    indicator_facts: list[dict] | None = None,
 ) -> tuple[list[tuple[str, str, str, str, str]], list[dict]]:
-    """Audit classified indicators that are absent from the controlled catalog.
+    """Add individual explicit source facts, never their container chapter."""
+    from jonhon_taskbook.indicator_facts import extract_indicator_facts, indicator_fact_evidence
+    from jonhon_taskbook.indicator_comparison import compare_indicator_values
+    from jonhon_taskbook.spec_applicability import comparison_value, measurement_text
 
-    LLM classification is evidence discovery, not authority to create a formal
-    4.1 row.  An unlisted candidate therefore enters the review ledger and
-    blocks formal delivery; it is never silently promoted to ``其他``.
-    """
-    if not classification:
-        return [], []
-
-    blocks = {
+    facts = indicator_facts if indicator_facts is not None else extract_indicator_facts(
+        classification, excluded_names=list(excluded_names),
+    )
+    source_blocks = {
         str(block.get("id")): block
-        for block in classification.get("source_blocks", [])
+        for block in (classification or {}).get("source_blocks", [])
         if isinstance(block, dict) and block.get("id")
     }
-    chapters = {
-        str(chapter.get("id")): chapter
-        for chapter in classification.get("source_chapters", [])
-        if isinstance(chapter, dict) and chapter.get("id")
-    }
-    existing_names = {
-        _canonical_indicator_name(str(row[0]))
-        for row in existing_rows
-        if row and row[0] and not str(row[0]).startswith("【")
-    }
-    existing_values = {
-        re.sub(r"\s+", "", str(row[1]))
-        for row in existing_rows
-        if len(row) > 1 and str(row[1]).strip()
-    }
-    excluded = {
-        _canonical_indicator_name(str(name))
-        for name in excluded_names
-        if str(name).strip()
-    }
-
-    grouped: dict[str, dict] = {}
-    for assignment in classification.get("classifications", []):
-        if not isinstance(assignment, dict) or assignment.get("category") != "performance_indicator":
-            continue
-        block = blocks.get(str(assignment.get("source_id", "")))
-        if not block or block.get("has_drawing") or block.get("type") not in {"paragraph", "table"}:
-            continue
-        text = str(block.get("text", "")).strip()
-        if not text:
-            continue
-        chapter_id = str(assignment.get("chapter_id") or block.get("chapter_id") or block.get("id"))
-        chapter = chapters.get(chapter_id, {})
-        group = grouped.setdefault(
-            chapter_id,
-            {
-                "heading": str(
-                    chapter.get("heading_text")
-                    or block.get("heading_text")
-                    or block.get("section")
-                    or ""
-                ),
-                "source_ids": [],
-                "texts": [],
-                "blocks": [],
-            },
-        )
-        group["source_ids"].append(str(block.get("id")))
-        group["texts"].append(text)
-        group["blocks"].append(block)
-
-    rows: list[tuple[str, str, str, str, str]] = []
-    audit: list[dict] = []
-    generic_headings = {
-        "技术指标", "性能指标", "技术要求", "指标", "要求", "产品技术要求",
-    }
-    for group in grouped.values():
-        raw_heading = str(group["heading"]).strip()
-        # A table chapter title such as “电气性能要求” is a container, not an
-        # indicator identity.  Audit explicit table item rows individually and
-        # never promote the container heading merely because the flattened
-        # table text is no longer copied wholesale into 4.1.
-        structured_table_ids: set[str] = set()
-        for block in group.get("blocks", []):
-            if not isinstance(block, dict) or block.get("type") != "table":
-                continue
-            entries = _structured_table_indicator_entries(_source_table_rows(block))
-            if not entries:
-                continue
-            source_id = str(block.get("id", ""))
-            structured_table_ids.add(source_id)
-            for item_name, item_value in entries:
-                canonical_item = _canonical_indicator_name(item_name)
-                normalized_item_value = re.sub(r"\s+", "", item_value)
-                if (
-                    not item_name
-                    or canonical_item in existing_names
-                    or canonical_item in excluded
-                    or (normalized_item_value and normalized_item_value in existing_values)
-                ):
-                    continue
-                audit.append({
-                    "indicator_name": item_name,
-                    "category": "其他",
-                    "source_ids": [source_id] if source_id else [],
-                    "source_heading": raw_heading,
-                    "source_value": item_value,
-                    "status": "UNMAPPED_REVIEW_REQUIRED",
-                    "policy": "controlled_catalog_only",
-                    "notes": [
-                        "表格项目行未进入当前产品受控指标清单；正式件不得自动创建指标行"
-                    ],
-                })
-        unstructured_texts = [
-            str(block.get("text", "")).strip()
-            for block in group.get("blocks", [])
-            if isinstance(block, dict)
-            and str(block.get("id", "")) not in structured_table_ids
-            and str(block.get("text", "")).strip()
-        ]
-        if structured_table_ids and not unstructured_texts:
-            continue
-
-        name = re.sub(
-            r"^\s*(?:第\s*[一二三四五六七八九十百千万零〇]+\s*章\s*|\d+(?:\.\d+)*(?:\s+|[、)）]))",
-            "",
-            raw_heading,
-        ).strip(" ：:；;。")
-        value = "\n".join(dict.fromkeys(
-            unstructured_texts
-            if structured_table_ids
-            else (
-                str(text).strip()
-                for text in group["texts"]
-                if str(text).strip()
+    source_roles: dict[str, set[str]] = {}
+    for assignment in (classification or {}).get("classifications", []):
+        if isinstance(assignment, dict) and assignment.get("source_id"):
+            source_roles.setdefault(str(assignment["source_id"]), set()).add(
+                str(assignment.get("category") or "")
             )
-        ))
-        if not name or name in generic_headings:
-            # 只接受原文中明确的“名称：值”，不从数值反猜指标名。
-            label_match = re.match(r"^([^\n：:]{1,24})[：:]", value)
-            name = label_match.group(1).strip() if label_match else ""
-        canonical = _canonical_indicator_name(name)
-        normalized_value = re.sub(r"\s+", "", value)
-        if (
-            not name
-            or canonical in existing_names
-            or canonical in excluded
-            or normalized_value in existing_values
-        ):
-            continue
 
+    def is_formal_descriptive_row(fact: dict) -> bool:
+        """Require the original, performance-routed two-column specification."""
+        if not fact.get("is_table") or len(fact.get("source_ids") or []) != 1:
+            return False
+        source_id = str(fact["source_ids"][0])
+        block = source_blocks.get(source_id, {})
+        if block.get("type") != "table" or source_roles.get(source_id) != {"performance_indicator"}:
+            return False
+        source_rows = _source_table_rows(block)
+        for header_index, header in enumerate(source_rows[:4]):
+            tokens = [_table_token(cell) for cell in header]
+            if "技术特性类型" not in tokens or "特性描述" not in tokens:
+                continue
+            label_column = tokens.index("技术特性类型")
+            value_column = tokens.index("特性描述")
+            coordinates = fact.get("source_coordinates") or {}
+            row_index = coordinates.get("table_row")
+            if type(row_index) is not int or not header_index < row_index < len(source_rows):
+                return False
+            row = source_rows[row_index]
+            return bool(
+                max(label_column, value_column) < len(row)
+                and _table_token(row[label_column]) == _table_token(fact.get("source_label", ""))
+                and row[value_column].strip() == str(fact.get("source_value") or "").strip()
+            )
+        return False
+
+    def unresolved_value(value: str) -> bool:
+        compact = re.sub(r"\s+", "", str(value or ""))
+        return bool(
+            not compact
+            or compact in {"/", "\\", "-", "—", "无", "不适用", "【人工填写】"}
+            or re.fullmatch(r"[Xx_＿…]+", compact)
+            or re.search(r"待(?:确认|定|设计|选型|填写|澄清)|需(?:人工|设计|客户).*?确认|TBD", compact, re.I)
+        )
+    existing = {_canonical_indicator_name(str(row[0])) for row in existing_rows
+                if row and row[0] and not str(row[0]).startswith("【")}
+    excluded = {_canonical_indicator_name(str(name)) for name in excluded_names}
+    names = list(dict.fromkeys(fact["indicator_name"] for fact in facts))
+    rows, audit = [], []
+    for name in names:
+        canonical = _canonical_indicator_name(name)
+        if canonical in existing or canonical in excluded:
+            continue
+        matching = [fact for fact in facts if _canonical_indicator_name(fact["indicator_name"]) == canonical]
+        value, heading, source_ids, fact_ids, _ = indicator_fact_evidence(facts, name)
+        category = matching[0]["category"]
+        hit = _match_spec_table_indicator(
+            spec_table_ledger, {"name": name}, product_label=product_label,
+            product_series=product_series, user_requirement=value, source_context=heading,
+            clarification=str((indicator_clarifications or {}).get(name, "")),
+            model_context=model_context, allow_scoped=allow_scoped,
+        ) or {}
+        standard = str(hit.get("value") or "")
+        from jonhon_taskbook.spec_applicability import compare_applicable_values
+        comparison = compare_applicable_values(value, [name], hit)
+        # C50 adds explicit source indicators even when the template/profile
+        # has no row. C51(3) adopts the user value when no applicable standard
+        # exists; a new name alone is not an ambiguity requiring manual entry.
+        # A governed descriptive table can contain complete qualitative and
+        # model values as well as numbers. Their absent profile category is not
+        # an ambiguity by itself; retain one clear source value verbatim.
+        # Conflicting rows, placeholders and unrelated test tables stay manual.
+        source_values = {str(fact.get("source_value") or "").strip() for fact in matching}
+        explicit_table_value = (
+            bool(matching)
+            and all(is_formal_descriptive_row(fact) for fact in matching)
+            and len(source_values) == 1
+            and not unresolved_value(value)
+        )
+        manual = (
+            (category == "其他" and not explicit_table_value)
+            or comparison.manual_review_required
+            or bool(hit.get("manual_review_required"))
+        )
+        adopted = str(hit.get("display_value") or standard) if comparison.status in {"standard_only", "stricter_standard"} else value
+        basis = spec_identifier if comparison.status in {"standard_only", "stricter_standard"} else "用户要求"
+        reason = hit.get("reason") or comparison.audit_note
+        if category == "其他":
+            reason = (
+                "原文已明确指标名称及取值，新增指标行；性能分类待设计确认。"
+                if explicit_table_value
+                else "原文已明确指标名称，新增指标行；性能分类需设计确认。"
+            )
+        if manual:
+            adopted = "【人工填写】"
+            basis = reason
+        rows.append((name, value, str(hit.get("display_value") or standard), adopted, basis))
         audit.append({
-            "indicator_name": name,
-            "category": "其他",
-            "source_ids": group["source_ids"],
-            "source_heading": raw_heading,
-            "source_value": value,
-            "status": "UNMAPPED_REVIEW_REQUIRED",
-            "policy": "controlled_catalog_only",
-            "notes": [
-                "该候选仅由语义分类发现，未进入当前产品受控指标清单；"
-                "正式件不得自动创建指标行"
+            "indicator_name": name, "category": category,
+            "source_ids": source_ids, "source_heading": heading, "source_value": value,
+            "status": "SOURCE_INDICATOR_ADDED", "policy": "source_atomic_indicator",
+            "notes": [reason] if reason else [], "numeric_status": comparison.status,
+            "manual_review_required": manual, "reason": reason,
+            "user_requirement": value, "user_source_ids": source_ids, "user_fact_ids": fact_ids,
+            "clarification": str((indicator_clarifications or {}).get(name, "")),
+            "standard_requirement": str(hit.get("display_value") or standard),
+            "adopted_requirement": adopted, "basis": basis,
+            "spec_applicability_status": hit.get("status", "NO_STRUCTURED_APPLICABLE_SPEC"),
+            "rejected_candidates": hit.get("rejected_items", []),
+            "candidate_comparisons": [
+                {**candidate, "comparison_status": compared.status,
+                 "comparison_note": compared.audit_note, "comparison_adopted": compared.adopted}
+                for candidate in hit.get("candidate_items", [])
+                for compared in [compare_indicator_values(
+                    measurement_text(value, [name], [candidate]), comparison_value(candidate),
+                )]
             ],
         })
-
+        existing.add(canonical)
     return rows, audit
 
 
@@ -3107,6 +3395,7 @@ def build_content(
     product_series: str = "",
     requirement_classification: dict | None = None,
     controlled_product_domain: str = "",
+    indicator_clarifications: dict[str, str] | None = None,
 ):
     """构造语义角色内容；任何模板章节号都不参与身份或定位。"""
     content = {}
@@ -3139,11 +3428,36 @@ def build_content(
         else bool(spec_model_filter)
     )
     if spec is not None and spec_path:
-        try:
-            spec_table_ledger = _build_spec_table_ledger(spec_path)
-            print(f"  产品规范表格台账: {sum(len(v) for v in spec_table_ledger.values())} 条")
-        except Exception as e:
-            print(f"  ⚠ 产品规范表格台账构建失败: {e}")
+        spec_table_ledger = _build_spec_table_ledger(spec_path)
+        print(f"  产品规范表格台账: {sum(len(v) for v in spec_table_ledger.values())} 条")
+
+    template_indicators: dict[str, tuple[str, str]] = {}
+    if template_doc is not None:
+        for table in template_doc.tables:
+            if not table.rows:
+                continue
+            header = "".join(cell.text for cell in table.rows[0].cells)
+            if "用户要求" not in header or "拟采用" not in header:
+                continue
+            category = "其他"
+            for row in table.rows[1:]:
+                texts = [cell.text.strip() for cell in row.cells]
+                if not texts or not texts[0]:
+                    continue
+                if len(set(texts)) == 1:
+                    category = _canonical_indicator_category(texts[0])
+                    continue
+                if len(texts) >= 4:
+                    template_indicators[_canonical_indicator_name(texts[0])] = (texts[0], category)
+    # Explicit product identities are read from source content; no filename guessing.
+    product_identity_context = "\n".join(
+        str(paragraph.text or "") for paragraph in tech_paras[:30]
+    )
+    for table in tech.tables[:3]:
+        for row in table.rows:
+            cells = [cell.text for cell in row.cells]
+            if any(re.search(r"型号|产品名称", cell) for cell in cells):
+                product_identity_context += "\n" + " ".join(cells)
 
     for semantic_role, rule in semantic_structures.items():
         if not isinstance(rule, dict):
@@ -3157,9 +3471,24 @@ def build_content(
         if mode == "indicator_table":
             ind_rows = []
             indicator_comparison_audit: list[dict] = []
-            for category, indicators in _runtime_indicator_map(
+            runtime_indicators = _runtime_indicator_map(
                 cfg, tech_paras, requirement_classification
-            ).items():
+            )
+            from jonhon_taskbook.indicator_facts import extract_indicator_facts, indicator_fact_evidence
+            indicator_facts = extract_indicator_facts(
+                requirement_classification, runtime_indicators,
+                excluded_names=cfg.get("indicator_excluded_names") or [],
+                source_document=tech,
+            )
+            configured_names = {
+                _canonical_indicator_name(ind.get("name", ""))
+                for indicators in runtime_indicators.values() for ind in indicators
+            }
+            excluded_names = {_canonical_indicator_name(name) for name in cfg.get("indicator_excluded_names", [])}
+            for name, (label, category) in template_indicators.items():
+                if name in spec_table_ledger and name not in configured_names and name not in excluded_names:
+                    runtime_indicators.setdefault(category, []).append({"name": label, "tech_kws": [label], "std_kws": [label]})
+            for category, indicators in runtime_indicators.items():
                 category_rows = []
                 for ind in indicators:
                     # 生产路径必须先经过语义分类；分类本身决定哪些原文块
@@ -3167,112 +3496,90 @@ def build_content(
                     # 确定性单元测试/离线调用兼容路径。
                     tech_kws = ind.get("tech_kws", []) or [ind.get("name", "")]
                     tech_source_ids: list[str] = []
+                    tech_fact_ids: list[str] = []
                     if isinstance(requirement_classification, dict):
-                        tv, tech_basis, tech_source_ids = _classified_indicator_evidence(
-                            requirement_classification,
-                            tech_kws,
-                        )
-                        structured_table_row = (
-                            _indicator_evidence_is_structured_table_row(
-                                requirement_classification,
-                                tech_source_ids,
-                                tech_kws,
-                            )
+                        tv, tech_basis, tech_source_ids, tech_fact_ids, structured_table_row = indicator_fact_evidence(
+                            indicator_facts, ind["name"],
                         )
                     else:
                         tv, tech_basis = _find_value_by_semantics(tech_paras, tech_kws)
                         structured_table_row = False
                     if not structured_table_row:
                         tv = _select_indicator_value(tv, ind)
-                    # 指标集合完全由设计输入驱动。设计输入没有该指标时，禁止仅凭
-                    # 模板目录或产品规范把它加入输出。
-                    if not tv:
+                    # 开发逻辑 C51④：模板既有指标即使无用户值，也可从适用规范补值。
+                    template_owned = _canonical_indicator_name(ind.get("name", "")) in template_indicators
+                    if not tv and not template_owned:
                         continue
-                    # 标准要求：优先用型号过滤台账（精确），回退到章节文本搜索
-                    std_k = ind.get("std_kws") or ind.get("spec_kws", [])
-                    stdv = ""
-                    standard_display = ""
-                    spec_basis = ""
-                    standard_audit_note = ""
                     table_hit = _match_spec_table_indicator(
-                        spec_table_ledger,
-                        ind,
+                        spec_table_ledger, ind,
                         product_label=controlled_product_label,
                         product_series=product_series,
                         allow_scoped=scoped_spec_enabled,
+                        user_requirement=tv,
+                        source_context=tech_basis,
+                        model_context=product_identity_context,
+                        clarification=str((indicator_clarifications or {}).get(ind["name"], "")),
                     )
-                    if table_hit and not table_hit.get("inapplicable"):
-                        stdv = table_hit["value"]
-                        standard_display = table_hit.get("display_value") or stdv
-                        spec_basis = f"{spec_identifier}（产品规范表格：{table_hit['basis']}）"
-                        if table_hit.get("match_origin") == "related":
-                            standard_audit_note = (
-                                "[关联词命中] 产品规范指标名与用户指标名不同，"
-                                "通过受控 related_kws 取得标准要求"
-                            )
-                        comparison_status = (
-                            "SCOPED_SPEC_APPLIED"
-                            if table_hit.get("selection") == "scoped"
-                            else "GENERAL_SPEC_APPLIED"
+                    stdv = str((table_hit or {}).get("value") or "")
+                    standard_display = str((table_hit or {}).get("display_value") or stdv)
+                    applicability_review = bool((table_hit or {}).get("manual_review_required"))
+                    if table_hit and table_hit.get("inapplicable"):
+                        stdv = ""
+                    if not tv and not stdv and not applicability_review:
+                        continue
+                    if str(stdv).strip() in {"", "\\", "/", "-", "—", "无", "不适用"}:
+                        stdv = ""
+                    from jonhon_taskbook.indicator_comparison import compare_indicator_values
+                    from jonhon_taskbook.spec_applicability import (
+                        comparison_value,
+                        measurement_text,
+                    )
+
+                    comparison_labels = [ind["name"], *tech_kws]
+                    from jonhon_taskbook.spec_applicability import compare_applicable_values
+                    comparison = compare_applicable_values(tv, comparison_labels, table_hit or {})
+                    manual_review_required = applicability_review or comparison.manual_review_required
+                    audit_note = "；".join(x for x in ((table_hit or {}).get("reason", ""), comparison.audit_note) if x)
+                    comparison_status = (table_hit or {}).get("status", "NO_STRUCTURED_APPLICABLE_SPEC")
+                    adopted = standard_display if comparison.status in {"standard_only", "stricter_standard"} else tv
+                    basis = spec_identifier if comparison.status in {"standard_only", "stricter_standard"} else "用户要求"
+                    candidate_comparisons = []
+                    for candidate in (table_hit or {}).get("candidate_items", []):
+                        candidate_result = compare_indicator_values(
+                            measurement_text(tv, comparison_labels, [candidate]), comparison_value(candidate),
                         )
-                        manual_review_required = False
-                    elif table_hit and table_hit.get("inapplicable"):
-                        # A restricted row for another model is not a standard
-                        # for this job.  Keep the fact in the audit note but do
-                        # not leak its value into the adopted column.
-                        stdv = ""
-                        spec_basis = "不适用：产品规范行的型号/系列条件未命中本次选择"
-                        standard_audit_note = "[不适用] 产品规范候选的型号/系列条件未命中本次产品"
-                        # 7-22 的裁决是确定性的：带具体型号或其它限制条件
-                        # 且未命中本次产品时，不调取该规范值，直接采用用户
-                        # 要求并把依据写为“用户要求”。这不是数值冲突，也
-                        # 不应仅因为看见了不适用候选而阻断正式件。
-                        comparison_status = "CONDITIONAL_SPEC_REJECTED_USER_APPLIED"
-                        manual_review_required = False
-                    else:
-                        # 普通规范段落不是结构化指标候选。它可能只是试验
-                        # 方法、说明性文字或另一产品的条件，不能被当作
-                        # “标准要求”写入正式表格。
-                        stdv = ""
-                        spec_basis = ""
-                        comparison_status = "NO_STRUCTURED_APPLICABLE_SPEC"
-                        manual_review_required = False
-                    if str(stdv or "").strip() in {"", "\\", "/", "-", "—", "无", "不适用"}:
-                        stdv = ""
-                        standard_display = ""
-                        if not standard_audit_note:
-                            standard_audit_note = "[不适用] 未找到本次产品可采用的规范指标"
-                    else:
-                        standard_display = standard_display or stdv
-                    if stdv and re.search(r"符合下表|见下表|如下规定", stdv) and not table_hit:
-                        raise ValueError(f"指标“{ind.get('name')}”存在未解析表格引用：{stdv}")
-                    # 依据使用实际命中的标题/型号范围，不回写配置中的固定章节号。
-                    # 拟采用指标裁决（提炼具体数值，用户优先，冲突入审计）
-                    adopted, basis, audit_note = _resolve_indicator_adoption(
-                        tv,
-                        stdv,
-                        spec_basis,
-                        str(ind.get("adopt_policy", "")),
-                    )
-                    notes = "；".join(note for note in (standard_audit_note, audit_note) if note)
-                    category_rows.append((ind["name"], tv, standard_display, adopted, basis, notes))
+                        candidate_comparisons.append({
+                            **candidate,
+                            "comparison_status": candidate_result.status,
+                            "comparison_note": candidate_result.audit_note,
+                            "comparison_adopted": candidate_result.adopted,
+                        })
+                    if manual_review_required:
+                        # Only the applicability projection may enter the formal
+                        # table.  Raw candidates stay in candidate_comparisons;
+                        # rebuilding them here would reintroduce unrelated
+                        # grades/conditions after a mismatch.
+                        visible = standard_display
+                        adopted = "【人工填写】" + (f"\n规范候选：{visible}" if visible else "")
+                        basis = (table_hit or {}).get("reason") or comparison.audit_note or "需澄清，设计逐项确认"
+                    category_rows.append((ind["name"], tv, standard_display, adopted, basis, audit_note))
                     indicator_comparison_audit.append({
                         "indicator_name": str(ind.get("name", "")),
-                        "category": str(category),
-                        "status": comparison_status,
+                        "category": str(category), "status": comparison_status,
+                        "numeric_status": comparison.status,
                         "manual_review_required": manual_review_required,
-                        "user_requirement": tv,
-                        "user_source_ids": tech_source_ids,
+                        "reason": audit_note,
+                        "user_requirement": tv, "user_source_ids": tech_source_ids,
+                        "user_fact_ids": tech_fact_ids,
                         "user_source_heading": tech_basis,
+                        "clarification": str((indicator_clarifications or {}).get(ind["name"], "")),
                         "standard_requirement": standard_display,
-                        "adopted_requirement": adopted,
-                        "basis": basis,
+                        "adopted_requirement": adopted, "basis": basis,
+                        "evidence_origin": "user" if tv else "template_and_specification",
                         "scoped_spec_filter_enabled": scoped_spec_enabled,
-                        "rejected_candidates": (
-                            table_hit.get("rejected_items", [])
-                            if isinstance(table_hit, dict)
-                            else []
-                        ),
+                        "default_conditions_applied": bool((table_hit or {}).get("default_conditions_applied")),
+                        "candidate_comparisons": candidate_comparisons,
+                        "rejected_candidates": (table_hit or {}).get("rejected_items", []),
                     })
                 # 性能域标题来自外置指标清单，即使本次设计输入在该域没有
                 # 指标，也要用它治理模板的通用分类占位标题。这里只加入
@@ -3287,19 +3594,52 @@ def build_content(
                 spec_identifier,
                 product_label=controlled_product_label,
                 product_series=product_series,
+                indicator_clarifications=indicator_clarifications,
+                model_context=product_identity_context,
+                allow_scoped=scoped_spec_enabled,
+                indicator_facts=indicator_facts,
             )
             if dynamic_rows:
-                ind_rows.append(("【其他】", "", "", "", ""))
-                ind_rows.extend(dynamic_rows)
+                for dynamic_row, dynamic_decision in zip(dynamic_rows, dynamic_audit):
+                    ind_rows.append((f"【{dynamic_decision['category']}】", "", "", "", ""))
+                    ind_rows.append(dynamic_row)
+                indicator_comparison_audit.extend(dynamic_audit)
             audit_conflicts = [(r[0], r[5]) for r in ind_rows if len(r) > 5 and r[5]]
             clean_rows = [r[:5] for r in ind_rows]
+            from jonhon_taskbook.indicator_identity import indicator_display_value
+
+            aliases_by_name = {}
+            for entries in runtime_indicators.values():
+                for indicator in entries:
+                    aliases_by_name[_canonical_indicator_name(indicator["name"])] = [
+                        indicator["name"], *(indicator.get("tech_kws") or []),
+                        *(indicator.get("std_kws") or []),
+                    ]
+            rendered_rows = []
+            for name, user, standard, adopted, basis in clean_rows:
+                aliases = aliases_by_name.get(_canonical_indicator_name(name), [name])
+                rendered_rows.append((name, *(
+                    indicator_display_value(value, name, aliases)
+                    for value in (user, standard, adopted)
+                ), basis))
+            for decision in indicator_comparison_audit:
+                name = decision["indicator_name"]
+                aliases = aliases_by_name.get(_canonical_indicator_name(name), [name])
+                displays = {
+                    field: indicator_display_value(decision.get(field, ""), name, aliases)
+                    for field in ("user_requirement", "standard_requirement", "adopted_requirement")
+                }
+                if any(value != decision.get(field, "") for field, value in displays.items()):
+                    decision["display_labels"] = list(dict.fromkeys(aliases))
+                    decision["display_values"] = displays
             content_key = f"role:{semantic_role}"
             content[content_key] = {
                 "lines": [], "tables": [], "images": [], "image_warnings": [],
-                "indicator_rows": clean_rows,
+                "indicator_rows": rendered_rows,
                 "audit_conflicts": audit_conflicts,
                 "dynamic_indicator_audit": dynamic_audit,
                 "indicator_comparison_audit": indicator_comparison_audit,
+                "input_indicator_facts": indicator_facts,
             }
             print(f"  {content_key}: {len(ind_rows)} 行  0 表  0 图")
             continue
@@ -3326,6 +3666,7 @@ def _merge_classified_content(
     semantic_roles = mapping.get("semantic_roles", {}) or {}
     routing_rules = {**categories, **semantic_roles}
     block_by_id = {b["id"]: b for b in classification.get("source_blocks", [])}
+    review_ids = review_reference_source_ids(classification)
     assignment_by_source = {
         item.get("source_id"): item
         for item in classification.get("classifications", [])
@@ -3376,13 +3717,15 @@ def _merge_classified_content(
                 content[slot] = source
     for item in classification.get("classifications", []):
         block = block_by_id.get(item.get("source_id"))
-        if block and block.get("id") in protected_block_ids:
+        if block and block.get("id") in (protected_block_ids | review_ids):
             # Cover and change-log data are filled by the deterministic
             # cover/change-record handlers.  They must never be appended to
             # "other" or any other semantic requirement slot.
             continue
         category = item.get("category", "other")
         rule = routing_rules.get(category) or categories.get("other") or {}
+        if rule.get("write_mode") == "preserve_template":
+            continue
         heading_keywords = rule.get("target_heading_keywords") or []
         if isinstance(heading_keywords, str):
             heading_keywords = [heading_keywords]
@@ -3410,7 +3753,60 @@ def _merge_classified_content(
                     (str(replica_category), block)
                 )
 
-    # 配置化的证据投影只截取设计输入中原样存在的片段，不生成解释文字。
+    # 开发逻辑 E39：六性有输入时复制完整原文。性能指标同时构成六性
+    # 证据时沿用相同的 OOXML 搬运路径，不能只保留空的六性模板，或把
+    # 工作温度截成一句而丢失试验条件、格式、表格和图像。
+    from jonhon_taskbook.development_process_policy import (
+        quality_section_evidence_rules,
+    )
+
+    quality_projection_targets: set[str] = set()
+    for evidence_rule in quality_section_evidence_rules():
+        target_categories = [
+            category for category in evidence_rule["evidence_roles"]
+            if category in routing_rules
+        ]
+        quality_projection_targets.update(target_categories)
+        signals = [str(signal).casefold() for signal in evidence_rule["indicator_signals"]]
+        for assignment in classification.get("classifications", []):
+            if assignment.get("category") != "performance_indicator":
+                continue
+            block = block_by_id.get(assignment.get("source_id"), {})
+            if not block or block.get("id") in (protected_block_ids | review_ids):
+                continue
+            if not (str(block.get("text") or "").strip() or block.get("has_drawing")):
+                continue
+            source_index = block.get("body_index")
+            if type(source_index) is not int or not 0 <= source_index < len(tech.element.body):
+                continue
+            context = " ".join(str(block.get(key) or "") for key in ("heading_text", "section", "text")).casefold()
+            if not any(signal in context for signal in signals):
+                continue
+            for category in target_categories:
+                target_rule = routing_rules[category]
+                if not target_rule.get("target_heading_keywords") or target_rule.get("write_mode") == "preserve_template":
+                    continue
+                target_role = str(target_rule.get("target_role") or category)
+                target_slot = f"role:{target_role}"
+                target_items = grouped.setdefault(target_slot, [])
+                if any(existing.get("id") == block.get("id") for _, existing in target_items):
+                    continue
+                target_items.append((category, block))
+                special_modes[target_slot] = str(target_rule.get("write_mode", "direct_chapter"))
+                target = content.setdefault(target_slot, {
+                    "lines": [], "tables": [], "images": [], "ordered_elements": [], "image_warnings": [],
+                })
+                target["replace_existing"] = True
+                target.setdefault("projection_source_ids", []).append(block["id"])
+                target.setdefault("projection_audit", []).append({
+                    "source_id": block["id"], "source_category": "performance_indicator",
+                    "target_category": category, "text": str(block.get("text") or ""),
+                    "policy": "copy_exact_source_block", "rule_ref": "开发逻辑!E39:E44",
+                })
+    for items in grouped.values():
+        items.sort(key=lambda item: (int(item[1].get("body_index", -1)), int(item[1].get("source_span_start", -1))))
+
+    # 其余配置化证据投影仍只截取设计输入中原样存在的片段，不生成解释文字。
     # 典型用途是把“工作温度”这一既是技术指标、又是环境适应性证据的
     # 原文片段同时放入两个职责槽位。
     for projection in mapping.get("evidence_projections", []) or []:
@@ -3418,6 +3814,9 @@ def _merge_classified_content(
             continue
         source_category = str(projection.get("source_category", "")).strip()
         target_category = str(projection.get("target_category", "")).strip()
+        if source_category == "performance_indicator" and target_category in quality_projection_targets:
+            # 六性已由统一完整原文路径处理，不再叠加旧工作温度片段。
+            continue
         target_rule = routing_rules.get(target_category, {})
         target_headings = target_rule.get("target_heading_keywords") or []
         if isinstance(target_headings, str):
@@ -3444,6 +3843,8 @@ def _merge_classified_content(
             ):
                 continue
             block = block_by_id.get(str(assignment.get("source_id", "")), {})
+            if block.get("id") in review_ids:
+                continue
             text = str(block.get("text", ""))
             semantic_context = " ".join(
                 str(block.get(key, ""))
@@ -3510,7 +3911,12 @@ def _merge_classified_content(
                     row for row in source["indicator_rows"]
                     if row and not str(row[0]).startswith("【")
                 ]
-                input_indicator_names = [str(row[0]) for row in output_rows]
+                source_facts = source.get("input_indicator_facts")
+                input_indicator_names = (
+                    list(dict.fromkeys(fact["indicator_name"] for fact in source_facts))
+                    if isinstance(source_facts, list)
+                    else [str(row[0]) for row in output_rows if str(row[1]).strip() not in {"", "\\"}]
+                )
                 input_canonical = sorted(
                     {_canonical_indicator_name(name) for name in input_indicator_names}
                 )
@@ -3576,6 +3982,8 @@ def _merge_classified_content(
                 comparison_audit = list(
                     source.get("indicator_comparison_audit", [])
                 )
+                from jonhon_taskbook.indicator_facts import audit_indicator_fact_coverage
+                fact_coverage = audit_indicator_fact_coverage(source_facts, comparison_audit) if isinstance(source_facts, list) else {"passed": True}
                 conditional_review = [
                     item
                     for item in comparison_audit
@@ -3595,10 +4003,13 @@ def _merge_classified_content(
                     "manual_review_required": conditional_review,
                     "manual_review_required_count": len(conditional_review),
                     "source_heading_aliases": indicator_source_aliases,
+                    "source_fact_coverage": fact_coverage,
+                    **({"input_indicator_facts": source_facts} if isinstance(source_facts, list) else {}),
                     "passed": (
                         not unbacked_output
                         and not unmapped_candidates
                         and not conditional_review
+                        and fact_coverage["passed"]
                         and set(input_canonical).issubset(output_canonical)
                     ),
                 }
@@ -3669,7 +4080,7 @@ def _merge_classified_content(
             source_meta = _source_module_meta(block)
             if block.get("type") == "table":
                 source_hash = _table_hash(source_el)
-                if source_hash not in seen_tables:
+                if source_hash not in seen_tables or block.get("id") in current.get("projection_source_ids", []):
                     current.setdefault("ordered_elements", []).append(
                         {
                             "kind": "table",
@@ -3753,6 +4164,7 @@ def run_coverage_and_qa(
     cfg: dict | None = None,
     preserve_template_guidance: bool = False,
     template_path: str | None = None,
+    selected_product_domain: str = "",
 ) -> bool:
     """
     自动运行覆盖率账本 + QA门禁，输出报告。
@@ -3761,6 +4173,8 @@ def run_coverage_and_qa(
     try:
         from jonhon_taskbook.coverage_ledger import (
             exclude_semantic_structure_headings,
+            exclude_preserved_template_sources,
+            exclude_review_reference_sources,
             parse_docx_to_ledger,
             mark_exact_fragment_coverage,
             mark_covered_from_output,
@@ -3800,6 +4214,16 @@ def run_coverage_and_qa(
         ledger,
         _classification,
     )
+    _review_sources = exclude_review_reference_sources(ledger, _classification)
+    if _review_sources:
+        print(f"   历史测试资料: {len(_review_sources)} 项（仅供审阅，质量报告保留来源引用）")
+    _preservation_path = Path(out_path).with_suffix(".template_rule_sources.json")
+    if _preservation_path.is_file():
+        _preservation = json.loads(_preservation_path.read_text(encoding="utf-8"))
+        exclude_preserved_template_sources(
+            ledger, _classification or _preservation.get("classification"),
+            _preservation.get("category_mapping_path"),
+        )
     if _excluded_headings:
         print(
             f"   来源结构标题: {len(_excluded_headings)} 段（已审计，不计入正文覆盖分母）"
@@ -3827,65 +4251,13 @@ def run_coverage_and_qa(
 
     # 3. QA门禁检查输出文档
     cfg = cfg or {}
-    qa_profile = cfg.get("qa_profile", {}) or {}
-    forbidden_phrases = list(qa_profile.get("forbidden_phrases", []))
-    preserved_template_phrases: list[str] = []
-    if preserve_template_guidance and template_path and Path(template_path).is_file():
-        try:
-            with zipfile.ZipFile(template_path) as template_package:
-                template_root = etree.fromstring(template_package.read("word/document.xml"))
-            template_text = " ".join(
-                node.text or "" for node in template_root.findall(f".//{qn('w:t')}")
-            )
-            preserved_template_phrases = [
-                phrase for phrase in forbidden_phrases if phrase in template_text
-            ]
-            forbidden_phrases = [
-                phrase for phrase in forbidden_phrases if phrase not in preserved_template_phrases
-            ]
-        except Exception as exc:
-            print(f"   ⚠ 模板基线污染词核对失败: {exc}")
-    template_phrase_rules = [] if preserve_template_guidance else [
-        "20xx年x月", "XX技术协议", "XXh", "（此处填写",
-        "请在此处", "□", "▲",
-    ]
-    qa_rules = {
-        "block_if": {
-            "red_text_count_gt": 10**9 if preserve_template_guidance else 0,
-            "highlight_count_gt": 10**9 if preserve_template_guidance else 0,
-            "change_record_data_rows_gt": 10**9 if preserve_template_guidance else 1,
-            "indicator_table_wrong_columns": True,
-            "indicator_instruction_exists": True,
-            "indicator_change_record_contamination": True,
-            "landscape_section_exists": True,
-            "figure_caption_orphan_auto": True,
-            "duplicate_body_image_relationship": True,
-            "template_phrases_exist": template_phrase_rules,
-            "forbidden_phrases_exist": forbidden_phrases,
-            "required_phrases_all": qa_profile.get("required_phrases_all", []),
-            "required_phrase_groups": qa_profile.get("required_phrase_groups", []),
-            "required_headings": qa_profile.get("required_headings", []),
-            "required_figure_captions": qa_profile.get("required_figure_captions", []),
-            "required_table_keywords": qa_profile.get("required_table_keywords", []),
-            "required_table_headers": qa_profile.get("required_table_headers", []),
-        },
-        "warn_if": {
-            "standard_version_conflict": True,
-            "standard_sort_wrong": bool(cfg.get("std_sort_order")),
-            "cover_phase_empty": True,
-            "failure_mode_table_empty": True,
-        }
-    }
-    qa_flags = {
-        "is_as9100": bool(qa_profile.get("is_as9100", False)),
-        "is_civil_aircraft": bool(qa_profile.get("is_civil_aircraft", False)),
-        "allow_landscape": bool(qa_profile.get("allow_landscape", False)),
-        "standard_sort_order": cfg.get("std_sort_order", []),
-        "standards_heading_keywords": qa_profile.get(
-            "standards_heading_keywords",
-            ["适用的法律法规要求", "适用法律法规", "引用标准"],
-        ),
-    }
+    from jonhon_taskbook.qa_policy import load_configured_qa_policy
+    qa_rules, qa_flags, _ = load_configured_qa_policy(
+        cfg,
+        preserve_template_guidance=preserve_template_guidance,
+        selected_product_domain=selected_product_domain,
+    )
+    qa_flags["template_path"] = template_path
     gate = QAGate(qa_rules, qa_flags)
 
     with zipfile.ZipFile(out_path) as z:
@@ -3929,12 +4301,7 @@ def run_coverage_and_qa(
         )
     if preserve_template_guidance:
         result.setdefault("warnings", []).append(
-            "已启用受控模板保留策略：未填章节的模板提示、红字和高亮不作为阻断项"
-        )
-    if preserved_template_phrases:
-        result.setdefault("warnings", []).append(
-            "以下词来自受控模板原始保留区，未由本次输入或语义路由新增："
-            + "、".join(preserved_template_phrases)
+            "已按实际受控模板的原文、格式及出现次数核对保留内容；新增污染仍受门禁检查"
         )
 
     # 覆盖率是独立硬门禁。QA 格式检查通过也不能掩盖输入漏转。
@@ -4025,7 +4392,10 @@ def fill(
     product_series: str = "",
     organization_scope: str = "non_central_research",
     cover_phase: str = "",
+    indicator_clarifications: dict[str, str] | None = None,
 ):
+    # 开发逻辑 B56：保留未涉及的原模板内容是所有输出的业务规则。
+    preserve_unfilled_template = True
     tech = Document(tech_path)
     spec = Document(spec_path)
     tpl  = Document(src_path)
@@ -4152,7 +4522,10 @@ def fill(
         cov.get("user", {}).get("value_col", 1),
     ) or cover_meta.get("customer_unit", "")
     if not product:
-        product = Path(tech_path).stem.replace("技术要求", "").replace("（JONHON受控）", "").strip()
+        from jonhon_taskbook.document_identity import read_document_identity
+        title = read_document_identity(tech_path, "tech")["title"]
+        product = re.sub(r"(?:技术要求|技术协议|技术规格书|产品规格书)$", "", title).strip()
+        product = product or "[待补产品名称]"
     if not user:
         user = "[待补使用单位]"
     print(f"封面: {product!r}  用户: {user!r}")
@@ -4170,6 +4543,7 @@ def fill(
         product_series=product_series,
         requirement_classification=requirement_classification,
         controlled_product_domain=controlled_product_domain,
+        indicator_clarifications=indicator_clarifications,
     )
     standards_audit = content.get("__standards_reference__", {}).get("standards_audit", {})
     Path(out_path).with_suffix(".standards_audit.json").write_text(
@@ -4181,6 +4555,11 @@ def fill(
         requirement_classification,
         category_mapping_path,
         tech,
+    )
+    Path(out_path).with_suffix(".template_rule_sources.json").write_text(
+        json.dumps({"category_mapping_path": str(Path(category_mapping_path).resolve()),
+                    "classification": requirement_classification}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
     process_rule_audit = _apply_process_specific_sections(
         tpl,
@@ -4202,13 +4581,18 @@ def fill(
         out_path,
     )
     from jonhon_taskbook.template_variant_policy import (
+        DEFAULT_POLICY_PATH,
         apply_template_variant_policy,
     )
 
+    variant_policy_name = str(cfg.get("template_variant_policy") or DEFAULT_POLICY_PATH.name)
+    if Path(variant_policy_name).name != variant_policy_name:
+        raise ValueError("template_variant_policy 必须指定受控 config 目录内的策略文件名")
     template_variant_audit = apply_template_variant_policy(
         tpl,
         organization_scope=organization_scope,
         out_path=out_path,
+        policy_path=DEFAULT_POLICY_PATH.parent / variant_policy_name,
     )
     print(
         f"  研制流程规则: {development_process}；"
@@ -4256,6 +4640,27 @@ def fill(
     to_del, filled = [], {}
     pending_rich = []  # [(anchor_para, tables, images, caption_ref)]
 
+    from docxcompose.composer import Composer
+
+    source_composer = Composer(tpl)
+
+    def _import_source_relationships(element):
+        # A copied rId belongs to the source package. Rebuild relationships
+        # on this element before insertion; the same rId in the template can
+        # point to an entirely different picture or hyperlink.
+        source_composer.reset_reference_mapping()
+        source_composer._create_style_id_mapping(tech)
+        source_composer.add_referenced_parts(tech.part, tpl.part, element)
+        source_composer.add_styles(tech, element)
+        source_composer.add_numberings(tech, element)
+        source_composer.add_images(tech, element)
+        source_composer.add_diagrams(tech, element)
+        source_composer.add_shapes(tech, element)
+        source_composer.add_footnotes(tech, element)
+        source_composer.remove_header_and_footer_references(tech, element)
+        normalize_copied_body_paragraph(element, tpl)
+        return element
+
     heading_stack: list[tuple[int, str]] = []
     for i, p in enumerate(tpl.paragraphs):
         # 前面的空槽策略可能已删除当前节点所属的模板子树。
@@ -4268,7 +4673,7 @@ def fill(
             _deep_clean_para(p)
             if _is_junk(p):   to_del.append(p._p); continue
 
-        is_h = _is_heading(p)
+        is_h = bool(t) and _is_heading(p)
         parent_context: list[str] = []
         if is_h:
             level = _heading_level(p)
@@ -4482,6 +4887,7 @@ def fill(
                         if caption:
                             cp = _make_p(caption, ref)
                             prev.addnext(cp); prev = cp
+                        _import_source_relationships(tbl_el)
                         prev.addnext(tbl_el); prev = tbl_el
                     def _append_ordered_element(item):
                         nonlocal prev
@@ -4489,12 +4895,14 @@ def fill(
                         if kind == "paragraph":
                             element = item.get("element")
                             if element is not None:
+                                _import_source_relationships(element)
                                 prev.addnext(element); prev = element
                             else:
                                 np = _make_p(str(item.get("text", "")), ref)
                                 prev.addnext(np); prev = np
                         elif kind in {"table", "image"} and item.get("element") is not None:
                             element = item["element"]
+                            _import_source_relationships(element)
                             prev.addnext(element); prev = element
 
                     # 技术要求按整章节分类后，严格保持段落/表格/图片的原始顺序。
@@ -4659,7 +5067,12 @@ def fill(
         for r in p.runs:
             tx = r.text or ""
             if "（型号名称）" in tx or "(型号名称)" in tx:
-                r.text = tx.replace("（型号名称）", product).replace("(型号名称)", product)
+                value = re.sub(
+                    r"[（(]型号名称[）)](连接器|线缆组件)",
+                    lambda match: product if product.endswith(match.group(1)) else product + match.group(1),
+                    tx,
+                )
+                r.text = value.replace("（型号名称）", product).replace("(型号名称)", product)
             if "20xx年x月" in tx:
                 r.text = tx.replace("20xx年x月", "")
             # 单 run 内的日期占位（兜底）
@@ -4678,6 +5091,10 @@ def fill(
     # python-docx save() 会丢弃从外部文件 addnext 进来的图片 XML。
     # 解决方案：save 之前用 lxml 序列化完整的 document body，
     # save 之后把这份完整 XML 写回 docx 的 word/document.xml。
+    source_composer.add_styles_from_other_parts(tech)
+    source_composer.renumber_bookmarks()
+    source_composer.renumber_docpr_ids()
+    source_composer.renumber_nvpicpr_ids()
     from lxml import etree as _etree
     import zipfile as _zf
     _full_doc_xml = _etree.tostring(
@@ -4856,14 +5273,17 @@ def fill(
         del d2
         try:
             from jonhon_taskbook.postprocess import postprocess as _post
-            ps = _post(out_path)
+            ps = _post(out_path, preserve_template_guidance=True, selected_product_domain=controlled_product_domain)
             print(f"   后处理: 红字改黑 {ps['red_cleared']}  "
                   f"高亮清除 {ps['hl_cleared']}  "
                   f"日期清除 {ps['date_cleared']}  "
                   f"整段删除 {ps['para_deleted']}")
         except Exception as e:
             print(f"   ⚠ 后处理失败: {e}")
-        run_coverage_and_qa(tech_path, out_path, cfg)
+        run_coverage_and_qa(
+            tech_path, out_path, cfg, preserve_template_guidance=True,
+            template_path=src_path, selected_product_domain=controlled_product_domain,
+        )
         try:
             from jonhon_taskbook.html_reporter import generate_report as _html
             rpt = _html(out_path)

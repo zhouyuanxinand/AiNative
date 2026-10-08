@@ -19,6 +19,7 @@ import type {
   PrecheckResponse,
   TemplateEditPlan,
   JobResult,
+  JobStatus,
   HealthResponse,
 } from '../types';
 import { UI_MODE_KEY, type UIMode, type WorkspaceView, type ReviewTab, type ManagementKind } from '../constants';
@@ -93,6 +94,8 @@ interface TaskbookContextValue {
   // 任务
   currentJid: string | null;
   setCurrentJid: (jid: string | null) => void;
+  jobStatus: JobStatus | 'idle';
+  setJobStatus: (status: JobStatus | 'idle') => void;
   currentStep: number;
   setCurrentStep: (n: number) => void;
   progressPercent: number;
@@ -212,6 +215,7 @@ export function TaskbookProvider({ children }: { children: ReactNode }) {
 
   // 任务
   const [currentJid, setCurrentJid] = useState<string | null>(null);
+  const [jobStatus, setJobStatus] = useState<JobStatus | 'idle'>('idle');
   const [currentStep, setCurrentStep] = useState(1);
   const [progressPercent, setProgressPercent] = useState(0);
   const [progressLiveText, setProgressLiveText] = useState('正在连接受控工作流…');
@@ -329,6 +333,8 @@ export function TaskbookProvider({ children }: { children: ReactNode }) {
     setLocalDefaultFiles,
     currentJid,
     setCurrentJid,
+    jobStatus,
+    setJobStatus,
     currentStep,
     setCurrentStep,
     progressPercent,

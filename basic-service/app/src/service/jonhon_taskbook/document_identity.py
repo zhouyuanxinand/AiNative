@@ -60,14 +60,25 @@ def read_document_identity(path: str | Path, kind: str) -> dict[str, str]:
         for paragraph in root.findall(f".//{_W}p")
         if _paragraph_text(paragraph)
     ]
-    keyword = "技术要求" if kind == "tech" else "产品规范"
+    suffixes = ("技术要求", "技术协议", "技术规格书", "产品规格书") if kind == "tech" else ("产品规范", "产品规格书")
+    def title_candidate(text: str) -> str:
+        # A clause mentioning requirements is not the document's identity.
+        clean = re.sub(r"[（(]JONHON受控[）)]", "", text, flags=re.I).strip()
+        if re.match(r"^\d+(?:\.\d+)+\s", clean) or re.search(r"[，。；：;:]", clean):
+            return ""
+        clean = re.sub(r"^\d+\s+", "", clean).strip()
+        return clean if len(clean) < 100 and any(clean.endswith(s) and len(clean) > len(s) for s in suffixes) else ""
+
+    fallback = re.sub(r"[_（(]?上传[）)]?$", "", source.stem).strip(" _")
+    if fallback.lower() in {"tech", "spec", "requirement", "requirements"}:
+        fallback = ""
     title = next(
         (
-            re.sub(r"^\d+(?:\.\d+)*\s*", "", text).strip()
+            title_candidate(text)
             for text in texts
-            if keyword in text and 4 < len(text) < 80 and "编制" not in text
+            if title_candidate(text)
         ),
-        source.stem,
+        fallback,
     )
     title = re.sub(r"[_（(]?上传[）)]?$", "", title).strip(" _")
 

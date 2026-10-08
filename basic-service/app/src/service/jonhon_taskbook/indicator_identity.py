@@ -4,9 +4,39 @@ from __future__ import annotations
 import re
 
 
+def indicator_display_value(text: str, name: str, aliases=()) -> str:
+    """Remove only a redundant leading row label; keep the technical payload.
+
+    Units and state qualifiers in a label are not silently discarded. Source
+    evidence stays unchanged; this projection is shared by rendering and QA.
+    """
+    def key(label):
+        return re.sub(r"\s+", "", str(label or "")).rstrip("※")
+
+    primary = key(name)
+    qualified = re.compile(r"初始|初期|终值|末期|试验前|试验后|测试前|测试后|常温|高温|低温|通电前|通电后")
+    labels = {
+        key(label) for label in [name, *aliases]
+        if re.fullmatch(r"[\u4e00-\u9fffA-Za-z]+", key(label))
+        and not (set(qualified.findall(key(label))) - set(qualified.findall(primary)))
+    }
+    prefix = re.compile(
+        r"^\s*(?:(?:[（(]\d+[）)]|\d+(?:\.\d+)*[.、）)]?)\s*)?"
+        r"(?P<label>[^：:\n]{1,80})[：:]\s*(?P<value>\S.*)$"
+    )
+    lines = []
+    for line in str(text or "").split("\n"):
+        match = prefix.match(line)
+        lines.append(match.group("value") if match and key(match.group("label")) in labels else line)
+    return "\n".join(lines)
+
+
 def canonical_indicator_name(name: str) -> str:
     """Normalize configured, source and template aliases to one identity."""
-    value = re.sub(r"[\s：:（）()]+", "", str(name or ""))
+    # The controlled templates mark existing rows with a trailing footnote.
+    # Ignore only that annotation for identity; callers keep the display name.
+    value = re.sub(r"(?:\s*※)+\s*$", "", str(name or ""))
+    value = re.sub(r"[\s：:（）()]+", "", value)
     aliases = (
         (("额定电流", "额定载流量"), "额定电流"),
         (("冲击电流", "脉冲电流"), "冲击电流"),
@@ -19,7 +49,9 @@ def canonical_indicator_name(name: str) -> str:
         # V3 底层表单与受控模板的显示名不同，但它们指向同一模板槽位。
         (("总分离力或分离扭矩", "总分离力"), "总分离力或分离扭矩"),
         (("低温低气压", "低气压"), "低温低气压"),
-        (("环境温度", "工作温度"), "工作温度"),
+        # Customer thermal templates contain both ambient and working
+        # temperature as independent rows. Profiles may still explicitly use
+        # one as a source alias; table identities must preserve both names.
         (("机械寿命", "插拔寿命"), "机械寿命"),
         (("灵巧指按压力", "按钮按压力", "按压力", "承压力"), "按压力"),
     )

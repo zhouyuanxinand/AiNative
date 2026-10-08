@@ -7,7 +7,15 @@ import { modelSelectionKey } from '../../lib/model';
 import { collectReadinessIssues } from '../../lib/readiness';
 import type { TemplateEditPlan } from '../../types';
 
-export function UploadCard() {
+type ModelCatalogState = 'loading' | 'ready' | 'empty' | 'error';
+
+export function UploadCard({
+  modelCatalogState,
+  onRetryModelCatalog,
+}: {
+  modelCatalogState: ModelCatalogState;
+  onRetryModelCatalog: () => void;
+}) {
   const {
     form,
     setFormField,
@@ -49,7 +57,7 @@ export function UploadCard() {
         value: item.value,
         label:
           item.enabled === false
-            ? `${item.label}（模板待配置）`
+            ? `${item.label}（${item.integration_status === 'configured_pending_regression' ? '待样例验收' : '模板待补充'}）`
             : item.configured_enabled === false
               ? `${item.label}（暂时放开）`
               : item.label,
@@ -78,7 +86,7 @@ export function UploadCard() {
     { value: 'central_research', label: '中央研究院产品' },
   ];
   const modelOptions: StyledSelectOption[] = modelCatalog.length === 0
-    ? [{ value: '', label: '正在读取模型目录…' }]
+    ? [{ value: '', label: modelCatalogState === 'loading' ? '正在读取模型目录…' : '暂无可用模型' }]
     : modelCatalog.map((item) => {
         const key = modelSelectionKey(item);
         return {
@@ -165,7 +173,7 @@ export function UploadCard() {
           />
         </label>
         <label>
-          产品领域（质量管理体系分类）<span className="required-mark" aria-hidden="true">*</span>
+          质量管理体系分类<span className="required-mark" aria-hidden="true">*</span>
           <StyledSelect
             id="product-domain"
             value={form.productDomain}
@@ -358,14 +366,23 @@ export function UploadCard() {
             disabled={modelCatalog.length === 0}
           />
           <span className="model-picker-status" id="model-picker-status" role="status" aria-live="polite">
-            {modelCatalog.length === 0
-              ? '正在读取可用模型'
+            {modelCatalogState === 'loading'
+              ? '正在读取可用模型…'
+              : modelCatalogState === 'error'
+                ? '模型目录读取失败，请检查服务凭证和网络连接。'
+                : modelCatalogState === 'empty'
+                  ? '服务已返回空模型目录，请检查当前凭证可用的模型。'
               : selectedModelReady === null
                 ? '正在检查模型调用配置…'
                 : selectedModelReady
                   ? `已就绪 · ${modelCatalog.find((item) => modelSelectionKey(item) === selectedModelKey)?.vendor || modelCatalog.find((item) => modelSelectionKey(item) === selectedModelKey)?.provider || '当前模型'}`
                   : '调用凭据未配置'}
           </span>
+          {(modelCatalogState === 'error' || modelCatalogState === 'empty') && (
+            <button type="button" className="ux-btn model-picker-retry" onClick={onRetryModelCatalog}>
+              重新读取模型目录
+            </button>
+          )}
         </div>
         <button
           className="btn-run"

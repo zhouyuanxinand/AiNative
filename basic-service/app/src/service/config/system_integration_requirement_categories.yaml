@@ -1,0 +1,912 @@
+version: '3.1'
+template_id: system_integration
+technical_requirements_mode: sections
+exact_fragment_routing:
+  enabled: true
+  min_text_length: 24
+  max_fragments_per_block: 12
+  source_categories:
+  - task_source
+  - source_and_function
+  - usage_environment
+  - product_composition
+  - electrical_continuity
+  - insulation_resistance
+  - sealing
+  - operation
+  - installation_method
+  - transport
+  - storage
+  - packaging
+  - electromagnetic_environment
+  - special_environment
+  - operating_principle
+  - outline_dimension
+  - weight
+  - mechanical_interface
+  - electrical_interface
+  - environment_control_interface
+  - interchangeability
+  - error_prevention
+  - component_requirement
+  - technical_support
+  - durability
+  - configuration_management
+  - process_requirement
+  - beyond_technology
+  - beyond_product
+  - customer_other
+  - quality_assurance
+  - standardization
+  - environmental_adaptability
+  - previous_design
+  - other
+  - acceptance
+  - completion_form
+  - confidentiality
+  - schedule
+  - high_temperature
+  - low_temperature
+  - thermal_shock
+  - damp_heat
+  - mold
+  - salt_spray
+  - acid_atmosphere
+  - vibration
+  - shock
+  - acceleration
+  - reliability
+  - reliability_quantitative
+  - reliability_qualitative
+  - maintainability
+  - maintainability_quantitative
+  - maintainability_qualitative
+  - testability
+  - testability_quantitative
+  - testability_qualitative
+  - supportability
+  - supportability_quantitative
+  - supportability_qualitative
+  - safety
+  - safety_quantitative
+  - safety_qualitative
+  - performance_indicator
+  - interface_definition
+  target_categories:
+  - task_source
+  - source_and_function
+  - usage_environment
+  - product_composition
+  - electrical_continuity
+  - insulation_resistance
+  - sealing
+  - operation
+  - installation_method
+  - transport
+  - storage
+  - packaging
+  - electromagnetic_environment
+  - special_environment
+  - operating_principle
+  - outline_dimension
+  - weight
+  - mechanical_interface
+  - electrical_interface
+  - environment_control_interface
+  - interchangeability
+  - error_prevention
+  - component_requirement
+  - technical_support
+  - durability
+  - configuration_management
+  - process_requirement
+  - beyond_technology
+  - beyond_product
+  - customer_other
+  - quality_assurance
+  - standardization
+  - environmental_adaptability
+  - previous_design
+  - other
+  - acceptance
+  - completion_form
+  - confidentiality
+  - schedule
+  - high_temperature
+  - low_temperature
+  - thermal_shock
+  - damp_heat
+  - mold
+  - salt_spray
+  - acid_atmosphere
+  - vibration
+  - shock
+  - acceleration
+  - reliability
+  - reliability_quantitative
+  - reliability_qualitative
+  - maintainability
+  - maintainability_quantitative
+  - maintainability_qualitative
+  - testability
+  - testability_quantitative
+  - testability_qualitative
+  - supportability
+  - supportability_quantitative
+  - supportability_qualitative
+  - safety
+  - safety_quantitative
+  - safety_qualitative
+evidence_projections: []
+semantic_roles:
+  standards_reference:
+    label: 适用的法律法规要求
+    definition: 需求文件及产品规范中的适用标准、引用标准、执行标准、法律法规、规范性引用文件；只整理原文，不编造或推断标准
+    source_heading_keywords:
+    - 执行标准
+    - 适用标准
+    - 引用标准
+    - 规范性引用文件
+    source_content_patterns:
+    - ^(?:\d+(?:\.\d+)*[.、]?\s*)?(?:适用标准|执行标准|引用标准|规范性引用文件)\s*[:：]
+    content_priority: 120
+    target_heading_keywords:
+    - 适用的法律法规要求
+    write_mode: standards_merge
+    target_heading_level: 1
+categories:
+  task_source:
+    label: 任务来源
+    definition: 任务来源的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 任务来源
+    - 立项依据
+    target_heading_keywords:
+    - 任务来源
+    target_heading_level: 1
+    target_integrity: exact
+  source_and_function:
+    label: 产品功能
+    definition: 技术要求 / 产品的功能、用途与组成 / 产品功能的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 产品功能
+    - 产品用途
+    target_heading_keywords:
+    - 产品功能
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 产品的功能、用途与组成
+  usage_environment:
+    label: 安装环境
+    definition: 技术要求 / 产品的功能、用途与组成 / 安装环境的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 安装环境
+    - 使用环境和部位
+    target_heading_keywords:
+    - 安装环境
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 产品的功能、用途与组成
+  product_composition:
+    label: 产品组成
+    definition: 技术要求 / 产品的功能、用途与组成 / 产品组成的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 产品组成
+    - 组成结构
+    - 设备清单
+    target_heading_keywords:
+    - 产品组成
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 产品的功能、用途与组成
+  electrical_continuity:
+    label: 电气连续性
+    definition: 技术要求 / 性能要求 / 电气连续性的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 电气连续性
+    - 导通电阻
+    - 接地电阻
+    target_heading_keywords:
+    - 电气连续性
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 性能要求
+  insulation_resistance:
+    label: 绝缘电阻
+    definition: 技术要求 / 性能要求 / 绝缘电阻的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 绝缘电阻
+    target_heading_keywords:
+    - 绝缘电阻
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 性能要求
+  sealing:
+    label: 密封性
+    definition: 技术要求 / 性能要求 / 密封性的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 密封性
+    - 气密性
+    target_heading_keywords:
+    - 密封性
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 性能要求
+  operation:
+    label: 操作要求
+    definition: 技术要求 / 使用要求 / 操作要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 操作要求
+    target_heading_keywords:
+    - 操作要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 使用要求
+  installation_method:
+    label: 安装要求
+    definition: 技术要求 / 使用要求 / 安装要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 安装要求
+    - 安装方法
+    - 固定方式
+    target_heading_keywords:
+    - 安装要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 使用要求
+  transport:
+    label: 运输要求
+    definition: 技术要求 / 使用要求 / 运输要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 运输要求
+    target_heading_keywords:
+    - 运输要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 使用要求
+  storage:
+    label: 贮存要求
+    definition: 技术要求 / 使用要求 / 贮存要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 贮存要求
+    - 储存要求
+    target_heading_keywords:
+    - 贮存要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 使用要求
+  packaging:
+    label: 包装要求
+    definition: 技术要求 / 使用要求 / 包装要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 包装要求
+    target_heading_keywords:
+    - 包装要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 使用要求
+  electromagnetic_environment:
+    label: 电磁环境要求
+    definition: 技术要求 / 环境要求 / 电磁环境要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 电磁环境要求
+    - 电磁兼容
+    - 电磁环境
+    target_heading_keywords:
+    - 电磁环境要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 环境要求
+    replicate_to_categories:
+    - environmental_adaptability
+  special_environment:
+    label: 其他特殊环境
+    definition: 技术要求 / 环境要求 / 其他特殊环境的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 其他特殊环境
+    - 特殊环境
+    target_heading_keywords:
+    - 其他特殊环境
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 环境要求
+    replicate_to_categories:
+    - environmental_adaptability
+  operating_principle:
+    label: 工作原理
+    definition: 技术要求 / 设计要求 / 工作原理的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 工作原理
+    target_heading_keywords:
+    - 工作原理
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 设计要求
+  outline_dimension:
+    label: 尺寸要求
+    definition: 技术要求 / 设计要求 / 尺寸要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 尺寸要求
+    - 结构尺寸
+    - 外形尺寸
+    target_heading_keywords:
+    - 尺寸要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 设计要求
+  weight:
+    label: 重量要求
+    definition: 技术要求 / 设计要求 / 重量要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 重量要求
+    - 重量
+    - 质量限制
+    target_heading_keywords:
+    - 重量要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 设计要求
+  mechanical_interface:
+    label: 机械接口
+    definition: 技术要求 / 设计要求 / 接口要求 / 机械接口的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 机械接口
+    - 安装尺寸
+    - 连接孔位
+    target_heading_keywords:
+    - 机械接口
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 接口要求
+  electrical_interface:
+    label: 电气接口
+    definition: 技术要求 / 设计要求 / 接口要求 / 电气接口（有要求时）的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 电气接口（有要求时）
+    - 电气接口
+    - 引脚定义
+    - 信号定义
+    target_heading_keywords:
+    - 电气接口（有要求时）
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 接口要求
+  environment_control_interface:
+    label: 环控接口
+    definition: 技术要求 / 设计要求 / 接口要求 / 环控接口（有要求时）的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 环控接口（有要求时）
+    - 环控接口
+    target_heading_keywords:
+    - 环控接口（有要求时）
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 接口要求
+  interchangeability:
+    label: 互换性要求
+    definition: 技术要求 / 设计要求 / 互换性要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 互换性要求
+    - 互换性
+    target_heading_keywords:
+    - 互换性要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 设计要求
+  error_prevention:
+    label: 防差错要求
+    definition: 技术要求 / 设计要求 / 防差错要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 防差错要求
+    - 防差错
+    - 防误插
+    target_heading_keywords:
+    - 防差错要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 设计要求
+  component_requirement:
+    label: 元器件要求
+    definition: 技术要求 / 设计要求 / 元器件要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 元器件要求
+    target_heading_keywords:
+    - 元器件要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 设计要求
+  technical_support:
+    label: 综合保障要求
+    definition: 技术要求 / 设计要求 / 综合保障要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 综合保障要求
+    - 保障资源
+    target_heading_keywords:
+    - 综合保障要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 设计要求
+  durability:
+    label: 耐久性要求
+    definition: 技术要求 / 设计要求 / 耐久性要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 耐久性要求
+    - 耐久性
+    - 寿命要求
+    target_heading_keywords:
+    - 耐久性要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 设计要求
+  configuration_management:
+    label: 技术状态管理要求
+    definition: 技术要求 / 设计要求 / 技术状态管理要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 技术状态管理要求
+    - 技术状态管理
+    target_heading_keywords:
+    - 技术状态管理要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 设计要求
+  process_requirement:
+    label: 工艺要求
+    definition: 工艺、材料选用及加工装配要求；沿用当前材料进入工艺的业务规则
+    source_heading_keywords:
+    - 工艺要求
+    - 材料要求
+    target_heading_keywords:
+    - 工艺要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 工艺要求
+  beyond_technology:
+    label: 超出现有技术的要求
+    definition: 技术要求 / 顾客特殊要求 / 超出现有技术的要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 超出现有技术的要求
+    - 超出现有技术
+    target_heading_keywords:
+    - 超出现有技术的要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 顾客特殊要求
+  beyond_product:
+    label: 超出同类产品性能要求
+    definition: 技术要求 / 顾客特殊要求 / 超出同类产品性能要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 超出同类产品性能要求
+    - 超出同类产品
+    target_heading_keywords:
+    - 超出同类产品性能要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 顾客特殊要求
+  customer_other:
+    label: 其他要求
+    definition: 技术要求 / 顾客特殊要求 / 其他要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 其他要求
+    - 顾客其他要求
+    target_heading_keywords:
+    - 其他要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 顾客特殊要求
+  quality_assurance:
+    label: 质量要求
+    definition: 质量保证与控制要求 / 质量要求（质量保证大纲中的定性要求）的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 质量要求（质量保证大纲中的定性要求）
+    - 质量保证
+    - 质量控制
+    target_heading_keywords:
+    - 质量要求（质量保证大纲中的定性要求）
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 质量保证与控制要求
+  standardization:
+    label: 标准化要求
+    definition: 质量保证与控制要求 / 标准化要求（标准化大纲中的定性要求）的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 标准化要求（标准化大纲中的定性要求）
+    - 标准化要求
+    target_heading_keywords:
+    - 标准化要求（标准化大纲中的定性要求）
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 质量保证与控制要求
+  environmental_adaptability:
+    label: 环境适应性要求
+    definition: 质量保证与控制要求 / 通用质量特性要求 / 环境适应性要求（技术协议和环境适应性大纲中定性要求）的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 环境适应性要求（技术协议和环境适应性大纲中定性要求）
+    - 环境适应性
+    target_heading_keywords:
+    - 环境适应性要求（技术协议和环境适应性大纲中定性要求）
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+  previous_design:
+    label: 以前类似设计提供的信息
+    definition: 以前类似设计提供的信息的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 以前类似设计提供的信息
+    - 类似设计
+    - 历史设计信息
+    target_heading_keywords:
+    - 以前类似设计提供的信息
+    target_heading_level: 1
+    target_integrity: exact
+  other:
+    label: 设计开发所需其他要求及说明事项
+    definition: 未有专用槽位的其他设计要求（含模板没有专门章节的承载能力）；只复制来源原文，禁止编造数值
+    source_heading_keywords:
+    - 设计开发所需其他要求及说明事项
+    - 其他要求
+    target_heading_keywords:
+    - 设计开发所需其他要求及说明事项
+    target_heading_level: 1
+    target_integrity: exact
+  acceptance:
+    label: 验收与交付
+    definition: 验收与交付的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 验收与交付
+    - 验收
+    - 交付要求
+    target_heading_keywords:
+    - 验收与交付
+    target_heading_level: 1
+    target_integrity: exact
+  completion_form:
+    label: 完成形式
+    definition: 完成形式的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 完成形式
+    - 交付物
+    target_heading_keywords:
+    - 完成形式
+    target_heading_level: 1
+    target_integrity: exact
+  confidentiality:
+    label: 项目是否为涉密科研项目
+    definition: 项目是否为涉密科研项目的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 项目是否为涉密科研项目
+    - 保密要求
+    target_heading_keywords:
+    - 项目是否为涉密科研项目
+    target_heading_level: 1
+    target_integrity: exact
+  schedule:
+    label: 任务周期
+    definition: 任务周期的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 任务周期
+    - 进度
+    - 交付周期
+    target_heading_keywords:
+    - 任务周期
+    target_heading_level: 1
+    target_integrity: exact
+  high_temperature:
+    label: 高温
+    definition: 技术要求 / 环境要求 / 自然环境要求 / 高温的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 高温
+    - 高温试验
+    target_heading_keywords:
+    - 高温
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 自然环境要求
+    replicate_to_categories:
+    - environmental_adaptability
+  low_temperature:
+    label: 低温
+    definition: 技术要求 / 环境要求 / 自然环境要求 / 低温的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 低温
+    - 低温试验
+    target_heading_keywords:
+    - 低温
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 自然环境要求
+    replicate_to_categories:
+    - environmental_adaptability
+  thermal_shock:
+    label: 温度冲击
+    definition: 技术要求 / 环境要求 / 自然环境要求 / 温度冲击的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 温度冲击
+    - 热冲击
+    target_heading_keywords:
+    - 温度冲击
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 自然环境要求
+    replicate_to_categories:
+    - environmental_adaptability
+  damp_heat:
+    label: 湿热
+    definition: 技术要求 / 环境要求 / 自然环境要求 / 湿热的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 湿热
+    target_heading_keywords:
+    - 湿热
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 自然环境要求
+    replicate_to_categories:
+    - environmental_adaptability
+  mold:
+    label: 霉菌
+    definition: 技术要求 / 环境要求 / 自然环境要求 / 霉菌的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 霉菌
+    target_heading_keywords:
+    - 霉菌
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 自然环境要求
+    replicate_to_categories:
+    - environmental_adaptability
+  salt_spray:
+    label: 盐雾
+    definition: 技术要求 / 环境要求 / 自然环境要求 / 盐雾的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 盐雾
+    target_heading_keywords:
+    - 盐雾
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 自然环境要求
+    replicate_to_categories:
+    - environmental_adaptability
+  acid_atmosphere:
+    label: 酸性大气
+    definition: 技术要求 / 环境要求 / 自然环境要求 / 酸性大气的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 酸性大气
+    target_heading_keywords:
+    - 酸性大气
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 自然环境要求
+    replicate_to_categories:
+    - environmental_adaptability
+  vibration:
+    label: 振动
+    definition: 技术要求 / 环境要求 / 力学环境要求 / 振动的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 振动
+    - 振动试验
+    target_heading_keywords:
+    - 振动
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 力学环境要求
+    replicate_to_categories:
+    - environmental_adaptability
+  shock:
+    label: 冲击
+    definition: 技术要求 / 环境要求 / 力学环境要求 / 冲击的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 冲击
+    - 冲击试验
+    target_heading_keywords:
+    - 冲击
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 力学环境要求
+    replicate_to_categories:
+    - environmental_adaptability
+  acceleration:
+    label: 加速度
+    definition: 技术要求 / 环境要求 / 力学环境要求 / 加速度的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 加速度
+    - 加速度试验
+    target_heading_keywords:
+    - 加速度
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 力学环境要求
+    replicate_to_categories:
+    - environmental_adaptability
+  reliability:
+    label: 可靠性要求
+    definition: 质量保证与控制要求 / 通用质量特性要求 / 可靠性要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 可靠性要求
+    - 可靠性
+    target_heading_keywords:
+    - 可靠性要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+    preserve_child_headings: true
+  reliability_quantitative:
+    label: 定量要求
+    definition: 可靠性的定量数值、单位及条件；只复制原文
+    source_heading_keywords:
+    - 定量要求（技术协议中定量要求）
+    - 可靠性定量要求
+    target_heading_keywords:
+    - 定量要求（技术协议中定量要求）
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 可靠性要求
+  reliability_qualitative:
+    label: 定性要求
+    definition: 可靠性的定性设计、管理与验证要求；只复制原文
+    source_heading_keywords:
+    - 定性要求（技术协议和可靠性大纲中定性要求）
+    - 可靠性定性要求
+    target_heading_keywords:
+    - 定性要求（技术协议和可靠性大纲中定性要求）
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 可靠性要求
+  maintainability:
+    label: 维修性要求
+    definition: 质量保证与控制要求 / 通用质量特性要求 / 维修性要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 维修性要求
+    - 维修性
+    target_heading_keywords:
+    - 维修性要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+    preserve_child_headings: true
+  maintainability_quantitative:
+    label: 定量要求
+    definition: 维修性的定量数值、单位及条件；只复制原文
+    source_heading_keywords:
+    - 定量要求（技术协议中定量要求）
+    - 维修性定量要求
+    target_heading_keywords:
+    - 定量要求（技术协议中定量要求）
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 维修性要求
+  maintainability_qualitative:
+    label: 定性要求
+    definition: 维修性的定性设计、管理与验证要求；只复制原文
+    source_heading_keywords:
+    - 定性要求（技术协议和维修性大纲中定性要求）
+    - 维修性定性要求
+    target_heading_keywords:
+    - 定性要求（技术协议和维修性大纲中定性要求）
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 维修性要求
+  testability:
+    label: 测试性要求
+    definition: 质量保证与控制要求 / 通用质量特性要求 / 测试性要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 测试性要求
+    - 测试性
+    target_heading_keywords:
+    - 测试性要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+    preserve_child_headings: true
+  testability_quantitative:
+    label: 定量要求
+    definition: 测试性的定量数值、单位及条件；只复制原文
+    source_heading_keywords:
+    - 定量要求（技术协议中定量要求）
+    - 测试性定量要求
+    target_heading_keywords:
+    - 定量要求（技术协议中定量要求）
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 测试性要求
+  testability_qualitative:
+    label: 定性要求
+    definition: 测试性的定性设计、管理与验证要求；只复制原文
+    source_heading_keywords:
+    - 定性要求（技术协议和测试性大纲中定性要求）
+    - 测试性定性要求
+    target_heading_keywords:
+    - 定性要求（技术协议和测试性大纲中定性要求）
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 测试性要求
+  supportability:
+    label: 保障性要求
+    definition: 质量保证与控制要求 / 通用质量特性要求 / 保障性要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 保障性要求
+    - 保障性
+    target_heading_keywords:
+    - 保障性要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+    preserve_child_headings: true
+  supportability_quantitative:
+    label: 定量要求
+    definition: 保障性的定量数值、单位及条件；只复制原文
+    source_heading_keywords:
+    - 定量要求（技术协议中定量要求）
+    - 保障性定量要求
+    target_heading_keywords:
+    - 定量要求（技术协议中定量要求）
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 保障性要求
+  supportability_qualitative:
+    label: 定性要求
+    definition: 保障性的定性设计、管理与验证要求；只复制原文
+    source_heading_keywords:
+    - 定性要求（技术协议和保障性大纲中定性要求）
+    - 保障性定性要求
+    target_heading_keywords:
+    - 定性要求（技术协议和保障性大纲中定性要求）
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 保障性要求
+  safety:
+    label: 安全性要求
+    definition: 质量保证与控制要求 / 通用质量特性要求 / 安全性要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 安全性要求
+    - 安全性
+    target_heading_keywords:
+    - 安全性要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+    preserve_child_headings: true
+  safety_quantitative:
+    label: 定量要求
+    definition: 安全性的定量数值、单位及条件；只复制原文
+    source_heading_keywords:
+    - 定量要求（技术协议中定量要求）
+    - 安全性定量要求
+    target_heading_keywords:
+    - 定量要求（技术协议中定量要求）
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 安全性要求
+  safety_qualitative:
+    label: 定性要求
+    definition: 安全性的定性设计、管理与验证要求；只复制原文
+    source_heading_keywords:
+    - 定性要求（技术协议和安全性大纲中定性要求）
+    - 安全性定性要求
+    target_heading_keywords:
+    - 定性要求（技术协议和安全性大纲中定性要求）
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 安全性要求
+  performance_indicator:
+    label: 性能要求
+    definition: 性能要求汇总章节，按原文块语义分配给各具体要求
+    source_heading_keywords:
+    - 性能要求
+    container_only: true
+    block_target_categories:
+    - electrical_continuity
+    - insulation_resistance
+    - sealing
+    - other
+    block_fallback_category: other
+  interface_definition:
+    label: 接口要求
+    definition: 接口要求汇总章节，按原文块语义分配给各具体要求
+    source_heading_keywords:
+    - 接口要求
+    container_only: true
+    block_target_categories:
+    - mechanical_interface
+    - electrical_interface
+    - environment_control_interface
+    - other
+    block_fallback_category: other

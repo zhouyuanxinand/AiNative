@@ -5,13 +5,14 @@ import hashlib
 import json
 import re
 import shutil
+from collections.abc import Callable
+from copy import deepcopy
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import yaml
 
 from jonhon_taskbook.template_scanner import scan_template_tree
-
 
 ChatJSON = Callable[[str, str], dict]
 ROOT = Path(__file__).resolve().parent.parent
@@ -208,21 +209,30 @@ def _build_mapping(taxonomy: dict[str, Any], plan: dict[str, Any], template_id: 
         result: dict[str, Any] = {}
         for category, base_rule in source.items():
             slot = slots[decisions[category]["target_slot"]]
-            rule = {
+            # 换模板只替换定位；来源识别、空槽策略和写入方式仍属于分类本体。
+            rule = deepcopy(base_rule)
+            for key in (
+                "target_heading_keywords",
+                "target_heading_level",
+                "target_parent_heading",
+                "target_slot",
+                "target_section",
+                "target_table",
+            ):
+                rule.pop(key, None)
+            rule.update({
                 "label": str(base_rule.get("label", category)),
                 "target_heading_keywords": [slot["title"]],
                 "target_heading_level": int(slot["level"]),
-            }
+            })
             if slot.get("parent_id"):
                 parent = slots[slot["parent_id"]]
                 rule["target_parent_heading"] = parent["title"]
-            for key in ("write_mode", "preserve_child_headings", "insert_position"):
-                if key in base_rule:
-                    rule[key] = base_rule[key]
             result[category] = rule
         return result
 
     return {
+        **deepcopy(taxonomy),
         "version": "3.0",
         "template_id": template_id,
         "semantic_roles": group(taxonomy.get("semantic_roles") or {}),
@@ -341,12 +351,16 @@ def prepare_template_candidate(
     mapping_out.write_text(
         yaml.safe_dump(mapping, allow_unicode=True, sort_keys=False), encoding="utf-8"
     )
-    slot_by_category = {item["category"]: item["target_slot"] for item in plan["mappings"]}
     slot_by_id = {slot["id"]: slot for slot in plan["slots"]}
+    slot_by_category = {item["category"]: item["target_slot"] for item in plan["mappings"]}
+    required_headings = list(dict.fromkeys(
+        slot_by_id[item["target_slot"]]["title"] for item in plan["mappings"]
+    ))
     profile = {
         "schema_version": "3.0",
         "profile_id": stem,
         "product_type": product_label,
+        "integration_status": "configured_pending_regression",
         "semantic_routing": {
             "category_mapping": mapping_name,
             "chapter_numbers_are_identity": False,
@@ -359,7 +373,14 @@ def prepare_template_candidate(
             "performance_indicator": {"mode": "indicator_table"}
         },
         "spec_model_filter": {"enabled": True},
+        # 接入工具没有产品指标依据；补齐受控词表前不激活全局参考来源。
+        "indicator_sources": {"workbook": False, "reference_families": []},
         "indicator_map": {},
+        "delivery_gate": {
+            "min_indicator_rows": 0,
+            "min_interface_fills": 0,
+            "required_headings": required_headings,
+        },
         "qa_profile": {
             "required_headings": [
                 slot_by_id[slot_by_category[key]]["title"]

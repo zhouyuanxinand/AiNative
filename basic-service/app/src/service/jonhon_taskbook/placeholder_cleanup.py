@@ -29,10 +29,43 @@ def _replace_unresolved_value_placeholder(text: str) -> str:
     return _UNRESOLVED_VALUE_PLACEHOLDER.sub(NO_VALUE_MARKER, text)
 
 
-def final_placeholder_sweep(root) -> int:
+def _table_signature(table) -> tuple:
+    """Compare copied table content independently of Word presentation XML."""
+    return tuple(
+        tuple(get_cell_text(cell) for cell in row.findall(f"{{{W}}}tc"))
+        for row in table.findall(f"{{{W}}}tr")
+    )
+
+
+def _source_table_signatures(source_paths) -> set[tuple]:
+    signatures = set()
+    for source_path in source_paths:
+        with zipfile.ZipFile(source_path) as package:
+            root = etree.fromstring(package.read("word/document.xml"))
+        signatures.update(
+            _table_signature(table)
+            for table in root.findall(f".//{{{W}}}tbl")
+        )
+    return signatures
+
+
+def _belongs_to_source_table(element, source_tables: set) -> bool:
+    return any(
+        ancestor in source_tables
+        for ancestor in element.iterancestors(f"{{{W}}}tbl")
+    )
+
+
+def final_placeholder_sweep(root, *, source_table_signatures=()) -> int:
     """Remove unresolved display placeholders without inventing facts."""
     changed = 0
+    source_tables = {
+        table for table in root.findall(f".//{{{W}}}tbl")
+        if _table_signature(table) in source_table_signatures
+    }
     for para in list(root.findall(f".//{{{W}}}p")):
+        if _belongs_to_source_table(para, source_tables):
+            continue
         text = get_para_text(para)
         stripped = text.strip()
         replaced = _replace_unresolved_value_placeholder(text)
@@ -61,6 +94,8 @@ def final_placeholder_sweep(root) -> int:
             changed += 1
 
     for cell in root.findall(f".//{{{W}}}tc"):
+        if _belongs_to_source_table(cell, source_tables):
+            continue
         text = get_cell_text(cell)
         replaced = _replace_unresolved_value_placeholder(text)
         if replaced != text:
@@ -75,13 +110,18 @@ def final_placeholder_sweep(root) -> int:
     return changed
 
 
-def final_placeholder_sweep_docx(docx_path: str | Path) -> int:
+def final_placeholder_sweep_docx(
+    docx_path: str | Path, *, source_paths=()
+) -> int:
     """Apply :func:`final_placeholder_sweep` to a built DOCX package."""
     path = Path(docx_path)
     with zipfile.ZipFile(path, "r") as source:
         root = etree.fromstring(source.read("word/document.xml"))
 
-    changed = final_placeholder_sweep(root)
+    changed = final_placeholder_sweep(
+        root,
+        source_table_signatures=_source_table_signatures(source_paths),
+    )
     if not changed:
         return 0
 

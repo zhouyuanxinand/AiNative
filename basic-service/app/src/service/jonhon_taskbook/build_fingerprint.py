@@ -54,15 +54,19 @@ def _controlled_artifacts() -> dict[str, str]:
         "rule_manifest": RULE_PACK / "manifest.json",
         "rule_workbook": RULE_PACK / "研制任务书生成规则7-22.xlsx",
         "indicator_workbook": PACKAGE_ROOT / "resources" / "mappings" / "indicator_taxonomy_20260722.xlsx",
-        "failure_database": PACKAGE_ROOT / "resources" / "mappings" / "failure_mode_database_20260722.xlsx",
+        "failure_database_seed": PACKAGE_ROOT / "resources" / "mappings" / "failure_mode_database_20260722.xlsx",
         "product_catalog": PROJECT_ROOT / "config" / "template_catalog.yaml",
         "category_mapping": PROJECT_ROOT / "config" / "connector_requirement_categories.yaml",
     }
-    return {
+    artifacts = {
         name: _sha256(path)
         for name, path in candidates.items()
         if path.is_file()
     }
+    from .failure_database import get_failure_database
+    _, snapshot = get_failure_database().snapshot()
+    artifacts["failure_database"] = snapshot["database_sha256"]
+    return artifacts
 
 
 def build_fingerprint(*, include_process: bool = False) -> dict:

@@ -6,6 +6,7 @@ import { FLOW_STEPS } from '../../constants';
 export function Header() {
   const {
     currentStep,
+    jobStatus,
     backendHealthReady,
     backendHealth,
     currentJid,
@@ -19,6 +20,7 @@ export function Header() {
   } = useTaskbook();
 
   const progress = Math.max(0, Math.min(100, Math.round(((currentStep - 1) / 5) * 100)));
+  const stopped = jobStatus === 'error' || jobStatus === 'cancelled';
   const healthText =
     backendHealth === null
       ? '无法读取后台语义模型状态'
@@ -102,6 +104,17 @@ export function Header() {
           </button>
           <button
             type="button"
+            className={managementKind === 'failures' ? 'active' : ''}
+            data-page="failures"
+            onClick={() => {
+              setManagementKind('failures');
+              setWorkspaceView('failures');
+            }}
+          >
+            故障数据库
+          </button>
+          <button
+            type="button"
             onClick={openLatestReport}
           >
             质量报告
@@ -120,7 +133,7 @@ export function Header() {
                 <Fragment key={stepNum}>
                   <span
                     id={`fbs-${stepNum}`}
-                    className={`flow-step ${isActive ? 'active' : ''} ${isDone ? 'done' : ''}`}
+                    className={`flow-step ${isActive ? (stopped ? 'stopped' : 'active') : ''} ${isDone ? 'done' : ''}`}
                   >
                     <span className="num">{stepNum}</span> {label}
                   </span>
@@ -136,7 +149,7 @@ export function Header() {
             })}
           </div>
           <div className="flow-progress">
-            <span>完成进度：</span>
+            <span>{stopped ? '已停止，当前进度：' : '完成进度：'}</span>
             <span className="track" aria-hidden="true">
               <span className="value" id="flow-progress-value" style={{ width: `${progress}%` }} />
             </span>

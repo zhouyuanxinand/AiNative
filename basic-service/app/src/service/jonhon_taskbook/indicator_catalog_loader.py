@@ -31,9 +31,10 @@ _ROLE_CATEGORY = {
 }
 
 
-@lru_cache(maxsize=4)
 def load_reference_indicator_catalog(
     path: str | Path | None = None,
+    *,
+    families: list[str] | tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
     """Load the value-free, number-free shared indicator vocabulary.
 
@@ -41,19 +42,45 @@ def load_reference_indicator_catalog(
     values, required flags, or template chapter numbers.  An entry is only a
     controlled semantic name/alias that may be activated later when the
     current design input contains source evidence.
+
+    Omitted families retain the established shared vocabulary. An explicit
+    empty collection disables it; named families must exist in the controlled
+    resource and are never replaced with the default families.
     """
+    if families is not None and (
+        not isinstance(families, (list, tuple))
+        or any(not isinstance(name, str) or not name.strip() for name in families)
+    ):
+        raise ValueError("reference_families 必须是非空家族名称的列表")
+    selected_families = (
+        ("common", "high_frequency", "optical")
+        if families is None
+        else tuple(dict.fromkeys(families))
+    )
+    if not selected_families:
+        return []
     source = Path(path) if path else REFERENCE_CATALOG_PATH
     if not source.is_file():
+        if families is not None:
+            raise FileNotFoundError(f"受控指标词表不存在: {source}")
         return []
     try:
         raw = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
-    except (OSError, yaml.YAMLError):
+    except (OSError, yaml.YAMLError) as exc:
+        if families is not None:
+            raise ValueError(f"受控指标词表无法读取: {source}") from exc
         return []
     if not isinstance(raw, dict):
+        if families is not None:
+            raise ValueError(f"受控指标词表必须是 YAML 对象: {source}")
         return []
+    if families is not None:
+        unknown = [name for name in selected_families if not isinstance(raw.get(name), dict)]
+        if unknown:
+            raise ValueError(f"未知的受控指标词表家族: {', '.join(unknown)}")
 
     entries: list[dict[str, Any]] = []
-    for family_name in ("common", "high_frequency", "optical"):
+    for family_name in selected_families:
         family = raw.get(family_name)
         if not isinstance(family, dict):
             continue

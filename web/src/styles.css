@@ -1,4 +1,26 @@
 /* ═══ 设计 Token：企业 AI 工作台设计规范 v1.3（中航光电） ═══ */
+.indicator-review{margin-top:var(--space-6);padding-top:var(--space-4);border-top:1px solid var(--color-border);font-size:var(--font-size-sm);line-height:1.6;overflow-wrap:anywhere}
+.indicator-review h3{font-size:var(--font-size-title-sm);margin:0 0 var(--space-2)}
+.indicator-review h4{font-size:var(--font-size-control);margin:0 0 var(--space-2)}
+.indicator-review-item{padding:var(--space-4) 0;border-bottom:1px solid var(--color-border)}
+.indicator-review-pending{font-size:var(--font-size-xs);font-weight:500;color:var(--color-warning);margin-left:var(--space-2)}
+.indicator-review dl{display:grid;grid-template-columns:6em minmax(0,1fr);gap:var(--space-2);margin:0 0 var(--space-3)}
+.indicator-review dt{color:var(--color-text-secondary)}
+.indicator-review dd{margin:0;white-space:pre-wrap}
+.indicator-review ul{margin:0;padding-left:1.2em}
+.indicator-review li+li{margin-top:var(--space-2)}
+.indicator-review-note{color:var(--color-text-secondary);font-size:var(--font-size-xs)}
+.indicator-review-error{color:var(--color-error)}
+.indicator-review label{display:block;margin-bottom:var(--space-1)}
+.indicator-review textarea{display:block;box-sizing:border-box;width:100%;resize:vertical;min-height:64px;padding:var(--space-2);border:1px solid var(--color-border-strong);border-radius:var(--radius-sm);background:var(--color-bg-surface);color:var(--color-text-primary);font:inherit;caret-color:var(--color-action)}
+.indicator-review textarea::placeholder{color:var(--color-text-secondary)}
+.indicator-review textarea:focus-visible,.indicator-review summary:focus-visible{outline:2px solid var(--color-border-focus);outline-offset:2px}
+.indicator-review textarea:disabled{background:var(--color-bg-subtle)}
+.indicator-review button:disabled{opacity:.6;cursor:not-allowed}
+.indicator-review-resolved{margin-top:var(--space-4)}
+.indicator-review-resolved summary{cursor:pointer;color:var(--color-action)}
+.indicator-review-resolved>div{padding-top:var(--space-3)}
+@media(max-width:540px){.indicator-review dl{grid-template-columns:1fr;gap:var(--space-1)}.indicator-review dd{margin-bottom:var(--space-2)}}
 :root{
   --color-bg-page:#f5f5f7;--color-bg-surface:#fff;--color-bg-subtle:#eeeef2;--color-bg-hover:#e9e9ed;--color-bg-selected:#e8f2ff;
   --color-text-primary:#1d1d1f;--color-text-secondary:#6e6e73;--color-text-tertiary:#86868b;--color-text-inverse:#fff;--color-text-link:#0071e3;
@@ -294,6 +316,7 @@ a{color:inherit;text-decoration:none}
 .model-picker-status{grid-column:1;min-height:17px;padding-left:2px;font-size:11px;line-height:17px;color:var(--muted)}
 .model-picker-status.ok{color:var(--green)}
 .model-picker-status.warn{color:var(--warn)}
+.model-picker-retry{justify-self:start}
 .btn-run{align-self:start;justify-self:end;margin-top:26px;height:40px;padding:0 22px;border-radius:var(--r2);background:var(--blue);color:#fff;font-size:14px;font-weight:600;transition:background var(--fast),transform var(--fast);box-shadow:0 3px 10px rgba(0,113,227,.18)}
 .btn-run:hover:not(:disabled){background:var(--blue2)}
 .btn-run:active:not(:disabled){transform:scale(.98)}
@@ -859,9 +882,6 @@ body>.help-trigger{visibility:hidden}
 .business-selects label .required-mark{display:inline;margin-left:4px;vertical-align:baseline}
 .business-selects label>select,.business-selects label>input{display:block;width:100%;margin-top:7px}
 
-.right-panel .review-tab[data-review="history"],
-.right-panel .review-section[data-review="history"]{display:none!important}
-
 /* 鍏充簳鏀瑰竷灞€锛氭秷闄ゆ洿澶氫俊鎭殑 Hero 鍖哄煙 */
 .hero{display:none!important}
 .app-shell{margin-top:0!important}
@@ -930,6 +950,8 @@ body>.help-trigger{visibility:hidden}
 }
 .flow-step.active{background:var(--color-action-subtle);color:var(--color-action);font-weight:600}
 .flow-step.active .num{background:var(--color-action);color:#fff}
+.flow-step.stopped{color:var(--red)}
+.flow-step.stopped .num{background:var(--red);color:#fff}
 .flow-step.done{background:var(--color-success-bg);color:var(--color-success)}
 .flow-step.done .num{background:var(--color-success);color:#fff}
 .flow-arrow{padding:0 1px;color:var(--color-border-strong)}

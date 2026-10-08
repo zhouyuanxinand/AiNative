@@ -4,9 +4,9 @@ postprocess.py — 输出文档后处理（通用，适用于任意 docx）
 扫描步骤：
   1. 清红色字体 → 黑色
   2. 清高亮/底纹
-  3. 清 20xx 占位日期文字
-  4. 删除模板残留整段（全红段、研制阶段占位、模板话术）
-  5. 整节删除（适航/AS9100/QFD/过时淘汰等无用分支）
+  3. 保留受控模板的正文、表格及待填位置
+  4. 清理生成指标表的编写说明
+  5. 统一红色【人工填写】提示（章节选择由受控业务规则执行）
   6. 清横版分节符
   7. 图片段落强制居中
   8. 表格列宽超页宽时等比缩放
@@ -16,9 +16,14 @@ import os, posixpath, re, tempfile, time, zipfile
 from pathlib import Path
 from lxml import etree
 import yaml
+from jonhon_taskbook.figure_pairing import pair_figure_captions
+from jonhon_taskbook.renderer.paragraph_style_engine import has_image, normalize_image_paragraph
 from jonhon_taskbook.renderer.table_style_engine import (
     DEFAULT_FONT,
     apply_table_style,
+    available_page_width,
+    normalize_table_borders,
+    normalize_table_header,
     normalize_table_width,
 )
 
@@ -31,73 +36,22 @@ CP_NS = "http://schemas.openxmlformats.org/package/2006/metadata/core-properties
 DC_NS = "http://purl.org/dc/elements/1.1/"
 
 _RED_VALS = {"FF0000","C00000","E00000","D00000","F00000","B00000","A00000"}
-_DATE_RE  = re.compile(r'20[xX]{2}年[xX]月|20xx年x月', re.I)
-_PHASE_RE = re.compile(r'[（(]?与产品研制阶段同步转阶段[）)]?|F/C/S/D（与')
-_PHASE_PLACEHOLDER_RE = re.compile(
-    r'F/C/S/D\s*[（(]\s*与产品研制阶段同步转阶段\s*[）)]'
-)
 _FIGURE_CAPTION_RE = re.compile(r'^(\s*图\s*)(\d+)(?=\D|$)')
 _FIGURE_REFERENCE_RE = re.compile(r'图\s*(\d+)')
 _STANDALONE_PLACEHOLDER_RE = re.compile(r'^(?:[.．·•]{3,}|…{2,})$')
 _BODY_CAPTION_RE = re.compile(r'^\s*(?:图|表)\s*\d+(?=\D|$)', re.I)
-_ITALIC_ANNOTATION_MARKER = "【请人工标注】"
-_ITALIC_ANNOTATION_ALIASES = (_ITALIC_ANNOTATION_MARKER, "【人工标注】")
+_ITALIC_ANNOTATION_MARKER = "【人工填写】"
+_ITALIC_ANNOTATION_ALIASES = (_ITALIC_ANNOTATION_MARKER, "【请人工标注】", "【人工标注】")
 _ANNOTATION_EXEMPT_HEADING_MARKERS = (
     "相似失效问题规避",
-    "适用于非中央研究院产品",
-    "适用于中央研究院产品",
 )
-_ANNOTATION_REQUIRED_HEADING_MARKERS = ("潜在失效模式",)
+_ANNOTATION_REQUIRED_HEADING_MARKERS = (
+    "潜在失效模式", "进度要求", "研制经费预算",
+    "产品运行场景识别", "产品需求分解", "QFD质量功能分解",
+)
+_MANUAL_GUIDANCE_RE = re.compile(r"由设计(?:员|人员)?(?:人工)?填写|需设计员编辑|人工填写|请设计人员填写")
 _BODY_FONT = "宋体"
 _BODY_SIZE_HALF_POINTS = "21"  # 五号 = 10.5 pt = 21 half-points
-
-# 整段话术删除（段落内容匹配到任一条则删除该段）
-_JUNK_PATTERNS = [
-    re.compile(r'适用时保留.*不适用.*删除', re.S),
-    re.compile(r'不适用.*请删除', re.S),
-    re.compile(r'适用于.*请删除', re.S),
-    re.compile(r'[(（]适用时保留'),
-    re.compile(r'20[Xx]{2}年'),
-    re.compile(r'[Xx]{2}只'),
-    re.compile(r'[Xx]万元'),
-    re.compile(r'共[Xx]套'),
-    re.compile(r'请补充.*编号'),
-    re.compile(r'[（(]请补充'),
-    re.compile(r'PCD.*批量|民机.*批量'),
-    re.compile(r'适航条款|适航性顶层文件|型号审定|民用航空'),
-    re.compile(r'AS9100'),
-    re.compile(r'过时淘汰风险'),
-    re.compile(r'原材料.*元器件.*过时'),
-    # Formal-output-only template authoring instructions.  These phrases are
-    # directions to the taskbook author, not product requirements.  Keep the
-    # patterns semantic and number-independent so a re-numbered/re-ordered
-    # customer template is handled the same way.
-    re.compile(r'此条要求对用户的特殊要求进行识别', re.S),
-    re.compile(r'内容要求[：:].*顾客要求超出', re.S),
-    re.compile(r'按照技术协议要求写.*没有要求的删除此项', re.S),
-    re.compile(
-        r'XX产品(?:可靠性|维修性|测试性|保障性|安全性|环境适应性)'
-        r'(?:定量|定性)?要求',
-        re.S,
-    ),
-    re.compile(r'对于改型、派生产品.*应明示产品类型', re.S),
-    re.compile(r'投入模具必要性论述', re.S),
-    re.compile(r'^\s*XXX\s*[：:]\s*XX\b', re.S),
-]
-
-# 整节删除（标题匹配则删除标题及其下所有内容直到同级/上级标题）
-# 不加行首锚点，标题文字只要包含关键词就删整节
-_SECTION_DELETE_PATTERNS = [
-    re.compile(r'适航要求'),
-    re.compile(r'适用的适航条款'),
-    re.compile(r'适航性顶层文件'),
-    re.compile(r'适航审查方式'),
-    re.compile(r'适航其他管理要求'),
-    re.compile(r'过时淘汰风险'),
-    re.compile(r'原材料.*元器件.*过时'),
-    re.compile(r'AS9100'),
-]
-
 
 def _para_text(p) -> str:
     return "".join(t.text or "" for t in p.findall(f".//{_W}t"))
@@ -264,6 +218,8 @@ def _is_indicator_instruction(text: str) -> bool:
     remove ordinary template guidance elsewhere.
     """
     compact = re.sub(r"\s+", "", text or "")
+    if compact.strip("（）()。") == "此条要求将所有技术指标要求和试验方法详细列出":
+        return True
     return compact.startswith(
         "\u5728\u4e0b\u8868\u4e2d\u5217\u51fa\u7528\u6237\u660e\u786e\u8981\u6c42\u7684\u6280\u672f\u6307\u6807"
     ) or compact.startswith(
@@ -290,7 +246,7 @@ def _remove_indicator_instructions(body, stats: dict) -> None:
     """
     children = list(body)
     for index, child in enumerate(children):
-        if not _is_indicator_table(child):
+        if not _is_indicator_table(child) or not _indicator_table_has_values(child):
             continue
         cursor = index - 1
         while cursor >= 0:
@@ -301,6 +257,12 @@ def _remove_indicator_instructions(body, stats: dict) -> None:
             if not text:
                 cursor -= 1
                 continue
+            if _heading_depth(previous) > 0:
+                from jonhon_taskbook.template_scanner import semantic_title
+                if semantic_title(text) == "技术指标":
+                    cursor -= 1
+                    continue
+                break
             if not _is_indicator_instruction(text):
                 break
             parent = previous.getparent()
@@ -308,6 +270,22 @@ def _remove_indicator_instructions(body, stats: dict) -> None:
                 parent.remove(previous)
                 stats["indicator_instruction_deleted"] += 1
             cursor -= 1
+
+
+def _indicator_table_has_values(table) -> bool:
+    """Only a populated data cell makes the authoring prompt obsolete."""
+    for row in table.findall(f"{_W}tr"):
+        cells = row.findall(f"{_W}tc")
+        if len(cells) < 3 or (
+            _para_text(cells[0]).strip() in {"项目", "项目名称", "指标", "指标名称"}
+            and "用户要求" in _para_text(row)
+        ):
+            continue
+        for cell in cells[1:-1]:
+            value = _para_text(cell).strip()
+            if value and value not in {"\\", "/", "-", "—", "【人工填写】"} and not re.fullmatch(r"[Xx_＿….\s]+", value):
+                return True
+    return False
 
 
 def _normalize_indicator_table_formatting(body, stats: dict) -> None:
@@ -403,18 +381,38 @@ def _is_failure_table(element) -> bool:
 
 
 def _normalize_controlled_table_formatting(root, stats: dict) -> None:
-    """Apply final controlled-table layout after all DOCX XML mutations.
+    """Give chapter data tables one width and header treatment at delivery.
 
-    Earlier table writers style the tables they own, but later cleanup and
-    width normalization can encounter tables that came directly from a
-    customer template.  This final, semantic pass normalizes the grid, live
-    page width, repeatable header, row flow and fonts of indicator/failure
-    tables without touching unrelated signature or cover tables.  Existing
-    table-native font size is retained when available.
+    Imported tables retain their cell content, proportions and typography;
+    indicator/failure tables also receive their controlled font and row flow.
+    Front matter, nested tables and picture-only layouts are not data tables.
     """
+    body = root.find(f".//{_W}body")
+    if body is None:
+        return
     normalized = 0
-    for table in root.findall(f".//{_W}tbl"):
-        if not (_is_indicator_table(table) or _is_failure_table(table)):
+    layouts = 0
+    in_chapter = False
+    for table in _iter_body_blocks(body):
+        if table.tag == f"{_W}p":
+            if _heading_depth(table) > 0:
+                in_chapter = True
+            continue
+        controlled = _is_indicator_table(table) or _is_failure_table(table)
+        rows = table.findall(f"{_W}tr")
+        if not controlled and not (
+            in_chapter and len(rows) > 1
+            and len(table.findall(f"./{_W}tblGrid/{_W}gridCol")) > 1
+            and _para_text(rows[0]).strip()
+        ):
+            continue
+        page_width = available_page_width(table)
+        if page_width and not controlled:
+            normalize_table_width(table, page_width, inline=True)
+        layouts += 1
+        if not controlled:
+            normalize_table_borders(table)
+            normalize_table_header(table)
             continue
         runs = [
             run
@@ -445,10 +443,14 @@ def _normalize_controlled_table_formatting(root, stats: dict) -> None:
             font_name=font,
             size_half_points=size,
         )
+        if page_width:
+            normalize_table_width(table, page_width, inline=True)
         normalized += len(runs)
     if normalized:
         stats["controlled_table_font_normalized"] = normalized
         stats["controlled_table_layout_normalized"] = normalized
+    if layouts:
+        stats["body_table_layout_normalized"] = layouts
 
 
 def _table_dxa_width(table) -> int:
@@ -575,11 +577,17 @@ def _run_text(r) -> str:
     return "".join(t.text or "" for t in r.findall(f".//{_W}t"))
 
 
-def _contains_visible_italic(element) -> bool:
-    return any(
-        _run_text(run).strip() and _is_run_italic(run)
-        for run in element.findall(f".//{_W}r")
-    )
+def _contains_visible_italic(element, excluded_paragraphs: set | None = None) -> bool:
+    excluded_paragraphs = excluded_paragraphs or set()
+    for run in element.findall(f".//{_W}r"):
+        if not _run_text(run).strip() or not _is_run_italic(run):
+            continue
+        paragraph = run.getparent()
+        while paragraph is not None and paragraph.tag != f"{_W}p":
+            paragraph = paragraph.getparent()
+        if paragraph not in excluded_paragraphs:
+            return True
+    return False
 
 
 def _iter_body_blocks(container):
@@ -620,8 +628,76 @@ def _append_italic_annotation_to_heading(heading) -> None:
     )
 
 
+def _is_inside_table(element) -> bool:
+    parent = element.getparent()
+    while parent is not None:
+        if parent.tag == f"{_W}tbl":
+            return True
+        parent = parent.getparent()
+    return False
+
+
+def _is_descendant_heading(heading, ancestor, heading_parents: dict) -> bool:
+    parent = heading_parents.get(heading)
+    while parent is not None:
+        if parent is ancestor:
+            return True
+        parent = heading_parents.get(parent)
+    return False
+
+
+def _collapse_annotation_targets(
+    target_headings: list,
+    heading_parents: dict,
+    heading_depths: dict,
+    heading_order: dict,
+) -> tuple[list, int]:
+    """Collapse multiple pending descendants to their nearest shared heading.
+
+    A chapter is the review unit presented to the designer.  When several of
+    its child headings are pending, repeating the marker on every descendant
+    adds no information; the deepest common parent receives one marker.  A
+    single pending child remains precise, and exempt headings are never made
+    annotation targets by this reduction.
+    """
+    active = set(target_headings)
+    candidates = set()
+    for target in active:
+        parent = heading_parents.get(target)
+        while parent is not None:
+            candidates.add(parent)
+            parent = heading_parents.get(parent)
+
+    before = len(active)
+    for candidate in sorted(
+        candidates,
+        key=lambda heading: heading_depths.get(heading, 0),
+        reverse=True,
+    ):
+        descendants = {
+            target
+            for target in active
+            if _is_descendant_heading(target, candidate, heading_parents)
+        }
+        if candidate in active:
+            active.difference_update(descendants)
+            continue
+        if len(descendants) < 2 or _annotation_heading_policy(candidate) == "exempt":
+            continue
+        active.difference_update(descendants)
+        active.add(candidate)
+
+    return (
+        sorted(active, key=lambda heading: heading_order.get(heading, 0)),
+        before - len(active),
+    )
+
+
 def _remove_annotation_aliases_from_run(run) -> int:
-    """Remove legacy annotation labels while preserving the run's remaining text."""
+    """Remove labels across text nodes while retaining surrounding formatting.
+
+    The input may be a paragraph: Word frequently splits a marker over runs.
+    """
     text_nodes = list(run.findall(f".//{_W}t"))
     full_text = "".join(node.text or "" for node in text_nodes)
     if not full_text:
@@ -659,7 +735,12 @@ def _remove_annotation_aliases_from_run(run) -> int:
             )
         cursor += len(original)
 
-    if not _run_text(run):
+    if run.tag == f"{_W}p":
+        for child_run in list(run.findall(f".//{_W}r")):
+            has_payload = any(child.tag not in {f"{_W}rPr", f"{_W}t"} for child in child_run)
+            if not _run_text(child_run) and not has_payload:
+                child_run.getparent().remove(child_run)
+    elif not _run_text(run):
         non_text_payload = any(
             child.tag not in {f"{_W}rPr", f"{_W}t"}
             for child in run
@@ -674,147 +755,179 @@ def _annotation_heading_policy(heading) -> str:
     text = re.sub(r"\s+", "", _para_text(heading))
     if any(marker in text for marker in _ANNOTATION_EXEMPT_HEADING_MARKERS):
         return "exempt"
-    if "分析" in text and any(
+    if any(
         marker in text for marker in _ANNOTATION_REQUIRED_HEADING_MARKERS
     ):
         return "required"
     return "auto"
 
 
-def _remove_visible_italic_text(element) -> tuple[int, int]:
-    removed_runs = 0
-    removed_chars = 0
-    for run in list(element.findall(f".//{_W}r")):
-        if not _is_run_italic(run):
+def _pending_customer_question_parents(body):
+    """Find unanswered template questions stored as subheadings, not body text."""
+    from jonhon_taskbook.template_scanner import semantic_title
+
+    blocks = list(body)
+    ancestors = {}
+    question = re.compile(r"如有(?:请)?注明[^。；;\n]{0,40}(?:没有|如无)[^。；;\n]{0,8}删除")
+    pending = set()
+    for index, block in enumerate(blocks):
+        if block.tag != f"{_W}p":
             continue
-        text_nodes = list(run.findall(f".//{_W}t"))
-        text = "".join(node.text or "" for node in text_nodes)
-        if not text:
+        depth = _heading_depth(block)
+        if depth <= 0:
             continue
-        removed_runs += 1
-        removed_chars += len(text)
-        for node in text_nodes:
-            node.text = ""
-        non_text_payload = any(
-            child.tag not in {f"{_W}rPr", f"{_W}t"}
-            for child in run
-        )
-        parent = run.getparent()
-        if not non_text_payload and parent is not None:
-            parent.remove(run)
-    return removed_runs, removed_chars
-
-
-def _strip_similar_failure_italic_text(body, stats: dict) -> None:
-    """Delete italic guidance/content only inside the 5.1 semantic section."""
-    if body is None:
-        return
-
-    active_depth = 0
-    removed_runs = 0
-    removed_chars = 0
-    for block in _iter_body_blocks(body):
-        if block.tag == f"{_W}p":
-            depth = _heading_depth(block)
-            if depth > 0:
-                if active_depth and depth <= active_depth:
-                    active_depth = 0
-                heading_text = re.sub(r"\s+", "", _para_text(block))
-                if "相似失效问题规避" in heading_text:
-                    active_depth = depth
-                continue
-        if not active_depth:
-            continue
-        run_count, char_count = _remove_visible_italic_text(block)
-        removed_runs += run_count
-        removed_chars += char_count
-
-    if removed_runs:
-        stats["similar_failure_italic_runs_removed"] = removed_runs
-        stats["similar_failure_italic_chars_removed"] = removed_chars
+        ancestors = {level: heading for level, heading in ancestors.items() if level < depth}
+        parents = list(ancestors.values())
+        titles = [semantic_title(_para_text(p).replace(_ITALIC_ANNOTATION_MARKER, "")) for p in parents]
+        if titles[-2:] == ["顾客的特殊要求", "其他要求"] and question.search(_para_text(block)):
+            answered = False
+            for following in blocks[index + 1:]:
+                following_depth = _heading_depth(following) if following.tag == f"{_W}p" else 0
+                if following_depth and following_depth <= depth:
+                    break
+                text = _para_text(following).strip()
+                if not following_depth and text and not (
+                    _MANUAL_GUIDANCE_RE.search(text)
+                    or re.fullmatch(r"[Xx_＿….\s]+", text)
+                ):
+                    answered = True
+                    break
+            if not answered:
+                pending.add(parents[-1])
+        ancestors[depth] = block
+    return pending
 
 
 def _mark_italic_runs_with_annotation(body, stats: dict) -> None:
-    """每个含斜体正文的章节只在最近章节标题上标注一次。
+    """每个待填标题子树只在最小公共父标题上标注一次。
 
-    旧逻辑按段落插入标记，会使同一章节的多段斜体重复显示。这里先
-    移除正文/表格内旧的两种标记，再按文档顺序把斜体内容或旧标记
-    归属到最近的标题。标题本身的斜体版式不触发标注；模板标题已有
-    【人工标注】时也不会重复追加。
+    先规范化旧标记，再按标题树归属待填位置。同一父标题下有多个待填
+    子标题时，标记提升到其最小公共父标题；表格单元格中的明确待填位
+    置保持原位。标题本身的斜体版式不触发标注，重复处理保持幂等。
     """
     if body is None:
         return
 
     exempt_markers_removed = 0
+    original_marker_headings: set = set()
     for paragraph in body.findall(f".//{_W}p"):
         if _heading_depth(paragraph) <= 0:
             continue
-        if _annotation_heading_policy(paragraph) != "exempt":
+        had_marker = any(marker in _para_text(paragraph) for marker in _ITALIC_ANNOTATION_ALIASES)
+        if not had_marker:
             continue
-        for run in list(paragraph.findall(f".//{_W}r")):
-            exempt_markers_removed += _remove_annotation_aliases_from_run(run)
+        removed = _remove_annotation_aliases_from_run(paragraph)
+        if _annotation_heading_policy(paragraph) == "exempt":
+            exempt_markers_removed += removed
+        else:
+            original_marker_headings.add(paragraph)
 
     relocated = 0
-    relocated_paragraph_ids: set[int] = set()
+    relocated_paragraphs: set = set()
+    explicit_table_marker_paragraphs: set = set()
     for paragraph in body.findall(f".//{_W}p"):
         if _heading_depth(paragraph) > 0:
             continue
-        for run in list(paragraph.findall(f".//{_W}r")):
-            removed = _remove_annotation_aliases_from_run(run)
-            if removed:
-                relocated += removed
-                relocated_paragraph_ids.add(id(paragraph))
+        paragraph_text = _para_text(paragraph)
+        has_explicit_marker = any(
+            marker in paragraph_text for marker in _ITALIC_ANNOTATION_ALIASES
+        )
+        if has_explicit_marker and _is_inside_table(paragraph):
+            # 指标比较/封面表格字段已有明确的人工位置时就地保留。不能把
+            # 单元格标记移到章标题，否则设计员与指标审计都失去具体位置。
+            _remove_annotation_aliases_from_run(paragraph)
+            _append_italic_annotation_to_heading(paragraph)
+            explicit_table_marker_paragraphs.add(paragraph)
+            continue
+        removed = _remove_annotation_aliases_from_run(paragraph)
+        if removed:
+            relocated += removed
+            relocated_paragraphs.add(paragraph)
 
     current_heading = None
     current_heading_policy = "auto"
     target_headings = []
-    target_ids: set[int] = set()
+    target_elements: set = set()
+    heading_parents = {}
+    heading_depths = {}
+    heading_order = {}
+    heading_stack = {}
     italic_without_heading = 0
 
     def queue_heading(heading) -> None:
-        heading_id = id(heading)
-        if heading_id not in target_ids:
-            target_ids.add(heading_id)
+        if heading not in target_elements:
+            target_elements.add(heading)
             target_headings.append(heading)
 
-    for block in _iter_body_blocks(body):
+    for heading in _pending_customer_question_parents(body):
+        queue_heading(heading)
+
+    for order, block in enumerate(_iter_body_blocks(body)):
         if block.tag == f"{_W}p" and _heading_depth(block) > 0:
             if _para_text(block).strip():
+                depth = _heading_depth(block)
+                parent_depths = [level for level in heading_stack if level < depth]
+                heading_parents[block] = (
+                    heading_stack[max(parent_depths)] if parent_depths else None
+                )
+                heading_depths[block] = depth
+                heading_order[block] = order
+                heading_stack = {
+                    level: heading
+                    for level, heading in heading_stack.items()
+                    if level < depth
+                }
+                heading_stack[depth] = block
                 current_heading = block
                 current_heading_policy = _annotation_heading_policy(block)
-                if current_heading_policy == "required":
+                if current_heading_policy == "required" or block in original_marker_headings:
                     queue_heading(block)
             continue
         if block.tag == f"{_W}p":
-            had_relocated_marker = id(block) in relocated_paragraph_ids
+            had_relocated_marker = block in relocated_paragraphs
         else:
             had_relocated_marker = any(
-                id(paragraph) in relocated_paragraph_ids
+                paragraph in relocated_paragraphs
                 for paragraph in block.findall(f".//{_W}p")
             )
-        if not had_relocated_marker and not _contains_visible_italic(block):
+        block_text = _para_text(block)
+        guidance_text = block_text
+        for marker in _ITALIC_ANNOTATION_ALIASES:
+            guidance_text = guidance_text.replace(marker, "")
+        if not (
+            had_relocated_marker
+            or _contains_visible_italic(block, explicit_table_marker_paragraphs)
+            or _MANUAL_GUIDANCE_RE.search(guidance_text)
+            or _STANDALONE_PLACEHOLDER_RE.fullmatch(re.sub(r"\s+", "", guidance_text))
+        ):
             continue
         if current_heading is None:
+            if had_relocated_marker:
+                # 封面等无章节位置也必须保留可见人工提示。
+                if block.tag == f"{_W}p":
+                    _append_italic_annotation_to_heading(block)
+                else:
+                    for paragraph in block.findall(f".//{_W}p"):
+                        if paragraph in relocated_paragraphs:
+                            _append_italic_annotation_to_heading(paragraph)
             italic_without_heading += 1
             continue
         if current_heading_policy == "exempt":
             continue
         queue_heading(current_heading)
 
+    target_headings, collapsed = _collapse_annotation_targets(
+        target_headings,
+        heading_parents,
+        heading_depths,
+        heading_order,
+    )
+
     added = 0
     for heading in target_headings:
-        heading_text = _para_text(heading)
-        exact_marker_run_found = False
-        for run in heading.findall(f".//{_W}r"):
-            if _run_text(run).strip() in _ITALIC_ANNOTATION_ALIASES:
-                _style_italic_annotation_run(run)
-                exact_marker_run_found = True
-        if exact_marker_run_found:
-            continue
-        if any(marker in heading_text for marker in _ITALIC_ANNOTATION_ALIASES):
-            continue
         _append_italic_annotation_to_heading(heading)
-        added += 1
+        if heading not in original_marker_headings:
+            added += 1
 
     stats["italic_annotation_chapters"] = len(target_headings)
     if added:
@@ -825,6 +938,8 @@ def _mark_italic_runs_with_annotation(body, stats: dict) -> None:
         stats["annotation_exempt_markers_removed"] = exempt_markers_removed
     if italic_without_heading:
         stats["italic_without_heading"] = italic_without_heading
+    if collapsed:
+        stats["italic_annotations_collapsed"] = collapsed
 
 
 def _set_body_run_typography(run) -> None:
@@ -837,6 +952,8 @@ def _set_body_run_typography(run) -> None:
     if fonts is None:
         fonts = etree.Element(f"{_W}rFonts")
         rpr.insert(0, fonts)
+    for key in ("asciiTheme", "hAnsiTheme", "eastAsiaTheme", "cstheme", "csTheme"):
+        fonts.attrib.pop(f"{_W}{key}", None)
     for key in ("ascii", "hAnsi", "eastAsia", "cs"):
         fonts.set(f"{_W}{key}", _BODY_FONT)
     fonts.set(f"{_W}hint", "eastAsia")
@@ -888,39 +1005,36 @@ def _normalize_body_text_formatting(body, stats: dict) -> None:
         stats["body_runs_normalized"] = run_count
 
 
-def _clear_potential_failure_analysis_table_content(body, stats: dict) -> None:
-    """Leave the 5.2 analysis table body blank for designer input."""
-    if body is None:
-        return
-
-    cleared_cells = 0
-    for table in body.findall(f".//{_W}tbl"):
-        rows = table.findall(f"./{_W}tr")
-        if not rows:
+def _keep_figure_captions_with_images(body, stats: dict) -> None:
+    """Join adjacent image/caption groups without joining unrelated figures."""
+    blocks = list(_iter_body_blocks(body))
+    texts = [_para_text(block).strip() for block in blocks]
+    images = {index for index, block in enumerate(blocks)
+              if block.tag == f"{_W}p" and has_image(block)}
+    pairs = pair_figure_captions(
+        texts, images,
+        lambda text: text if _FIGURE_CAPTION_RE.match(text) else "",
+    )
+    linked = set()
+    for image_index, (_, caption_index, _) in pairs.items():
+        if image_index == caption_index:
             continue
-        header_text = re.sub(
-            r"\s+",
-            "",
-            "".join(
-                node.text or ""
-                for node in rows[0].findall(f".//{_W}t")
-            ),
-        )
-        if "可能发生的失效模式" not in header_text:
-            continue
-        for row in rows[1:]:
-            for cell in row.findall(f"./{_W}tc"):
-                cell_text = "".join(
-                    node.text or ""
-                    for node in cell.findall(f".//{_W}t")
-                )
-                if cell_text.strip():
-                    cleared_cells += 1
-                for paragraph in list(cell.findall(f"./{_W}p")):
-                    cell.remove(paragraph)
-                cell.append(etree.Element(f"{_W}p"))
-    if cleared_cells:
-        stats["potential_failure_analysis_cells_cleared"] = cleared_cells
+        start, end = sorted((image_index, caption_index))
+        for index in range(start, end):
+            paragraph = blocks[index]
+            if paragraph.tag != f"{_W}p":
+                continue
+            properties = paragraph.find(f"{_W}pPr")
+            if properties is None:
+                properties = etree.Element(f"{_W}pPr")
+                paragraph.insert(0, properties)
+            keep = properties.find(f"{_W}keepNext")
+            if keep is None:
+                keep = etree.SubElement(properties, f"{_W}keepNext")
+            keep.set(f"{_W}val", "1")
+            linked.add(index)
+    if linked:
+        stats["figure_paragraphs_kept_together"] = len(linked)
 
 
 def _replace_paragraph_text(p, new_text: str) -> None:
@@ -1023,13 +1137,6 @@ def _heading_depth(p_el) -> int:
     return 0
 
 
-def _is_junk_para(text: str) -> bool:
-    for pat in _JUNK_PATTERNS:
-        if pat.search(text):
-            return True
-    return False
-
-
 def _domain_policy() -> dict:
     path = Path(__file__).resolve().parent.parent / "config" / "standard_applicability.yaml"
     if not path.is_file():
@@ -1085,11 +1192,9 @@ def clean_doc_xml(
         relationship_ids or set(),
     )
 
-    # Empty controlled-template sections are business content and must remain,
-    # but review-only formatting is not business content. Preservation mode
-    # therefore keeps the paragraphs/tables while still normalizing red text,
-    # highlights, page orientation, images and table geometry.
-    stats["template_guidance_preserved"] = bool(preserve_template_guidance)
+    # 开发逻辑 B56 的保留规则同时适用于正式件和复核件，不再按旧开关
+    # 删除可能属于真实输入或模板的正文。保留参数仅为旧调用方兼容。
+    stats["template_guidance_preserved"] = True
 
     body = root.find(f".//{_W}body")
     if body is None:
@@ -1107,25 +1212,6 @@ def clean_doc_xml(
         stats,
     )
 
-    # 独立省略号只表示模板待填位置，不是模板业务正文。即使启用“保留
-    # 未填模板内容”，也必须清除这种占位符；含有实际文字的段落不受影响。
-    for paragraph in list(body.findall(f".//{_W}p")):
-        compact = re.sub(r"\s+", "", _para_text(paragraph))
-        if not _STANDALONE_PLACEHOLDER_RE.fullmatch(compact):
-            continue
-        parent = paragraph.getparent()
-        if parent is not None:
-            parent.remove(paragraph)
-            stats["standalone_placeholder_deleted"] += 1
-
-    # 未提供研制阶段时不得编造 F/C/S/D；清除模板占位说明但保留字段。
-    for paragraph in body.findall(f".//{_W}p"):
-        full_text = _para_text(paragraph)
-        updated = _PHASE_PLACEHOLDER_RE.sub("", full_text).rstrip()
-        if updated != full_text:
-            _replace_paragraph_text(paragraph, updated)
-            stats["phase_placeholder_cleared"] += 1
-
     # ── 步骤1：全文 w:r 清格式 ──────────────────────────────────────────────
     for r in root.findall(f".//{_W}r"):
         rpr = r.find(f"{_W}rPr")
@@ -1141,11 +1227,6 @@ def clean_doc_xml(
             stats["hl_cleared"] += 1
         for shd in list(rpr.findall(f"{_W}shd")):
             rpr.remove(shd)
-        for t_el in r.findall(f"{_W}t"):
-            if t_el.text and _DATE_RE.search(t_el.text):
-                t_el.text = _DATE_RE.sub("", t_el.text).strip()
-                stats["date_cleared"] += 1
-
     # ── 步骤1B：清段落级 rPr ────────────────────────────────────────────────
     for ppr in root.findall(f".//{_W}pPr"):
         rpr = ppr.find(f"{_W}rPr")
@@ -1162,165 +1243,8 @@ def clean_doc_xml(
         for shd in list(rpr.findall(f"{_W}shd")):
             rpr.remove(shd)
 
-    # ── 步骤2：整段删除（全红段、研制阶段占位、模板话术）──────────────────────
-    paras_to_del = []
-    for p in ([] if preserve_template_guidance else
-              (body.findall(f".//{_W}p") if body is not None else [])):
-        full_text = _para_text(p).strip()
-
-        if _PHASE_RE.search(full_text) and len(full_text) < 60:
-            paras_to_del.append(p); stats["para_deleted"] += 1; continue
-
-        if full_text and _is_junk_para(full_text):
-            paras_to_del.append(p); stats["para_deleted"] += 1; continue
-
-        if not full_text:
-            continue
-        text_runs = [r for r in p.findall(f"{_W}r")
-                     if "".join(t.text or "" for t in r.findall(f"{_W}t")).strip()]
-        if not text_runs:
-            continue
-        still_red = all(
-            any((c.get(f"{_W}val") or "").upper() in _RED_VALS
-                for c in r.findall(f".//{_W}color"))
-            for r in text_runs
-        )
-        if still_red:
-            paras_to_del.append(p); stats["para_deleted"] += 1
-
-    for p in paras_to_del:
-        parent = p.getparent()
-        if parent is not None:
-            parent.remove(p)
-
-    _clear_potential_failure_analysis_table_content(body, stats)
-
-    # 5.1 的斜体模板说明不是交付内容，先删除后再执行章节级标注。
-    _strip_similar_failure_italic_text(body, stats)
-
-    # ── 步骤2B：斜体文字标注【请人工标注】（标红加粗）─────────────────────────────
+    # B57：人工填写位置使用统一红色加粗标记，不能以斜体作为唯一信号。
     _mark_italic_runs_with_annotation(body, stats)
-
-    # ── 步骤3：整节删除（适航/AS9100/QFD 等无用分支）──────────────────────────
-    if body is not None and not preserve_template_guidance:
-        body_children = list(body)
-        to_del_ranges = []
-        i = 0
-        while i < len(body_children):
-            child = body_children[i]
-            tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
-            if tag != "p":
-                i += 1; continue
-            txt = _para_text(child).strip()
-            depth = _heading_depth(child)
-            if depth > 0 and txt:
-                matched = any(pat.search(txt) for pat in _SECTION_DELETE_PATTERNS)
-                if matched:
-                    start = i
-                    j = i + 1
-                    while j < len(body_children):
-                        nc = body_children[j]
-                        nc_tag = nc.tag.split("}")[-1] if "}" in nc.tag else nc.tag
-                        if nc_tag == "p":
-                            nd = _heading_depth(nc)
-                            if nd > 0 and nd <= depth:
-                                break
-                        j += 1
-                    to_del_ranges.append((start, j - 1))
-                    stats["section_deleted"] += 1
-                    i = j
-                    continue
-            i += 1
-
-        for start, end in reversed(to_del_ranges):
-            for idx in range(end, start - 1, -1):
-                if idx < len(body_children):
-                    el = body_children[idx]
-                    par = el.getparent()
-                    if par is not None:
-                        par.remove(el)
-
-        # “产品运行场景识别”当前没有业务输入，只保留受控人工编辑提示。
-        # QFD 是否保留由研制流程策略治理：全新项目保留人工编辑槽位，
-        # 改型项目已在规则填充阶段按语义标题删除。
-        body_children = list(body)
-        for i, child in enumerate(body_children):
-            if child.tag != f"{_W}p":
-                continue
-            txt = _para_text(child).strip()
-            depth = _heading_depth(child)
-            if depth <= 0 or "产品运行场景识别" not in txt:
-                continue
-            j = i + 1
-            while j < len(body_children):
-                current = body_children[j]
-                if current.tag == f"{_W}p":
-                    current_depth = _heading_depth(current)
-                    if current_depth > 0 and current_depth <= depth:
-                        break
-                j += 1
-            for current in reversed(body_children[i + 1:j]):
-                current_text = _para_text(current).strip() if current.tag == f"{_W}p" else ""
-                if current_text in {"本阶段不填写。", "需设计员编辑。"}:
-                    continue
-                parent = current.getparent()
-                if parent is not None:
-                    parent.remove(current)
-                    stats["para_deleted"] += 1
-            break
-
-        # 接口尺寸正文已按语义整体迁入目标标题；删除后方没有正文的模板子标题，
-        # 避免空子标题干扰模板自身的多级编号。
-        empty_interface_labels = {"安装方式", "安装尺寸", "外形尺寸", "端接形式"}
-        body_children = list(body)
-        empty_heading_ranges = []
-        for i, child in enumerate(body_children):
-            if child.tag != f"{_W}p" or _heading_depth(child) <= 0:
-                continue
-            label = re.sub(r"^\d+(?:\.\d+)*\s*", "", _para_text(child)).strip().strip("：:")
-            if label not in empty_interface_labels:
-                continue
-            j = i + 1
-            while j < len(body_children):
-                current = body_children[j]
-                if current.tag != f"{_W}p" or _para_text(current).strip():
-                    break
-                j += 1
-            if j < len(body_children):
-                following = body_children[j]
-                if following.tag == f"{_W}p" and _heading_depth(following) > 0:
-                    empty_heading_ranges.append((i, j))
-        for start, end in reversed(empty_heading_ranges):
-            for current in reversed(body_children[start:end]):
-                parent = current.getparent()
-                if parent is not None:
-                    parent.remove(current)
-                    stats["para_deleted"] += 1
-
-        # 源文档章节号不是目标模板结构。仅剥离接口原文块中“5 大型……”这类
-        # 标题式行首号，正文内部的“1）/2）”枚举保持不变。
-        source_number_pattern = re.compile(r"^\s*\d+\s+(?=(?:小型|大型).*(?:外形|接口|节点))")
-        source_heading_pattern = re.compile(r"^(?:小型|大型).*(?:外形|接口|节点).*(?:要求|如下)")
-        for child in list(body):
-            if child.tag != f"{_W}p" or _heading_depth(child) > 0:
-                continue
-            full_text = _para_text(child)
-            cleaned = source_number_pattern.sub("", full_text, count=1)
-            changed = cleaned != full_text
-            if changed:
-                text_nodes = child.findall(f".//{_W}t")
-                if text_nodes:
-                    text_nodes[0].text = cleaned
-                    for node in text_nodes[1:]:
-                        node.text = ""
-            if source_heading_pattern.search(cleaned):
-                p_pr = child.find(f"{_W}pPr")
-                if p_pr is not None:
-                    for num_pr in list(p_pr.findall(f"{_W}numPr")):
-                        p_pr.remove(num_pr)
-                        changed = True
-            if changed:
-                stats["source_numbers_stripped"] = stats.get("source_numbers_stripped", 0) + 1
 
     # 接口尺寸下的安装方式、安装尺寸、外形尺寸、端接形式以及互换性是模板
     # 中真实存在的子章节。必须保留 Heading/outlineLvl 和模板自己的 numPr，
@@ -1349,16 +1273,9 @@ def clean_doc_xml(
             stats["landscape_cleared"] = removed_sects
 
     # ── 步骤5：图片段落强制居中 ────────────────────────────────────────────
-    _DML = "http://schemas.openxmlformats.org/drawingml/2006/main"
-    _PIC = "http://schemas.openxmlformats.org/drawingml/2006/picture"
     img_centered = 0
     for p in root.findall(f".//{_W}p"):
-        has_img = (
-            p.find(f".//{_W}drawing") is not None or
-            p.find(f".//{{{_DML}}}blip") is not None or
-            p.find(f".//{{{_PIC}}}pic") is not None
-        )
-        if not has_img:
+        if not normalize_image_paragraph(p):
             continue
         pPr = p.find(f"{_W}pPr")
         if pPr is None:
@@ -1372,8 +1289,7 @@ def clean_doc_xml(
     if img_centered:
         stats["img_centered"] = img_centered
 
-    # ── 步骤6：表格列宽等比缩放（超 A4 竖版可用宽 9638 twip）──────────────
-    PAGE_W = 9638
+    # ── 步骤6：超宽表格按所在节的可用宽度等比缩放 ──────────────────────
     rescaled = 0
     for tbl in root.findall(f".//{_W}tbl"):
         grid = tbl.find(f"{_W}tblGrid")
@@ -1383,24 +1299,13 @@ def clean_doc_xml(
         if not cols:
             continue
         total_w = sum(int(c.get(f"{_W}w") or 0) for c in cols)
-        if total_w <= PAGE_W or total_w == 0:
+        page_width = available_page_width(tbl)
+        if not page_width or total_w <= page_width or total_w == 0:
             continue
-        ratio = PAGE_W / total_w
-        for c in cols:
-            c.set(f"{_W}w", str(int(int(c.get(f"{_W}w") or 0) * ratio)))
-        for tc in tbl.findall(f".//{_W}tc"):
-            tcPr = tc.find(f"{_W}tcPr")
-            if tcPr is None:
-                continue
-            tcW = tcPr.find(f"{_W}tcW")
-            if tcW is not None and tcW.get(f"{_W}type", "dxa") in ("dxa", ""):
-                tcW.set(f"{_W}w", str(int(int(tcW.get(f"{_W}w") or 0) * ratio)))
-        tblPr = tbl.find(f"{_W}tblPr")
-        if tblPr is not None:
-            tblW = tblPr.find(f"{_W}tblW")
-            if tblW is not None:
-                tblW.set(f"{_W}w", str(PAGE_W))
-                tblW.set(f"{_W}type", "dxa")
+        normalize_table_width(
+            tbl, page_width,
+            alignment=_table_alignment(tbl), indent=_table_indent(tbl),
+        )
         rescaled += 1
     if rescaled:
         stats["table_rescaled"] = rescaled
@@ -1418,6 +1323,7 @@ def clean_doc_xml(
     # Final chapter prose is controlled as 宋体五号 while headings, captions,
     # cover/front matter and table-specific typography remain untouched.
     _normalize_body_text_formatting(body, stats)
+    _keep_figure_captions_with_images(body, stats)
 
     return (
         etree.tostring(root, xml_declaration=True,

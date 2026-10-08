@@ -20,7 +20,7 @@ services:
       JTB_PORT: 18130
       JTB_MAX_UPLOAD_MB: "100"
       JTB_MAX_CONCURRENT_JOBS: "1"
-      # LLM 凭据由 .env 注入；这里仅声明运行参数，凭据不写进镜像。
+      # Compose 从 .env 注入凭据；当前 Dockerfile 也包含该私有文件以支持离线部署。
       MODEL_GENERATE_PATH: opi-maas/v1/chat/completions
       MODEL_APP_ID_HEADER: App-Id
       MODEL_API_KEY_HEADER: Api-Key

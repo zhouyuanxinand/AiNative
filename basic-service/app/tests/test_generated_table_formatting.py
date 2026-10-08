@@ -1,4 +1,5 @@
 """Imported requirement tables share the taskbook's visible table geometry."""
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -34,6 +35,20 @@ def _grid_widths(table):
     return [column.w.twips for column in table._tbl.tblGrid.gridCol_lst]
 
 
+def _table_xml_without_typography(table):
+    """Compare all content/layout while allowing the universal font rule."""
+    root = deepcopy(table._tbl)
+    for properties in root.iter(qn("w:rPr")):
+        for tag in ("rFonts", "sz", "szCs"):
+            for node in list(properties.findall(qn(f"w:{tag}"))):
+                properties.remove(node)
+    for tag in ("rPr", "pPr"):
+        for node in list(root.iter(qn(f"w:{tag}"))):
+            if not len(node) and not node.attrib:
+                node.getparent().remove(node)
+    return root.xml
+
+
 def _save_and_process(document, tmp_path):
     output = tmp_path / "taskbook.docx"
     document.save(output)
@@ -48,7 +63,7 @@ def test_imported_table_and_indicator_keep_column_ratios_at_same_body_width(tmp_
     section.page_width = Twips(12000)
     section.left_margin = section.right_margin = Twips(2400)
     cover = _add_table(document, ["签名", "日期"], (2000, 2000))
-    cover_xml = cover._tbl.xml
+    cover_xml = _table_xml_without_typography(cover)
     document.add_heading("技术要求", 1)
     headers = INDICATOR_HEADERS if len(indicator_widths) == 4 else [*INDICATOR_HEADERS, "补充说明"]
     _add_table(document, headers, indicator_widths)
@@ -66,12 +81,12 @@ def test_imported_table_and_indicator_keep_column_ratios_at_same_body_width(tmp_
         cell._tc.tcPr.find(qn("w:tcW")).set(qn("w:type"), "pct")
     nested = imported.cell(1, 1).add_table(rows=2, cols=2)
     nested.columns[0].width = nested.columns[1].width = Twips(300)
-    nested_xml = nested._tbl.xml
+    nested_xml = _table_xml_without_typography(nested)
     texts = [[cell.text for cell in row.cells] for row in imported.rows]
 
     result = _save_and_process(document, tmp_path)
 
-    assert result.tables[0]._tbl.xml == cover_xml
+    assert _table_xml_without_typography(result.tables[0]) == cover_xml
     indicator, imported = result.tables[1:]
     expected = ([1200, 2400, 1800, 1800] if len(indicator_widths) == 4
                 else [1200, 1200, 2400, 1200, 1200])
@@ -85,7 +100,7 @@ def test_imported_table_and_indicator_keep_column_ratios_at_same_body_width(tmp_
     assert imported.cell(2, 0)._tc.tcPr.find(qn("w:gridSpan")).get(qn("w:val")) == "2"
     assert imported.cell(2, 0).width.twips == 7200
     assert imported.rows[1].height.twips == 420
-    assert imported.cell(1, 1).tables[0]._tbl.xml == nested_xml
+    assert _table_xml_without_typography(imported.cell(1, 1).tables[0]) == nested_xml
     assert imported._tbl.tblPr.find(qn("w:tblpPr")) is None
 
 

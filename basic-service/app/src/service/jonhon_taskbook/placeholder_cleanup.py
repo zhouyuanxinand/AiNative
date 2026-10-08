@@ -15,6 +15,7 @@ from lxml import etree
 
 from .config import W
 from .docx_io import fill_cell, get_cell_text, get_para_text, set_para_text
+from .renderer.table_style_engine import normalize_table_typography
 
 NO_VALUE_MARKER = "/"
 DESIGNER_FILL = "无"
@@ -59,6 +60,7 @@ def _belongs_to_source_table(element, source_tables: set) -> bool:
 def final_placeholder_sweep(root, *, source_table_signatures=()) -> int:
     """Remove unresolved display placeholders without inventing facts."""
     changed = 0
+    changed_tables = set()
     source_tables = {
         table for table in root.findall(f".//{{{W}}}tbl")
         if _table_signature(table) in source_table_signatures
@@ -66,14 +68,14 @@ def final_placeholder_sweep(root, *, source_table_signatures=()) -> int:
     for para in list(root.findall(f".//{{{W}}}p")):
         if _belongs_to_source_table(para, source_tables):
             continue
+        before = changed
         text = get_para_text(para)
         stripped = text.strip()
         replaced = _replace_unresolved_value_placeholder(text)
         if replaced != text:
             set_para_text(para, replaced)
             changed += 1
-            continue
-        if stripped in {"……", "..."} or re.fullmatch(r"\.{4,}", stripped):
+        elif stripped in {"……", "..."} or re.fullmatch(r"\.{4,}", stripped):
             set_para_text(para, DESIGNER_FILL)
             changed += 1
         elif stripped.endswith("……") and len(stripped) < 40:
@@ -92,10 +94,13 @@ def final_placeholder_sweep(root, *, source_table_signatures=()) -> int:
         ):
             set_para_text(para, DESIGNER_FILL)
             changed += 1
+        if changed != before:
+            changed_tables.update(para.iterancestors(f"{{{W}}}tbl"))
 
     for cell in root.findall(f".//{{{W}}}tc"):
         if _belongs_to_source_table(cell, source_tables):
             continue
+        before = changed
         text = get_cell_text(cell)
         replaced = _replace_unresolved_value_placeholder(text)
         if replaced != text:
@@ -107,6 +112,12 @@ def final_placeholder_sweep(root, *, source_table_signatures=()) -> int:
         elif re.search(r"20[xX]{2}", text) or "XX号" in text:
             fill_cell(cell, BUDGET_FILL)
             changed += 1
+        if changed != before:
+            changed_tables.update(cell.iterancestors(f"{{{W}}}tbl"))
+    # This sweep runs after postprocess in production. Replacement runs must
+    # retain the shared table font contract, including newly emptied cells.
+    for table in changed_tables:
+        normalize_table_typography(table)
     return changed
 
 

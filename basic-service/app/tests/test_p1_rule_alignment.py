@@ -233,8 +233,8 @@ class P1RuleAlignmentTests(unittest.TestCase):
         self.assertEqual("宋体", rendered_body.runs[0]._r.rPr.rFonts.get(qn("w:eastAsia")))
         self.assertAlmostEqual(12.0, rendered_caption.runs[0].font.size.pt)
         self.assertEqual("黑体", rendered_caption.runs[0]._r.rPr.rFonts.get(qn("w:eastAsia")))
-        self.assertAlmostEqual(9.0, rendered_table_run.font.size.pt)
-        self.assertEqual("仿宋_GB2312", rendered_table_run._r.rPr.rFonts.get(qn("w:eastAsia")))
+        self.assertAlmostEqual(10.5, rendered_table_run.font.size.pt)
+        self.assertEqual("仿宋", rendered_table_run._r.rPr.rFonts.get(qn("w:eastAsia")))
 
     def test_italic_annotation_is_once_per_nearest_chapter_heading(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

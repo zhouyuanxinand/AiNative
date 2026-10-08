@@ -33,6 +33,9 @@ from jonhon_taskbook.standard_order import sort_standards
 from jonhon_taskbook.renderer.table_style_engine import apply_table_style
 from jonhon_taskbook.renderer.paragraph_style_engine import normalize_copied_body_paragraph
 from jonhon_taskbook.source_scope import review_reference_source_ids
+from jonhon_taskbook.environmental_prose import (
+    environmental_paragraph, project_environmental_evidence,
+)
 try:
     from jonhon_taskbook.template_scanner import (
         build_semantic_heading_map as _build_semantic_hmap,
@@ -3753,9 +3756,42 @@ def _merge_classified_content(
                     (str(replica_category), block)
                 )
 
-    # 开发逻辑 E39：六性有输入时复制完整原文。性能指标同时构成六性
-    # 证据时沿用相同的 OOXML 搬运路径，不能只保留空的六性模板，或把
-    # 工作温度截成一句而丢失试验条件、格式、表格和图像。
+    # 环境适应性按行/句识别输入证据并写成正文。整表被模型分到环境类
+    # 或同时含有其他六性指标，都不能把无关电性能/寿命指标一并搬入。
+    environment_rule = routing_rules.get("environmental_adaptability", {})
+    if environment_rule.get("target_heading_keywords"):
+        environment_slot = "role:" + str(environment_rule.get("target_role") or "environmental_adaptability")
+        grouped.pop(environment_slot, None)
+        projections = []
+        projected_elements = []
+        seen_environment_texts = set()
+        for block in classification.get("source_blocks", []):
+            if block.get("id") in (protected_block_ids | review_ids):
+                continue
+            index = block.get("body_index")
+            if type(index) is not int or not 0 <= index < len(tech.element.body):
+                continue
+            source_element = tech.element.body[index]
+            for projection in project_environmental_evidence(block, source_element):
+                projections.append(projection)
+                normalized = re.sub(r"\s+", "", projection["text"])
+                if normalized in seen_environment_texts:
+                    continue
+                seen_environment_texts.add(normalized)
+                projected_elements.append({
+                    "kind": "paragraph", "text": projection["text"],
+                    "element": environmental_paragraph(projection, block, source_element),
+                    "source_id": block["id"], **_source_module_meta(block),
+                })
+        if projections:
+            content[environment_slot] = {
+                "lines": [], "tables": [], "images": [], "image_warnings": [],
+                "ordered_elements": projected_elements, "replace_existing": True,
+                "projection_audit": projections,
+                "projection_source_ids": list(dict.fromkeys(item["source_id"] for item in projections)),
+            }
+
+    # 其他六性继续沿用完整原文和 OOXML 搬运路径。
     from jonhon_taskbook.development_process_policy import (
         quality_section_evidence_rules,
     )
@@ -3767,6 +3803,7 @@ def _merge_classified_content(
             if category in routing_rules
         ]
         quality_projection_targets.update(target_categories)
+        target_categories = [category for category in target_categories if category != "environmental_adaptability"]
         signals = [str(signal).casefold() for signal in evidence_rule["indicator_signals"]]
         for assignment in classification.get("classifications", []):
             if assignment.get("category") != "performance_indicator":
@@ -3814,6 +3851,8 @@ def _merge_classified_content(
             continue
         source_category = str(projection.get("source_category", "")).strip()
         target_category = str(projection.get("target_category", "")).strip()
+        if target_category == "environmental_adaptability":
+            continue
         if source_category == "performance_indicator" and target_category in quality_projection_targets:
             # 六性已由统一完整原文路径处理，不再叠加旧工作温度片段。
             continue
@@ -4399,7 +4438,7 @@ def fill(
     tech = Document(tech_path)
     spec = Document(spec_path)
     tpl  = Document(src_path)
-    from .cover_fields import apply_cover_phase, normalize_cover_phase
+    from .cover_fields import apply_cover_phase, fill_cover_fields, normalize_cover_phase
 
     cover_phase = normalize_cover_phase(cover_phase)
     cover_phase_applied = apply_cover_phase(tpl, cover_phase)
@@ -5016,54 +5055,10 @@ def fill(
         except Exception as _img_warn_err:
             print(f"   ⚠ 图片决策写出失败: {_img_warn_err}")
 
-    # 封面字段替换
+    # 按模板标签填封面，换行与底部落款布局由同一处处理。
+    cover_layout = fill_cover_fields(tpl, product, user)
+    print(f"封面布局: {cover_layout}")
     for p in tpl.paragraphs:
-        t2 = _txt(p)
-        normalized_t2 = re.sub(r"\s+", "", t2)
-        full_text = "".join(r.text or "" for r in p.runs)
-        if re.match(r"^名称[:：]", normalized_t2):
-            if p.runs:
-                p.runs[0].text = "名    称"
-                if len(p.runs) >= 2:
-                    p.runs[1].text = "："
-                if len(p.runs) >= 3:
-                    p.runs[2].text = product
-                    for r in p.runs[3:]:
-                        r.text = ""
-                else:
-                    p.add_run("：")
-                    p.add_run(product)
-            else:
-                p.add_run(f"名    称：{product}")
-        elif re.match(r"^使用单位[:：]", normalized_t2):
-            if p.runs:
-                p.runs[0].text = "使用单位："
-                if len(p.runs) >= 2:
-                    p.runs[1].text = user
-                    for r in p.runs[2:]:
-                        r.text = ""
-                else:
-                    p.add_run(user)
-            else:
-                p.add_run(f"使用单位：{user}")
-        elif ("名称" in t2 or "型号" in t2) and len(t2) <= 24 and ("（型号名称）" not in t2 and "(型号名称)" not in t2):
-            if product and not any(product in (r.text or "") for r in p.runs):
-                for r in p.runs:
-                    if not (r.text or "").strip():
-                        r.text = product
-                        break
-        if re.match(r"^20\s+年\s+月", full_text.strip()):
-            from datetime import datetime
-            now = datetime.now()
-            date_str = f"{now.year}年{now.month}月{now.day}日"
-            # 把第一个 run 写入日期，其余 run 清空
-            runs = p.runs
-            if runs:
-                runs[0].text = date_str
-                for r in runs[1:]:
-                    r.text = ""
-            continue  # 跳过下面的逐 run 处理
-
         for r in p.runs:
             tx = r.text or ""
             if "（型号名称）" in tx or "(型号名称)" in tx:

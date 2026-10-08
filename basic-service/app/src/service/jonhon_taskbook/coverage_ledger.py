@@ -32,6 +32,7 @@ from .source_scope import (
 )
 from .standard_references import extract_standard_references, is_reference_heading
 from .indicator_identity import canonical_indicator_name
+from .environmental_prose import is_environmental_slot, project_environmental_evidence
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _W = f"{{{W}}}"
@@ -165,6 +166,7 @@ class InputBlock:
     output_evidence_hash: str = ""
     image_caption_order: str = ""
     source_body_index: int = -1
+    output_fragment_evidence: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -763,6 +765,7 @@ def _reset_output_evidence(block: InputBlock) -> None:
     block.output_caption_body_index = -1
     block.output_caption_order = ""
     block.output_evidence_hash = ""
+    block.output_fragment_evidence = []
 
 
 def mark_covered_from_output(ledger: CoverageLedger, out_path: str) -> CoverageLedger:
@@ -1265,6 +1268,116 @@ def mark_exact_fragment_coverage(
     return ledger
 
 
+def _table_requirement_cells(rows: list[list[str]]) -> set[tuple[int, int]]:
+    """Only plain column headings and their serial numbers are presentation."""
+    headings = {"序号", "项目", "指标", "名称", "项目名称", "指标名称", "技术指标",
+                "技术要求", "性能要求", "指标要求", "参数名称", "参数值", "要求"}
+    label_headings = {"序号", "项目", "名称", "项目名称", "指标名称", "参数名称"}
+    serial_columns: set[int] = set()
+    required: set[tuple[int, int]] = set()
+    for row_index, row in enumerate(rows):
+        values = [_coverage_text(str(cell)) for cell in row]
+        if any(cell in label_headings for cell in values):
+            serial_columns.update(i for i, cell in enumerate(values) if cell == "序号")
+            # Thresholds, assessment criteria and adaptation constraints carry
+            # meaning. Their headings need visible evidence alongside values.
+            required.update((row_index, column) for column, cell in enumerate(values)
+                            if cell and cell not in headings)
+            continue
+        required.update((row_index, column) for column, cell in enumerate(values)
+                        if cell and not (column in serial_columns and re.fullmatch(r"\d+[)）.]?", cell)))
+    return required
+
+
+def _environmental_table_evidence(
+    block: InputBlock, rows: list[list[str]], output: _DocumentFacts, claimed: set[int],
+) -> tuple[list[dict], set[tuple[int, int]], list[_BodyNodeEvidence], bool]:
+    """Reproject source cells, crediting only cells preserved in their entirety."""
+    projections = project_environmental_evidence({
+        "id": block.block_id, "source": "tech", "type": "table", "table_rows": rows,
+        "body_index": block.source_body_index, "heading_text": block.source_section,
+    })
+    evidence, nodes = [], []
+    covered_cells: set[tuple[int, int]] = set()
+    local_indices: set[int] = set()
+    for projection in projections:
+        normalized = _coverage_text(projection["text"])
+        node = next((candidate for candidate in output.nodes
+                     if candidate.kind == "paragraph" and candidate.normalized_text == normalized
+                     and is_environmental_slot({"title": candidate.slot})
+                     and candidate.body_index not in claimed | local_indices), None)
+        if node is None:
+            continue
+        coordinate = projection["source_coordinates"]
+        row_index, label_column = coordinate["table_row"], coordinate["label_column"]
+        fragments_by_column: dict[int, list[str]] = {label_column: [projection["source_fragments"][0]]}
+        for column, fragment in zip(coordinate["value_columns"], projection["source_fragments"][1:]):
+            fragments_by_column.setdefault(column, []).append(fragment)
+        cells = {(row_index, column) for column, fragments in fragments_by_column.items()
+                 if _coverage_text("".join(fragments)) == _coverage_text(rows[row_index][column])}
+        for header in projection.get("source_headers", []):
+            header_row, header_column = header["table_row"], header["column"]
+            if _coverage_text(rows[header_row][header_column]) == _coverage_text(header["text"]):
+                cells.add((header_row, header_column))
+        covered_cells.update(cells)
+        local_indices.add(node.body_index)
+        nodes.append(node)
+        record = {
+            "projection_policy": projection["policy"], "source_coordinates": coordinate,
+            "source_fragments": projection["source_fragments"], "source_cells": sorted(cells),
+            "output_body_index": node.body_index, "output_text": node.text,
+        }
+        if projection.get("source_headers"):
+            record["source_headers"] = projection["source_headers"]
+        evidence.append(record)
+    return evidence, covered_cells, nodes, bool(projections)
+
+
+def _table_fact_cells(rows: list[list[str]], fact: dict) -> set[tuple[int, int]]:
+    coordinate = fact.get("source_coordinates") or {}
+    row_index, label_column = coordinate.get("table_row"), coordinate.get("label_column")
+    value_columns = coordinate.get("value_columns")
+    if (type(row_index) is not int or not 0 <= row_index < len(rows)
+            or type(label_column) is not int or not 0 <= label_column < len(rows[row_index])
+            or not isinstance(value_columns, list) or not value_columns
+            or any(type(column) is not int or not 0 <= column < len(rows[row_index])
+                   or column == label_column for column in value_columns)
+            or len(set(value_columns)) != len(value_columns)):
+        return set()
+    if canonical_indicator_name(rows[row_index][label_column]) != canonical_indicator_name(str(fact.get("indicator_name", ""))):
+        return set()
+    value = "；".join(rows[row_index][column] for column in value_columns if rows[row_index][column].strip())
+    if _coverage_text(value) != _coverage_text(str(fact.get("source_value", ""))):
+        return set()
+    return {(row_index, column) for column in [label_column, *value_columns]}
+
+
+_VALUE_EDGE = re.compile(r"[0-9A-Za-zµμΩΩ℃°%‰⁰¹²³⁴⁵⁶⁷⁸⁹次秒分时天年月米克升度伏安欧赫帕牛瓦焦亨法]")
+_VALUE_JOIN = re.compile(r"[0-9A-Za-zµμΩΩ℃°%‰⁰¹²³⁴⁵⁶⁷⁸⁹次秒分时天年月米克升度伏安欧赫帕牛瓦焦亨法.+\-−±≤≥<>＝=/*·^]")
+
+
+def _find_complete_fact(text: str, value: str, start: int = 0) -> int:
+    """Find literal evidence without accepting part of another value/unit.
+
+    Keep all original characters. For example 500次 cannot prove 1500次,
+    -500次 or 500次/s, while a separate occurrence after a clause separator
+    remains eligible for the existing unique-consumption check.
+    """
+    if not value:
+        return -1
+    position = text.find(value, start)
+    while position >= 0:
+        end = position + len(value)
+        extends_left = (position > 0 and _VALUE_JOIN.fullmatch(value[0])
+                        and _VALUE_JOIN.fullmatch(text[position - 1]))
+        extends_right = (end < len(text) and _VALUE_EDGE.fullmatch(value[-1])
+                         and _VALUE_JOIN.fullmatch(text[end]))
+        if not extends_left and not extends_right:
+            return position
+        position = text.find(value, position + 1)
+    return -1
+
+
 def mark_structured_indicator_coverage(
     ledger: CoverageLedger,
     out_path: str,
@@ -1275,20 +1388,21 @@ def mark_structured_indicator_coverage(
     specification value. Pending design confirmation therefore cannot erase
     source coverage. Every credited fact still needs a unique consumption,
     matching source coordinates/text and its identified visible user row.
+    A table projected partly into environmental prose is complete only when
+    those exact paragraphs and the user rows jointly preserve every source
+    requirement cell, including non-environmental rows and residual conditions.
     """
     audit_path = Path(out_path).with_suffix(".indicator_audit.json")
     try:
         audit = json.loads(audit_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, TypeError):
-        return ledger
+        audit = {}
     if not isinstance(audit, dict):
-        return ledger
+        audit = {}
     source_facts = [item for item in audit.get("input_indicator_facts", []) or []
                     if isinstance(item, dict)]
     decisions = [item for item in audit.get("comparison_decisions", []) or []
                  if isinstance(item, dict)]
-    if not source_facts or not decisions:
-        return ledger
 
     classification_blocks: dict[str, dict] = {}
     for suffix in (".requirement_classification.json", ".effective_requirement_classification.json"):
@@ -1326,19 +1440,33 @@ def mark_structured_indicator_coverage(
         for fact_id in decision.get("user_fact_ids", []) or []:
             consumers.setdefault(str(fact_id), []).append(decision)
 
-    audit_hash = hashlib.sha256(audit_path.read_bytes()).hexdigest()
+    audit_hash = hashlib.sha256(audit_path.read_bytes()).hexdigest() if audit_path.is_file() else ""
     claimed_facts: set[str] = set()
     claimed_spans: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    claimed_prose = {index for block in ledger.blocks if block.covered and block.block_type != "table"
+                     for index in block.output_body_indices}
     for block in ledger.blocks:
-        if block.covered or block.block_type in {"image", "table"} or block.source_body_index < 0:
+        if block.covered or block.block_type == "image" or block.source_body_index < 0:
             continue
         original = _coverage_text(block.raw_text)
+        table_rows = json.loads(block.raw_text) if block.block_type == "table" else None
         candidates = [fact for fact in source_facts if
                       (fact.get("source_coordinates") or {}).get("body_index") == block.source_body_index]
         evidence: list[dict] = []
         local_spans: dict[tuple[int, int], list[tuple[int, int]]] = {}
         source_spans: list[tuple[int, int]] = []
         nodes: list[_BodyNodeEvidence] = []
+        covered_cells: set[tuple[int, int]] = set()
+        if table_rows is not None:
+            evidence, covered_cells, nodes, has_projection = _environmental_table_evidence(
+                block, table_rows, output_facts, claimed_prose,
+            )
+            if not has_projection:
+                continue
+            original = _coverage_text("".join(cell for row in table_rows for cell in row))
+            candidates = [fact for fact in candidates
+                          if not (cells := _table_fact_cells(table_rows, fact)) or not cells.issubset(covered_cells)]
+        verified_facts = 0
         for fact in candidates:
             fact_id = str(fact.get("fact_id", ""))
             value = _coverage_text(str(fact.get("source_value", "")))
@@ -1347,12 +1475,17 @@ def mark_structured_indicator_coverage(
                     or len(facts_by_id.get(fact_id, [])) != 1 or len(consumers.get(fact_id, [])) != 1):
                 break
             coordinate = fact.get("source_coordinates") or {}
-            start, end = coordinate.get("start"), coordinate.get("end")
-            if start is None and end is None and value == original:
-                start, end = 0, len(block.raw_text)
-            if (type(start) is not int or type(end) is not int or not 0 <= start < end <= len(block.raw_text)
-                    or _coverage_text(block.raw_text[start:end]) != value):
-                break
+            if table_rows is not None:
+                fact_cells = _table_fact_cells(table_rows, fact)
+                if not fact_cells:
+                    break
+            else:
+                start, end = coordinate.get("start"), coordinate.get("end")
+                if start is None and end is None and value == original:
+                    start, end = 0, len(block.raw_text)
+                if (type(start) is not int or type(end) is not int or not 0 <= start < end <= len(block.raw_text)
+                        or _coverage_text(block.raw_text[start:end]) != value):
+                    break
             decision = consumers[fact_id][0]
             if canonical_indicator_name(str(decision.get("indicator_name", ""))) != identity:
                 break
@@ -1367,7 +1500,7 @@ def mark_structured_indicator_coverage(
                     break
             user_requirement = _coverage_text(str(decision.get("user_requirement", "")))
             matching_rows = output_rows.get(identity, [])
-            if len(matching_rows) != 1 or value not in user_requirement:
+            if len(matching_rows) != 1 or _find_complete_fact(user_requirement, value) < 0:
                 break
             node, row_index, user_cell = matching_rows[0]
             display_value = value
@@ -1383,45 +1516,58 @@ def mark_structured_indicator_coverage(
                 break
             row_key = (node.body_index, row_index)
             occupied = claimed_spans.get(row_key, []) + local_spans.get(row_key, [])
-            output_start = actual_user.find(display_value)
+            output_start = _find_complete_fact(actual_user, display_value)
             while output_start >= 0 and any(output_start < b and output_start + len(display_value) > a for a, b in occupied):
-                output_start = actual_user.find(display_value, output_start + 1)
+                output_start = _find_complete_fact(actual_user, display_value, output_start + 1)
             if output_start < 0:
                 break
             local_spans.setdefault(row_key, []).append((output_start, output_start + len(display_value)))
-            source_spans.append((start, end))
+            if table_rows is not None:
+                covered_cells.update(fact_cells)
+            else:
+                source_spans.append((start, end))
             nodes.append(node)
+            verified_facts += 1
             evidence.append({
                 "fact_id": fact_id, "indicator_identity": identity,
                 "source_coordinates": coordinate, "source_ids": source_ids,
                 "source_text": value, "display_text": display_value, "output_body_index": node.body_index,
                 "output_row_index": row_index, "output_user_cell": user_cell,
             })
-        if not candidates or len(evidence) != len(candidates):
+        if verified_facts != len(candidates) or (not candidates and table_rows is None):
             continue
-        cursor = 0
-        for start, end in sorted(source_spans):
-            # Separators may move between rows; no substantive source words,
-            # conditions or numbers may disappear between extracted facts.
-            if start < cursor or re.search(r"[^\s；;。]", block.raw_text[cursor:start]):
-                break
-            cursor = end
+        if table_rows is not None:
+            complete = _table_requirement_cells(table_rows).issubset(covered_cells)
         else:
-            if not re.search(r"[^\s；;。]", block.raw_text[cursor:]):
-                claimed_facts.update(item["fact_id"] for item in evidence)
-                for key, spans in local_spans.items():
-                    claimed_spans.setdefault(key, []).extend(spans)
-                block.covered = True
-                block.action = "structured_indicator_exact_fact"
-                block.assigned_section = " / ".join(dict.fromkeys(node.slot for node in nodes if node.slot)) or "技术指标（结构化表格）"
-                block.confidence = 1.0
-                block.output_slot = block.assigned_section
-                block.output_body_indices = list(dict.fromkeys(node.body_index for node in nodes))
-                block.output_evidence_hash = hashlib.sha256(json.dumps({
-                    "source_id": block.block_id, "source_body_index": block.source_body_index,
-                    "source_text": original, "facts": evidence,
-                    "indicator_audit_sha256": audit_hash,
-                }, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+            cursor = 0
+            complete = False
+            for start, end in sorted(source_spans):
+                # Separators may move between rows; no substantive source words,
+                # conditions or numbers may disappear between extracted facts.
+                if start < cursor or re.search(r"[^\s；;。]", block.raw_text[cursor:start]):
+                    break
+                cursor = end
+            else:
+                complete = not re.search(r"[^\s；;。]", block.raw_text[cursor:])
+        if not complete:
+            continue
+        claimed_facts.update(item["fact_id"] for item in evidence if item.get("fact_id"))
+        claimed_prose.update(node.body_index for node in nodes if node.kind == "paragraph")
+        for key, spans in local_spans.items():
+            claimed_spans.setdefault(key, []).extend(spans)
+        block.covered = True
+        block.action = "structured_table_cell_evidence" if table_rows is not None else "structured_indicator_exact_fact"
+        block.assigned_section = " / ".join(dict.fromkeys(node.slot for node in nodes if node.slot)) or "技术指标（结构化表格）"
+        block.confidence = 1.0
+        block.output_slot = block.assigned_section
+        block.output_body_indices = list(dict.fromkeys(node.body_index for node in nodes))
+        if table_rows is not None:
+            block.output_fragment_evidence = evidence
+        block.output_evidence_hash = hashlib.sha256(json.dumps({
+            "source_id": block.block_id, "source_body_index": block.source_body_index,
+            "source_text": original, "facts": evidence,
+            "indicator_audit_sha256": audit_hash,
+        }, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
     return ledger
 
 # ── 标记工具（供 extract_sections 调用） ─────────────────────────────────────

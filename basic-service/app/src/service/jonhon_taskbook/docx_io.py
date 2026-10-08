@@ -5,6 +5,10 @@ from typing import Dict, List, Optional, Tuple
 
 from lxml import etree
 
+from .renderer.table_style_engine import (
+    DEFAULT_FONT, DEFAULT_SIZE_HALF_POINTS, set_run_typography,
+)
+
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 MANUAL_FILL_MARKER = "【人工填写】"
 MANUAL_FILL_COLOR = "FF0000"
@@ -66,17 +70,12 @@ def fill_cell_with_manual_marker(
 
     marker_run = etree.SubElement(paragraph, f"{{{W}}}r")
     marker_props = etree.SubElement(marker_run, f"{{{W}}}rPr")
-    fonts = etree.SubElement(marker_props, f"{{{W}}}rFonts")
-    for key in ("ascii", "hAnsi", "eastAsia", "cs"):
-        fonts.set(f"{{{W}}}{key}", "仿宋_GB2312")
+    set_run_typography(marker_run, DEFAULT_FONT, DEFAULT_SIZE_HALF_POINTS)
     color = etree.SubElement(marker_props, f"{{{W}}}color")
     color.set(f"{{{W}}}val", MANUAL_FILL_COLOR)
     for key in ("i", "iCs"):
         italic = etree.SubElement(marker_props, f"{{{W}}}{key}")
         italic.set(f"{{{W}}}val", "0")
-    for key in ("sz", "szCs"):
-        size = etree.SubElement(marker_props, f"{{{W}}}{key}")
-        size.set(f"{{{W}}}val", "21")
     marker_text = etree.SubElement(marker_run, f"{{{W}}}t")
     marker_text.text = marker
 

@@ -18,7 +18,9 @@ from docx.oxml.ns import qn
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _W = f"{{{W}}}"
 
-DEFAULT_FONT = "仿宋_GB2312"
+# Use the installed Windows family (FangSong), not the legacy GB2312 name
+# that Word substitutes with a different font when that family is absent.
+DEFAULT_FONT = "仿宋"
 DEFAULT_SIZE_HALF_POINTS = 21  # 10.5pt
 THICK_BORDER_SIZE = 12  # OOXML eighth-points: 1.5pt
 THIN_BORDER_SIZE = 4  # OOXML eighth-points: 0.5pt
@@ -83,6 +85,10 @@ def set_run_typography(run, font_name: str, size_half_points: int) -> None:
     if rpr is None:
         rpr = OxmlElement("w:rPr")
         run.insert(0, rpr)
+    _set_typography_properties(rpr, font_name, size_half_points)
+
+
+def _set_typography_properties(rpr, font_name: str, size_half_points: int) -> None:
     fonts = rpr.find(f"{_W}rFonts")
     if fonts is None:
         fonts = OxmlElement("w:rFonts")
@@ -119,9 +125,31 @@ def _clear_run_italics(run) -> None:
 
 def normalize_imported_table_typography(table) -> None:
     """Style imported text while retaining italic evidence for the B57 rule."""
-    for run in _table_xml(table).findall(f".//{_W}r"):
-        if run.find(f".//{_W}t") is not None:
-            set_run_typography(run, DEFAULT_FONT, DEFAULT_SIZE_HALF_POINTS)
+    normalize_table_typography(table)
+
+
+def normalize_table_typography(
+    table,
+    *,
+    font_name: str = DEFAULT_FONT,
+    size_half_points: int = DEFAULT_SIZE_HALF_POINTS,
+) -> None:
+    """Set table text and empty-cell defaults without changing content/layout.
+
+    Walk XML descendants so nested tables, hyperlinks and field results receive
+    the same typography. Preserve emphasis, vertical alignment and equations.
+    Paragraph-mark properties also prevent empty cells inheriting large fonts.
+    """
+    table_xml = _table_xml(table)
+    for paragraph in table_xml.findall(f".//{_W}p"):
+        ppr = paragraph.find(f"{_W}pPr")
+        if ppr is None:
+            ppr = OxmlElement("w:pPr")
+            paragraph.insert(0, ppr)
+        rpr = _ensure_child(ppr, f"{_W}rPr")
+        _set_typography_properties(rpr, font_name, size_half_points)
+    for run in table_xml.findall(f".//{_W}r"):
+        set_run_typography(run, font_name, size_half_points)
 
 
 def _normalize_paragraph_spacing(paragraph) -> None:
@@ -518,9 +546,11 @@ def apply_table_style(
     if table_kind in {"indicator", "failure"}:
         normalize_table_borders(table_xml)
         normalize_table_header(table_xml)
+    normalize_table_typography(
+        table_xml, font_name=font_name, size_half_points=size_half_points,
+    )
     for cell in cells:
         for paragraph in _iter_paragraphs(cell):
             _normalize_paragraph_spacing(paragraph)
         for run in _iter_runs(cell):
-            set_run_typography(run, font_name, size_half_points)
             _clear_run_italics(run)

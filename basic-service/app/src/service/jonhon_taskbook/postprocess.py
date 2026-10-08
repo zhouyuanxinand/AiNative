@@ -24,6 +24,7 @@ from jonhon_taskbook.renderer.table_style_engine import (
     available_page_width,
     normalize_table_borders,
     normalize_table_header,
+    normalize_table_typography,
     normalize_table_width,
 )
 
@@ -291,41 +292,20 @@ def _indicator_table_has_values(table) -> bool:
 def _normalize_indicator_table_formatting(body, stats: dict) -> None:
     """Normalize the generated indicator table as one visual component.
 
-    Source runs are intentionally copied byte-for-byte everywhere else.  The
-    indicator table is different: it is a controlled structured rendering
-    surface, so source/template review styling (blue, italic, mixed fonts and
-    sizes) must not leak into the deliverable.  The dominant size/font already
-    present in the table is used as the template-native baseline; no business
-    text is changed.
+    The indicator table is a controlled structured rendering surface, so
+    source/template review styling (blue, italic, mixed fonts and sizes) must
+    not leak into the deliverable. No business text is changed.
     """
     tables = [tbl for tbl in body.iter(f"{_W}tbl") if _is_indicator_table(tbl)]
     if not tables:
         return
     normalized_runs = 0
     for table in tables:
+        normalize_table_typography(table)
         runs = [
             run for run in table.findall(f".//{_W}r")
             if run.findall(f".//{_W}t")
         ]
-        sizes: list[str] = []
-        fonts: list[str] = []
-        for run in runs:
-            rpr = run.find(f"{_W}rPr")
-            if rpr is None:
-                continue
-            sz = rpr.find(f"{_W}sz")
-            if sz is not None and sz.get(f"{_W}val"):
-                sizes.append(str(sz.get(f"{_W}val")))
-            rfonts = rpr.find(f"{_W}rFonts")
-            if rfonts is not None:
-                for key in ("eastAsia", "ascii", "hAnsi", "cs"):
-                    value = rfonts.get(f"{_W}{key}")
-                    if value:
-                        fonts.append(value)
-        # 21 half-points = 10.5pt, the normal body size of the controlled
-        # templates.  Prefer the most common existing template value.
-        size = max(set(sizes), key=sizes.count) if sizes else "21"
-        font = max(set(fonts), key=fonts.count) if fonts else "仿宋_GB2312"
         for run in runs:
             rpr = run.find(f"{_W}rPr")
             if rpr is None:
@@ -338,20 +318,6 @@ def _normalize_indicator_table_formatting(body, stats: dict) -> None:
             if color is None:
                 color = etree.SubElement(rpr, f"{_W}color")
             color.set(f"{_W}val", "000000")
-            rfonts = rpr.find(f"{_W}rFonts")
-            if rfonts is None:
-                rfonts = etree.Element(f"{_W}rFonts")
-                rpr.insert(0, rfonts)
-            for key in ("ascii", "hAnsi", "eastAsia", "cs"):
-                rfonts.set(f"{_W}{key}", font)
-            sz = rpr.find(f"{_W}sz")
-            if sz is None:
-                sz = etree.SubElement(rpr, f"{_W}sz")
-            sz.set(f"{_W}val", size)
-            sz_cs = rpr.find(f"{_W}szCs")
-            if sz_cs is None:
-                sz_cs = etree.SubElement(rpr, f"{_W}szCs")
-            sz_cs.set(f"{_W}val", size)
             normalized_runs += 1
     if normalized_runs:
         stats["indicator_font_normalized"] = normalized_runs
@@ -383,8 +349,8 @@ def _is_failure_table(element) -> bool:
 def _normalize_controlled_table_formatting(root, stats: dict) -> None:
     """Give chapter data tables one width and header treatment at delivery.
 
-    Imported tables retain their cell content, proportions and typography;
-    indicator/failure tables also receive their controlled font and row flow.
+    Imported tables retain their cell content and proportions;
+    indicator/failure tables also receive their controlled row flow.
     Front matter, nested tables and picture-only layouts are not data tables.
     """
     body = root.find(f".//{_W}body")
@@ -419,30 +385,8 @@ def _normalize_controlled_table_formatting(root, stats: dict) -> None:
             for run in table.findall(f".//{_W}r")
             if run.findall(f".//{_W}t")
         ]
-        sizes: list[str] = []
-        fonts: list[str] = []
-        for run in runs:
-            rpr = run.find(f"{_W}rPr")
-            if rpr is None:
-                continue
-            size = rpr.find(f"{_W}sz")
-            if size is not None and size.get(f"{_W}val"):
-                sizes.append(str(size.get(f"{_W}val")))
-            rfonts = rpr.find(f"{_W}rFonts")
-            if rfonts is not None:
-                for key in ("eastAsia", "ascii", "hAnsi", "cs"):
-                    value = rfonts.get(f"{_W}{key}")
-                    if value:
-                        fonts.append(str(value))
-        size = int(max(set(sizes), key=sizes.count)) if sizes else 21
-        font = max(set(fonts), key=fonts.count) if fonts else DEFAULT_FONT
         table_kind = "indicator" if _is_indicator_table(table) else "failure"
-        apply_table_style(
-            table,
-            table_kind,
-            font_name=font,
-            size_half_points=size,
-        )
+        apply_table_style(table, table_kind)
         if page_width:
             normalize_table_width(table, page_width, inline=True)
         normalized += len(runs)
@@ -451,6 +395,36 @@ def _normalize_controlled_table_formatting(root, stats: dict) -> None:
         stats["controlled_table_layout_normalized"] = normalized
     if layouts:
         stats["body_table_layout_normalized"] = layouts
+
+
+def _normalize_all_table_typography(root) -> int:
+    """Apply the universal font rule independently of table layout/routing."""
+    tables = root.findall(f".//{_W}tbl")
+    for table in tables:
+        # The common renderer already includes descendants, including nested
+        # tables. Process each table tree once without changing its geometry.
+        if not any(parent.tag == f"{_W}tbl" for parent in table.iterancestors()):
+            normalize_table_typography(table)
+    return len(tables)
+
+
+def _ensure_table_font_definition(data: bytes) -> bytes:
+    """Declare the installed FangSong family without changing other fonts."""
+    root = etree.fromstring(data)
+    font = next(
+        (node for node in root.findall(f"{_W}font")
+         if node.get(f"{_W}name") == DEFAULT_FONT),
+        None,
+    )
+    if font is None:
+        font = etree.SubElement(root, f"{_W}font")
+        font.set(f"{_W}name", DEFAULT_FONT)
+    alias = font.find(f"{_W}altName")
+    if alias is None:
+        alias = etree.Element(f"{_W}altName")
+        font.insert(0, alias)
+    alias.set(f"{_W}val", "FangSong")
+    return etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
 
 
 def _table_dxa_width(table) -> int:
@@ -1318,6 +1292,7 @@ def clean_doc_xml(
     # Run after width scaling and all paragraph cleanup so a template table
     # cannot reintroduce mixed fonts in the final deliverable.
     _normalize_controlled_table_formatting(root, stats)
+    stats["table_typography_normalized"] = _normalize_all_table_typography(root)
 
     # Source paragraphs can carry direct 小四 formatting into the template.
     # Final chapter prose is controlled as 宋体五号 while headings, captions,
@@ -1394,12 +1369,28 @@ def postprocess(
                             selected_product_domain=selected_product_domain,
                         )
                         stats.update(clean_stats)
+                    elif name == "word/fontTable.xml":
+                        data = _ensure_table_font_definition(data)
                     elif name.startswith("word/header") and name.endswith(".xml"):
                         data, normalized = _normalize_header_identity_xml(data)
                         stats["header_identity_paragraphs_normalized"] = (
                             stats.get("header_identity_paragraphs_normalized", 0)
                             + normalized
                         )
+                    if (
+                        name.startswith(("word/header", "word/footer"))
+                        and name.endswith(".xml")
+                    ) or name in {"word/footnotes.xml", "word/endnotes.xml"}:
+                        story = etree.fromstring(data)
+                        normalized = _normalize_all_table_typography(story)
+                        if normalized:
+                            data = etree.tostring(
+                                story, xml_declaration=True,
+                                encoding="UTF-8", standalone=True,
+                            )
+                            stats["table_typography_normalized"] = (
+                                stats.get("table_typography_normalized", 0) + normalized
+                            )
                     data, privacy_stats = _scrub_privacy_xml_part(name, data)
                     for key, value in privacy_stats.items():
                         stats[key] = stats.get(key, 0) + value

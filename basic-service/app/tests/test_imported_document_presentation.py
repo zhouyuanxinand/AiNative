@@ -57,7 +57,7 @@ def _route(source, tmp_path, title):
 
 def test_copied_table_clears_source_theme_fonts_and_sizes(tmp_path):
     source = Document()
-    source.add_heading("环境适应性要求", 1)
+    source.add_heading("工艺要求", 1)
     table = source.add_table(rows=3, cols=2)
     for cell, text in zip([c for row in table.rows for c in row.cells],
                           ["项目", "指标", "工作温度", "0℃～40℃", "工作介质", "PG25 丙二醇水溶液"]):
@@ -70,7 +70,7 @@ def test_copied_table_clears_source_theme_fonts_and_sizes(tmp_path):
         fonts.set(qn("w:eastAsiaTheme"), "majorEastAsia")
         fonts.set(qn("w:asciiTheme"), "majorAscii")
 
-    result, _, _ = _route(source, tmp_path, "环境适应性要求")
+    result, _, _ = _route(source, tmp_path, "工艺要求")
 
     assert [c.text for row in result.tables[0].rows for c in row.cells] == [
         "项目", "指标", "工作温度", "0℃～40℃", "工作介质", "PG25 丙二醇水溶液",
@@ -80,7 +80,7 @@ def test_copied_table_clears_source_theme_fonts_and_sizes(tmp_path):
             for run in cell.paragraphs[0].runs:
                 assert run.font.size.pt == 10.5
                 fonts = run._r.rPr.rFonts
-                assert fonts.get(qn("w:eastAsia")) == "仿宋_GB2312"
+                assert fonts.get(qn("w:eastAsia")) == "仿宋"
                 assert not any(key.endswith("Theme") for key in fonts.attrib)
 
 
@@ -194,7 +194,7 @@ def test_imported_table_preserves_italic_evidence_for_manual_fill_rule(tmp_path,
     rendered = result.tables[0].cell(1, 1).paragraphs[0].runs[0]
     assert rendered._r.rPr.find(qn(f"w:{italic_tag}")).get(qn("w:val")) == "1"
     assert rendered.font.size.pt == 10.5
-    assert rendered.font.name == "仿宋_GB2312"
+    assert rendered.font.name == "仿宋"
     assert result.tables[0].cell(1, 1).text == "冷板清洗后进行目视检查。"
     postprocess(output)
     assert Document(output).paragraphs[0].text == "工艺要求【人工填写】"

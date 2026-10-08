@@ -182,7 +182,7 @@ def test_explicitly_unhidden_image_remains_valid_existing_evidence(tmp_path):
 
 @pytest.mark.parametrize("mutation", ["complete", "changed_threshold", "missing_row", "wrong_slot"])
 def test_low_confidence_table_requires_complete_existing_values_in_target(tmp_path, mutation):
-    """A copied environmental table is evidence; a changed value is not."""
+    """A copied indicator table is evidence; a changed value is not."""
     source = Document()
     source.add_heading("环境性能要求", level=1)
     table = source.add_table(rows=3, cols=2)
@@ -196,7 +196,7 @@ def test_low_confidence_table_requires_complete_existing_values_in_target(tmp_pa
     blocks = extract_source_blocks(str(source_path), "tech")
     block = next(block for block in blocks if block["type"] == "table")
     output = Document()
-    output.add_heading("环境适应性要求", level=1)
+    output.add_heading("技术指标", level=1)
     if mutation == "wrong_slot":
         output.add_heading("其他要求", level=1)
     copied_table = copy.deepcopy(table._tbl)

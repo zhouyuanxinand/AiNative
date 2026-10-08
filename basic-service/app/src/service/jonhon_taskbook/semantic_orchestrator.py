@@ -27,6 +27,9 @@ import yaml
 from .template_scanner import semantic_title as _semantic_title
 from .renderer.paragraph_style_engine import normalize_copied_body_paragraph
 from .figure_pairing import pair_figure_captions
+from .environmental_prose import (
+    environmental_paragraph, is_environmental_slot, project_environmental_evidence,
+)
 from .source_scope import (
     has_substantive_heading_content,
     is_signature_heading,
@@ -1905,6 +1908,72 @@ def apply_semantic_plan(
         confidence_is_valid = _confidence(decision.get("confidence")) >= min_confidence
         requested_source_ids = list(decision.get("source_ids", []))
         expanded_source_ids = _expanded_source_ids(requested_source_ids)
+        if is_environmental_slot(slot) and edit_action in {"append", "replace"}:
+            # A row/paragraph projection is the copy contract for this chapter.
+            # Requiring the original mixed table here would undo fill's prose
+            # selection. Validate the source hash and every projected paragraph
+            # before treating an existing projection as successful evidence.
+            level = int((next((x for x in live_tree if x["id"] == slot_id), {}) or {}).get("level", 1))
+            _, _, target_texts = _section_evidence(heading_el, level)
+            anchor = _section_tail(heading_el, level)
+            for source_id in requested_source_ids:
+                if (source_id, slot_id) in routed_source_targets:
+                    skipped.append({"target_slot": slot_id, "source_id": source_id, "reason": "source_already_routed"})
+                    continue
+                block = block_by_id.get(source_id)
+                if not block:
+                    skipped.append({"target_slot": slot_id, "source_id": source_id, "reason": "unknown_source_id"})
+                    continue
+                if source_id in protected_block_ids:
+                    skipped.append({"target_slot": slot_id, "source_id": source_id, "reason": "protected_front_matter"})
+                    continue
+                source_path = block["source_path"]
+                if source_path not in source_cache:
+                    source_cache[source_path] = Document(source_path)
+                source_document = source_cache[source_path]
+                source_index = int(block["body_index"])
+                if not 0 <= source_index < len(source_document.element.body):
+                    skipped.append({"target_slot": slot_id, "source_id": source_id, "reason": "source_index_out_of_range"})
+                    continue
+                source_element = source_document.element.body[source_index]
+                expected_hash = block.get("element_content_hash") if block.get("is_fragment") else block.get("content_hash")
+                if _element_hash(source_element) != expected_hash:
+                    skipped.append({"target_slot": slot_id, "source_id": source_id, "reason": "source_hash_mismatch"})
+                    continue
+                if block.get("is_fragment"):
+                    try:
+                        copy_source_element_exact(source_element, block)
+                    except ValueError as exc:
+                        skipped.append({"target_slot": slot_id, "source_id": source_id,
+                                        "reason": "source_fragment_mismatch", "detail": str(exc)})
+                        continue
+                projections = project_environmental_evidence(block, source_element)
+                if not projections and operation_is_valid:
+                    skipped.append({"target_slot": slot_id, "source_id": source_id,
+                                    "reason": "no_environmental_requirement", "projection_policy": "environmental_prose"})
+                    continue
+                missing = [item for item in projections if normalize_source_display_text(item["text"]) not in target_texts]
+                evidence_item = {"target_slot": slot_id, "source_id": source_id,
+                                 "content_hash": block.get("content_hash"), "projections": projections,
+                                 "projection_policy": "environmental_prose"}
+                if not operation_is_valid or (missing and not confidence_is_valid):
+                    skipped.append({**evidence_item, "reason": "invalid_operation_or_low_confidence",
+                                    "confidence": _confidence(decision.get("confidence")),
+                                    "required_confidence": min_confidence})
+                    continue
+                if not missing:
+                    skipped.append({**evidence_item, "reason": "source_projection_already_present"})
+                    routed_source_targets.add((source_id, slot_id))
+                    continue
+                for projection in missing:
+                    paragraph = environmental_paragraph(projection, block, source_element, preserve_formatting=False)
+                    normalize_copied_body_paragraph(paragraph, output_doc)
+                    anchor.addnext(paragraph)
+                    anchor = paragraph
+                    target_texts.add(normalize_source_display_text(projection["text"]))
+                routed_source_targets.add((source_id, slot_id))
+                inserted.append({**evidence_item, "operation": "copy_exact", "edit_action": "append"})
+            continue
         if not operation_is_valid or not confidence_is_valid:
             # fill() runs before this executor.  A deterministic category writer may
             # therefore have copied the exact source block into the target section
@@ -2165,6 +2234,8 @@ def apply_semantic_plan(
         "source_already_present",
         "source_image_already_present",
         "protected_front_matter",
+        "source_projection_already_present",
+        "no_environmental_requirement",
     }
     blocking_skipped = [
         item for item in skipped
@@ -2173,6 +2244,7 @@ def apply_semantic_plan(
     verified_reasons = {
         "source_already_present",
         "source_image_already_present",
+        "source_projection_already_present",
     }
 
     # ``fill`` is the primary assembler.  It can write an exact source block
@@ -2201,6 +2273,8 @@ def apply_semantic_plan(
                 "source_id": source_id,
                 "target_slot": target_slot,
                 "reason": reason,
+                **({"projection_policy": item["projection_policy"], "projections": item["projections"]}
+                   if item.get("projections") else {}),
             })
 
     safe_skipped = [

@@ -18,12 +18,18 @@ from typing import Any
 import yaml
 from docx import Document
 from docx.oxml.ns import qn
+from docx.text.paragraph import Paragraph
 
+from .environmental_prose import is_environmental_slot, project_environmental_evidence
 from .template_scanner import scan_template_tree, semantic_title
 from .source_scope import normalize_source_display_text
 
 
 _NON_SEMANTIC = re.compile(r"[\s，,。；;：:、.!！?？（）()\[\]【】]+")
+_MANUAL_LIST = re.compile(
+    r"^\s*(?:[（(][a-zA-Z\d一二三四五六七八九十]+[）)]|"
+    r"[a-zA-Z\d]+[)）、]|[a-zA-Z]\.\s*|[•●▪]|[\d一二三四五六七八九十]+[.、](?!\d))"
+)
 
 
 _FIGURE_CAPTION = re.compile(
@@ -91,7 +97,29 @@ def _evidence_in_target(
     return False, "missing"
 
 
-def _section_texts(docx_path: str | Path) -> tuple[dict[str, str], list[dict[str, Any]]]:
+def _is_list_paragraph(element, document) -> bool:
+    if _MANUAL_LIST.match(_element_text(element)):
+        return True
+    paragraph = Paragraph(element, document)
+    properties = [element.find(qn("w:pPr"))]
+    style = paragraph.style
+    while style is not None:
+        properties.append(style.element.find(qn("w:pPr")))
+        style = style.base_style
+    for properties_node in properties:
+        if properties_node is None:
+            continue
+        numbering = properties_node.find(qn("w:numPr"))
+        if numbering is not None:
+            number_id = numbering.find(qn("w:numId"))
+            # numId=0 explicitly cancels numbering inherited from a style.
+            return number_id is None or number_id.get(qn("w:val")) != "0"
+    return False
+
+
+def _section_contents(docx_path: str | Path) -> tuple[
+    dict[str, str], list[dict[str, Any]], dict[str, list[str]], dict[str, list[str]],
+]:
     document = Document(str(docx_path))
     tree = scan_template_tree(str(docx_path))
     heading_by_slot = {
@@ -108,21 +136,42 @@ def _section_texts(docx_path: str | Path) -> tuple[dict[str, str], list[dict[str
         if node["id"] in heading_by_slot
     }
     result: dict[str, str] = {}
+    non_prose: dict[str, list[str]] = {}
+    prose_paragraphs: dict[str, list[str]] = {}
     for node in tree:
         heading = heading_by_slot.get(node["id"])
         if heading is None:
             continue
         level = int(node.get("level", 0))
         chunks: list[str] = []
+        paragraphs: list[str] = []
+        structures: set[str] = set()
         current = heading.getnext()
         while current is not None:
             current_level = level_by_element.get(current, 0)
             if current_level and current_level <= level:
                 break
             chunks.append(_element_text(current))
+            if is_environmental_slot(node):
+                if any(True for _ in current.iter(qn("w:tbl"))):
+                    structures.add("table")
+                for paragraph in current.iter(qn("w:p")):
+                    if paragraph in level_by_element:
+                        continue
+                    paragraphs.append(_element_text(paragraph))
+                    if _is_list_paragraph(paragraph, document):
+                        structures.add("list")
             current = current.getnext()
         result[node["id"]] = "\n".join(chunks)
-    return result, tree
+        prose_paragraphs[node["id"]] = paragraphs
+        if structures:
+            non_prose[node["id"]] = sorted(structures)
+    return result, tree, non_prose, prose_paragraphs
+
+
+def _section_texts(docx_path: str | Path) -> tuple[dict[str, str], list[dict[str, Any]]]:
+    texts, tree, _, _ = _section_contents(docx_path)
+    return texts, tree
 
 
 def _slot_matches_category(
@@ -205,8 +254,9 @@ def run_semantic_integrity_gate(
 ) -> dict[str, Any]:
     """Return a deterministic target-slot integrity report.
 
-    Only categories explicitly marked ``target_integrity: exact`` participate.
-    Structured writers such as the indicator table keep their dedicated gate.
+    Categories marked ``target_integrity: exact`` retain whole-block checking.
+    Environmental destinations check the source-owned prose projection even
+    when the source block's primary category uses a separate indicator gate.
     """
     plan = semantic_plan or {}
     classification = requirement_classification or {}
@@ -229,6 +279,9 @@ def run_semantic_integrity_gate(
         "output_sha256": hashlib.sha256(Path(output_path).read_bytes()).hexdigest(),
         "require_complete_source_checks": require_complete_source_checks,
     }
+    environmental_policy = (mapping.get("categories") or {}).get(
+        "environmental_adaptability", {"target_heading_keywords": ["环境适应性"]},
+    )
     coverage_path = Path(output_path).with_suffix(".coverage_ledger.json")
     if coverage_path.is_file():
         report["coverage_ledger_sha256"] = hashlib.sha256(coverage_path.read_bytes()).hexdigest()
@@ -236,8 +289,9 @@ def run_semantic_integrity_gate(
     if not plan or not classification:
         report["violations"].append({"code": "MISSING_SEMANTIC_AUDIT_INPUT"})
     else:
-        section_texts, live_tree = _section_texts(output_path)
+        section_texts, live_tree, non_prose, prose_paragraphs = _section_contents(output_path)
         live_by_id = {str(node["id"]): node for node in live_tree}
+        checked_prose_slots: set[str] = set()
         plan_slots = {str(node["id"]): node for node in plan.get("slots", [])}
         class_by_id = {
             str(item.get("source_id")): item
@@ -273,6 +327,8 @@ def run_semantic_integrity_gate(
                 })
                 continue
 
+            environmental_target = is_environmental_slot(planned_slot) or is_environmental_slot(live_slot)
+
             for routed_source_id in decision.get("source_ids", []):
                 routed_source_id = str(routed_source_id)
                 evidence_ids = (
@@ -280,9 +336,13 @@ def run_semantic_integrity_gate(
                     if routed_source_id in class_by_id
                     else fragments_by_parent.get(routed_source_id, [])
                 )
+                if environmental_target and not evidence_ids and (
+                    routed_source_id in class_source_by_id or routed_source_id in plan_source_by_id
+                ):
+                    evidence_ids = [routed_source_id]
                 for evidence_id in evidence_ids:
                     category = str(class_by_id.get(evidence_id, {}).get("category", ""))
-                    policy = category_policies.get(category)
+                    policy = environmental_policy if environmental_target else category_policies.get(category)
                     if not policy:
                         continue
                     evidence_block = (
@@ -309,6 +369,67 @@ def run_semantic_integrity_gate(
                         slot = planned_slot or {}
                     slot_id = str(slot.get("id", planned_slot_id))
                     target_matches = _slot_matches_category(slot, live_by_id, policy)
+                    if environmental_target:
+                        # Recompute evidence from the source block, not from an
+                        # execution sidecar or from the generated document.
+                        # No projection means no source check: strict routing
+                        # and the independent whole-source coverage gate remain
+                        # responsible for non-environmental evidence.
+                        try:
+                            projections = project_environmental_evidence(evidence_block)
+                        except (OSError, ValueError, IndexError) as exc:
+                            report["violations"].append({
+                                "code": "ENVIRONMENTAL_SOURCE_EVIDENCE_INVALID",
+                                "source_id": evidence_id, "target_slot": slot_id,
+                                "detail": str(exc),
+                            })
+                            continue
+                        if projections and slot_id in non_prose and slot_id not in checked_prose_slots:
+                            # Unfilled controlled template guidance is audited
+                            # by template provenance. Once source requirements
+                            # populate this slot, all retained lists/tables are
+                            # invalid, including old template instructions.
+                            report["violations"].append({
+                                "code": "ENVIRONMENTAL_PROSE_REQUIRED", "target_slot": slot_id,
+                                "target_path": slot.get("semantic_path", ""),
+                                "structures": non_prose[slot_id],
+                            })
+                            checked_prose_slots.add(slot_id)
+                        target_paragraphs = {
+                            normalize_source_display_text(line)
+                            for line in prose_paragraphs.get(slot_id, [])
+                        }
+                        for projection in projections:
+                            # Keep decimal points and operators: general exact
+                            # matching historically normalizes more punctuation
+                            # than this controlled projection permits.
+                            output_contains = normalize_source_display_text(projection["text"]) in target_paragraphs
+                            evidence_match = "environmental_prose" if output_contains else "missing"
+                            check = {
+                                "source_id": evidence_id,
+                                "parent_source_id": routed_source_id if evidence_id != routed_source_id else "",
+                                "category": category, "target_slot": slot_id,
+                                "planned_target_slot": planned_slot_id,
+                                "slot_rebound_by_semantics": rebound,
+                                "target_path": slot.get("semantic_path", ""),
+                                "target_matches_category": target_matches,
+                                "exact_evidence_in_target": output_contains,
+                                "evidence_match": evidence_match,
+                                "projection_policy": projection["policy"],
+                                "source_fragments": projection["source_fragments"],
+                                "source_coordinates": projection["source_coordinates"],
+                            }
+                            if projection.get("source_headers"):
+                                check["source_headers"] = projection["source_headers"]
+                            report["checked"].append(check)
+                            if not target_matches:
+                                report["violations"].append({"code": "WRONG_SEMANTIC_TARGET", **check})
+                            elif not output_contains:
+                                report["violations"].append({
+                                    "code": "SOURCE_EVIDENCE_MISSING_FROM_TARGET", **check,
+                                    "source_preview": projection["text"][:160],
+                                })
+                        continue
                     output_contains, evidence_match = _evidence_in_target(
                         source_text,
                         section_texts.get(slot_id, ""),

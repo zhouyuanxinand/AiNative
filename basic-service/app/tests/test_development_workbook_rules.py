@@ -300,6 +300,16 @@ def test_e39_performance_evidence_is_copied_whole_into_quality_section(fill_work
     assert any(run.text == evidence and run.bold for run in paragraph.runs)
 
 
+@pytest.mark.parametrize("source_heading,evidence", [
+    ("工业干扰环境", "工业干扰环境：在10 V/m场强下试验；考核标准：功能不得中断；环境适配约束条件：屏蔽壳体闭合后考核。"),
+    ("长期环境稳定性", "长期环境稳定性：-20℃～60℃运行1000 h；耐受阈值：漂移不超过1%；考核标准：按用户环境试验规程验收。"),
+    ("力学过载", "力学过载：150 m/s²，三个正交轴分别施加；考核标准：结构无变形且功能正常。"),
+])
+def test_e39_special_environmental_input_keeps_modified_product_chapter(fill_workbook_case, source_heading, evidence):
+    _, result = fill_workbook_case(process="改型II", inputs=[(source_heading, "performance_indicator", evidence)])
+    assert evidence in section_text(result, "环境适应性要求")
+
+
 def test_e39_empty_or_unknown_source_does_not_retain_quality_section(tmp_path):
     from jonhon_taskbook.fill import _apply_process_specific_sections
 
@@ -318,7 +328,7 @@ def test_e39_empty_or_unknown_source_does_not_retain_quality_section(tmp_path):
     assert section_text(document, "环境适应性要求") is None
 
 
-def test_e39_shared_quality_table_and_image_reach_both_sections(fill_workbook_case):
+def test_e39_environment_is_prose_while_other_quality_keeps_source_table(fill_workbook_case):
     image_bytes = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5Wk3kAAAAASUVORK5CYII=")
 
     def source_factory():
@@ -335,7 +345,8 @@ def test_e39_shared_quality_table_and_image_reach_both_sections(fill_workbook_ca
     expected_hash = hashlib.sha256(image_bytes).hexdigest()
     for title in ("可靠性要求", "环境适应性要求"):
         text = section_text(result, title)
-        assert text is not None and "至少10000 h" in text and "持续48 h后外壳无明显腐蚀" in text
+        assert text is not None and "持续48 h后外壳无明显腐蚀" in text
+        assert ("至少10000 h" in text) == (title == "可靠性要求")
         heading = next(p for p in result.paragraphs if semantic_title(p.text) == title)
         depth = heading_level(heading)
         element = heading._p.getnext()
@@ -348,6 +359,9 @@ def test_e39_shared_quality_table_and_image_reach_both_sections(fill_workbook_ca
             if element.tag == qn("w:tbl"):
                 tables.append(element)
             element = element.getnext()
+        if title == "环境适应性要求":
+            assert not tables
+            continue
         assert len(tables) == 1
         image_ids = tables[0].xpath(".//a:blip/@r:embed")
         assert len(image_ids) == 1

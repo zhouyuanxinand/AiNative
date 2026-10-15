@@ -9,6 +9,7 @@ services:
     ports:
       # 仅绑定 loopback；远程暴露请同时评估 TLS、CORS 与认证。
       - "127.0.0.1:18130:80"
+      - "127.0.0.1:${JTB_FEEDBACK_PUBLISHED_PORT:-18131}:81"
     env_file:
       # 从服务根 .env 注入 LLM 凭据与非密钥运行配置（.env 已被 .gitignore 忽略）。
       - .env
@@ -18,6 +19,8 @@ services:
       API_PORT: 18130
       JTB_HOST: 127.0.0.1
       JTB_PORT: 18130
+      JTB_FEEDBACK_HOST: 127.0.0.1
+      JTB_FEEDBACK_PORT: 18131
       JTB_MAX_UPLOAD_MB: "100"
       JTB_MAX_CONCURRENT_JOBS: "1"
       # Compose 从 .env 注入凭据；当前 Dockerfile 也包含该私有文件以支持离线部署。
@@ -30,7 +33,7 @@ services:
       - taskbook-logs:/opt/local/agent-develop-task-doc/basic-service/app/logs
       - taskbook-runtime:/opt/local/agent-develop-task-doc/basic-service/app/runtime
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:18130/api/health"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:80/api/health && curl -fsS http://127.0.0.1:81/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3

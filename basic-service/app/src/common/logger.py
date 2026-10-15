@@ -94,6 +94,16 @@ class CorrelationIdFilter(logging.Filter):
         return True
 
 
+class UvicornSafePathFilter(logging.Filter):
+    """Keep HTTP diagnostics while excluding login credentials in query strings."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple) and len(record.args) == 5:
+            client, method, path, version, status = record.args
+            record.args = (client, method, str(path).split("?", 1)[0], version, status)
+        return True
+
+
 def configure_logging(
     *,
     level: str = "INFO",
@@ -104,6 +114,9 @@ def configure_logging(
     """Install the JSON formatter, correlation filter and rotating file handler."""
     root = logging.getLogger()
     root.setLevel(getattr(logging, str(level).upper(), logging.INFO))
+    access_logger = logging.getLogger("uvicorn.access")
+    if not any(isinstance(item, UvicornSafePathFilter) for item in access_logger.filters):
+        access_logger.addFilter(UvicornSafePathFilter())
     # Reset any pre-existing handlers so reconfiguration (e.g. in tests) is clean.
     for handler in list(root.handlers):
         root.removeHandler(handler)

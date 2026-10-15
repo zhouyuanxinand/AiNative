@@ -39,10 +39,14 @@ from starlette.requests import Request as StarletteRequest  # noqa: E402
 from starlette.responses import Response  # noqa: E402
 
 from src.common.logger import configure_logging, get_logger, shutdown_logging  # noqa: E402
+from src.common.platform_auth import AuthSettings, PlatformAuthMiddleware  # noqa: E402
 from src.common.request_context import correlation_id_var  # noqa: E402
 from src.controller.taskbook_controller import register as register_controller  # noqa: E402
 from src.controller.taskbook_controller import router as taskbook_router  # noqa: E402
 from src.controller.failure_database_controller import router as failure_database_router  # noqa: E402
+from src.controller.feedback_controller import public_router as feedback_router  # noqa: E402
+from src.controller.auth_controller import router as auth_router  # noqa: E402
+from src.controller.auth_settings_controller import router as auth_settings_router  # noqa: E402
 from src.controller.service_credentials_controller import router as service_credentials_router  # noqa: E402
 from src.controller.runtime_logs_controller import router as runtime_logs_router  # noqa: E402
 from src.controller.review_controller import router as review_router  # noqa: E402
@@ -151,6 +155,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         version="1.0.0",
     )
     application.state.config = settings
+    auth_settings = AuthSettings.from_env()
+    application.state.auth_settings = auth_settings
 
     allow_credentials = settings.cors_origins != ["*"]
     application.add_middleware(
@@ -163,9 +169,13 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     )
     application.add_middleware(UploadContentLengthLimitMiddleware)
     application.add_middleware(CorrelationIdMiddleware)
+    application.add_middleware(PlatformAuthMiddleware, settings=auth_settings)
 
     application.include_router(taskbook_router)
+    application.include_router(auth_router)
+    application.include_router(auth_settings_router)
     application.include_router(failure_database_router)
+    application.include_router(feedback_router)
     application.include_router(service_credentials_router)
     application.include_router(runtime_logs_router)
     application.include_router(review_editor_router)

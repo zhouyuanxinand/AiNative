@@ -22,7 +22,9 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     APP_ENV=prod \
     API_HOST=127.0.0.1 \
-    API_PORT=18130
+    API_PORT=18130 \
+    JTB_FEEDBACK_HOST=127.0.0.1 \
+    JTB_FEEDBACK_PORT=18131
 
 # gosu 用于降权运行后端；nginx 提供静态 SPA 与反代。
 RUN apt-get update \
@@ -80,9 +82,9 @@ RUN mkdir -p \
     && find /opt/local/agent-develop-task-doc -type d -name __pycache__ -prune -exec rm -rf {} + \
     && nginx -t
 
-EXPOSE 80
+EXPOSE 80 81
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -fsS http://127.0.0.1:18130/api/health || exit 1
+    CMD curl -fsS http://127.0.0.1:80/api/health && curl -fsS http://127.0.0.1:81/api/health || exit 1
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

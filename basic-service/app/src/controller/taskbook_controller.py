@@ -448,6 +448,9 @@ def _register_job(
     *,
     selection=None,
     development_process: str = "",
+    product_series: str = "",
+    organization_scope: str = "",
+    cover_phase: str = "",
     model_provider: str = "",
     model_name: str = "",
     model_id: str = "",
@@ -456,6 +459,25 @@ def _register_job(
     # the active rules unchanged through their last generation stage.
     with _STATE.rules_lock:
         job = _job_record()
+        # Retain validated form values before the worker starts. A task cancelled
+        # while queued has no replay yet, but its feedback still needs context.
+        job["result"]["meta"].update({
+            "development_process": development_process,
+            "product_series": product_series,
+            "organization_scope": organization_scope,
+            "cover_phase": cover_phase,
+            "llm_model_provider": model_provider,
+            "llm_model": model_name,
+            "llm_model_id": model_id,
+        })
+        if selection is not None:
+            job["result"]["meta"].update({
+                "selected_product_type": selection.product_type,
+                "selected_product_type_label": selection.product_type_label,
+                "product_domain": selection.product_domain,
+                "product_domain_label": selection.product_domain_label,
+                "template_name": Path(selection.template_path).name,
+            })
         if _STATE.rule_editor is not None:
             job["result"]["meta"]["rule_revisions"] = {
                 item["id"]: item["revision"]
@@ -1016,10 +1038,16 @@ async def submit_local(
         jid,
         selection=selection,
         development_process=development_process,
+        product_series=product_series,
+        organization_scope=organization_scope,
+        cover_phase=cover_phase,
         model_provider=model_provider,
         model_name=model_name,
         model_id=model_id,
     )
+    _STATE.jobs[jid]["result"]["meta"]["original_filenames"] = {
+        "tech": Path(tech).name, "spec": Path(spec).name,
+    }
     _log_job_event(
         jid,
         "taskbook_job_submitted",
@@ -1551,6 +1579,9 @@ async def submit(
         jid,
         selection=selection,
         development_process=development_process,
+        product_series=product_series,
+        organization_scope=organization_scope,
+        cover_phase=cover_phase,
         model_provider=model_provider,
         model_name=model_name,
         model_id=model_id,
@@ -1802,6 +1833,9 @@ async def clarify_indicators(jid: str, request: Request, background_tasks: Backg
             new_jid,
             selection=selection,
             development_process=options.get("development_process", ""),
+            product_series=options.get("product_series", ""),
+            organization_scope=options.get("organization_scope", ""),
+            cover_phase=options.get("cover_phase", ""),
             model_provider=options.get("model_provider", ""),
             model_name=options.get("model_name", ""),
             model_id=options.get("model_id", ""),

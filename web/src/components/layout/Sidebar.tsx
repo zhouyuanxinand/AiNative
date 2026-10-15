@@ -1,12 +1,18 @@
 /** 左侧边栏——品牌 logo、新建任务、历史列表、用户行、拖拽手柄、服务凭证设置。 */
 import { useTaskbook } from '../../hooks/useTaskbook';
 import { usePanelResize } from '../../hooks/usePanelResize';
+import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { ServiceCredentialsSettings } from '../ui/ServiceCredentialsSettings';
+import '../../feedback.css';
 import type { HistoryItem } from '../../types';
 
 export function Sidebar({ onCredentialsSaved }: { onCredentialsSaved: () => Promise<void> }) {
   const { toggleSidebar, sidebarExpanded, history } = useTaskbook();
   const { beginResize, resetPanelWidth } = usePanelResize();
+  const { state: identity, retry } = useCurrentUser();
+  const user = identity.status === 'ready' && identity.identity.authenticated ? identity.identity.user : null;
+  const userLabel = user?.display_name || (identity.status === 'loading' ? '正在读取身份…'
+    : identity.status === 'error' ? '身份读取失败' : identity.identity.auth_enabled ? '未登录' : '本地模式');
 
   return (
     <aside className="sidebar" id="sidebar">
@@ -65,12 +71,13 @@ export function Sidebar({ onCredentialsSaved }: { onCredentialsSaved: () => Prom
         </div>
       </div>
       <div className="sidebar-user-row">
-        <button className="user-face" title="个人账户" aria-label="个人账户">
-          用
-        </button>
-        <div className="user-info">
-          <b>当前用户</b>
-          <span>web-user</span>
+        <span className="user-face" aria-hidden="true">{user ? Array.from(user.display_name)[0] : '用'}</span>
+        <div className="user-info current-user-info" aria-live="polite">
+          <b title={userLabel}>{userLabel}</b>
+          {user ? <span title={user.userid}>{user.userid}</span>
+            : identity.status === 'error' ? <button className="current-user-retry" type="button" onClick={retry} title={identity.error}>重试读取身份</button>
+            : identity.status === 'ready' && identity.identity.auth_enabled ? <a className="current-user-login" href="/auth/login" target="_blank" rel="noopener noreferrer" title="前往统一登录（在新标签页打开）">前往统一登录</a>
+            : <span>{identity.status === 'loading' ? '请稍候' : '未启用统一登录'}</span>}
         </div>
         <ServiceCredentialsSettings onSaved={onCredentialsSaved} />
       </div>

@@ -2,6 +2,7 @@
 import { useTaskbook } from '../../hooks/useTaskbook';
 import { escapeHtml } from '../../lib/dom';
 import { IndicatorReviewPanel } from './IndicatorReviewPanel';
+import { GenerationFeedback } from '../feedback/GenerationFeedback';
 
 export function ResultCard() {
   const { jobResult, resultBlocked, currentJid } = useTaskbook();
@@ -40,6 +41,7 @@ export function ResultCard() {
           {resultBlocked ? '已生成复核件（未通过交付门禁）' : '生成完成'}
         </span>
       </h2>
+      {currentJid && <GenerationFeedback jid={currentJid} />}
       <div className="result-summary" id="result-summary">
         <SummaryItem label="识别产品" value={meta.product_type || '-'} />
         <SummaryItem

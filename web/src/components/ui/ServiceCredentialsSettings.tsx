@@ -7,6 +7,7 @@ import {
 } from '../../api/serviceCredentials';
 import { ModelConnectionTest } from './ModelConnectionTest';
 import { StyledSelect } from './StyledSelect';
+import { PlatformAuthSettings } from './PlatformAuthSettings';
 import './serviceCredentials.css';
 
 interface Field { key: string; label: string; url?: boolean; secret?: boolean }
@@ -262,6 +263,7 @@ function CredentialsDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
           tabIndex={0}>{item.label}</button>)}
       </div>
       <div className="credentials-body" aria-busy={busy}>
+        <div className="auth-settings-entry"><p>登录入口和回跳地址在统一登录设置中单独保存。</p><PlatformAuthSettings disabled={saving} /></div>
         {loading && <p className="credentials-notice" role="status">正在读取已保存的配置与部署默认凭证…</p>}
         {error && <div className="credentials-error" role="alert"><p>{error}</p>
           {!loaded && !loading && <button type="button" onClick={() => void load()}>重新加载</button>}

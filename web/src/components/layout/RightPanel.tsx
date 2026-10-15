@@ -4,6 +4,7 @@ import { usePanelResize } from '../../hooks/usePanelResize';
 import { ResultCard } from '../result/ResultCard';
 import { HistoryGrid } from '../result/HistoryGrid';
 import { StatusCard } from '../result/StatusCard';
+import { GenerationFeedback } from '../feedback/GenerationFeedback';
 import type { ReviewTab } from '../../constants';
 
 export function RightPanel() {
@@ -78,11 +79,12 @@ export function RightPanel() {
 }
 
 function ResultEmpty() {
-  const { resultEmpty, jobStatus } = useTaskbook();
+  const { resultEmpty, jobStatus, currentJid } = useTaskbook();
   const failed = jobStatus === 'error';
   const cancelled = jobStatus === 'cancelled';
   if (!resultEmpty) return null;
-  return (
+  return <>
+    {(failed || cancelled) && currentJid && <GenerationFeedback jid={currentJid} />}
     <div className="review-empty review-empty-state" id="result-empty">
       <div className="review-empty-visual" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -95,5 +97,5 @@ function ResultEmpty() {
         : cancelled ? '本次任务未完成，可返回重新选择后重试。'
           : '完成业务选择并上传来源文件后，生成结果与质量报告将在这里展示。'}</span>
     </div>
-  );
+  </>;
 }

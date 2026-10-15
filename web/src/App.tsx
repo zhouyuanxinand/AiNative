@@ -1,6 +1,7 @@
 /** 顶层应用壳：协调布局、表单、预检、任务生命周期与旧版兼容行为。 */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { TaskbookProvider, useTaskbook, type TaskbookForm } from './hooks/useTaskbook';
+import { CurrentUserProvider } from './hooks/useCurrentUser';
 import { useSSE } from './hooks/useSSE';
 import { useDraft } from './hooks/useDraft';
 import { Toast } from './components/ui/Toast';
@@ -14,6 +15,7 @@ import { ProgressCard } from './components/workspace/ProgressCard';
 import { ManagementPanel } from './components/management/ManagementPanel';
 import { StandaloneRuntimeLogsPage } from './components/management/StandaloneRuntimeLogsPage';
 import { TaskbookReviewPage } from './components/review/TaskbookReviewPage';
+import { FeedbackAdminPage } from './components/feedback/FeedbackAdminPage';
 import { loadProductCatalog, loadModelCatalog, checkModelStatus } from './api/catalog';
 import {
   submitJob,
@@ -729,6 +731,7 @@ function AppInner() {
 
 export default function App() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
+  if (path === '/feedback') return <FeedbackAdminPage />;
   if (path === '/log' || path === '/logs') {
     return <StandaloneRuntimeLogsPage />;
   }
@@ -736,8 +739,10 @@ export default function App() {
   if (reviewPath) return <TaskbookReviewPage jid={decodeURIComponent(reviewPath[1])} />;
 
   return (
-    <TaskbookProvider>
-      <AppInner />
-    </TaskbookProvider>
+    <CurrentUserProvider>
+      <TaskbookProvider>
+        <AppInner />
+      </TaskbookProvider>
+    </CurrentUserProvider>
   );
 }

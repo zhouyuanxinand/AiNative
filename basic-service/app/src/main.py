@@ -189,6 +189,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         @application.get("/", response_class=HTMLResponse, include_in_schema=False)
         @application.get("/log", response_class=HTMLResponse, include_in_schema=False)
         @application.get("/logs", response_class=HTMLResponse, include_in_schema=False)
+        @application.get("/help/video", response_class=HTMLResponse, include_in_schema=False)
+        @application.get("/help/manual", response_class=HTMLResponse, include_in_schema=False)
         @application.get("/review/{jid}", response_class=HTMLResponse, include_in_schema=False)
         async def serve_spa_root() -> HTMLResponse:
             return HTMLResponse(

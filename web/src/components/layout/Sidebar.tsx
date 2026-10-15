@@ -3,6 +3,9 @@ import { useTaskbook } from '../../hooks/useTaskbook';
 import { usePanelResize } from '../../hooks/usePanelResize';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { ServiceCredentialsSettings } from '../ui/ServiceCredentialsSettings';
+import { HELP_RESOURCES } from '../help/helpResources';
+import { HelpResourceIcon } from '../help/HelpResourceIcon';
+import '../help/helpResources.css';
 import '../../feedback.css';
 import type { HistoryItem } from '../../types';
 
@@ -70,6 +73,22 @@ export function Sidebar({ onCredentialsSaved }: { onCredentialsSaved: () => Prom
           )}
         </div>
       </div>
+      <nav className="sidebar-help-links" aria-label="使用帮助">
+        {HELP_RESOURCES.map(resource => (
+          <a
+            key={resource.kind}
+            className="sidebar-help-link"
+            href={resource.path}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`${resource.title}（在新标签页打开）`}
+            aria-label={`${resource.title}（在新标签页打开）`}
+          >
+            <HelpResourceIcon kind={resource.kind} />
+            <span>{resource.title}</span>
+          </a>
+        ))}
+      </nav>
       <div className="sidebar-user-row">
         <span className="user-face" aria-hidden="true">{user ? Array.from(user.display_name)[0] : '用'}</span>
         <div className="user-info current-user-info" aria-live="polite">

@@ -13,6 +13,10 @@ from fastapi.testclient import TestClient
 URL = "/api/settings/auth"
 HEADERS = {"X-Credential-Settings": "1", "Origin": "http://testserver", "Sec-Fetch-Site": "same-origin"}
 DEFAULTS = {"enabled": False, "app_id": 9192, "platform_base_url": "http://platform.internal", "public_url": None}
+PRESETS = {
+    "intranet": {"app_id": 127, "platform_base_url": "http://172.23.255.36", "public_url": None},
+    "external": {"app_id": 9086, "platform_base_url": "https://sv.dcsmartvision.com", "public_url": None},
+}
 
 
 def fields(**changes):
@@ -46,7 +50,7 @@ def test_initial_get_reports_environment_defaults_without_creating_a_profile_or_
     make, _, path, _ = api
     response = make().get(URL)
     assert response.status_code == 200
-    assert response.json() == {"settings": DEFAULTS, "active": DEFAULTS, "version": 0, "can_edit": True, "requires_restart": False}
+    assert response.json() == {"settings": DEFAULTS, "active": DEFAULTS, "version": 0, "can_edit": True, "requires_restart": False, "presets": PRESETS}
     assert response.headers["cache-control"] == "no-store"
     assert not path.exists()
 
@@ -56,7 +60,7 @@ def test_disabled_profile_accepts_unknown_deployment_address_and_persists_across
     client = make()
     response = client.put(URL, json=fields(public_url=""), headers=HEADERS)
     assert response.status_code == 200, response.text
-    assert response.json() == {"settings": DEFAULTS, "active": DEFAULTS, "version": 1, "can_edit": True, "requires_restart": False}
+    assert response.json() == {"settings": DEFAULTS, "active": DEFAULTS, "version": 1, "can_edit": True, "requires_restart": False, "presets": PRESETS}
     assert store_module.AuthSettingsStore(path).read() == {"settings": DEFAULTS, "version": 1}
     assert client.get(URL).json()["version"] == 1
     with sqlite3.connect(path) as connection:
@@ -72,12 +76,26 @@ def test_disabled_profile_can_clear_the_application_id_until_deployment_is_ready
     assert loaded.enabled is False and loaded.app_id is None and loaded.public_url is None
 
 
-@pytest.mark.parametrize("public_url", [None, "", "//evil.example", "https://example.test/path", "javascript:alert(1)"])
-def test_enabling_auth_rejects_a_missing_or_invalid_origin_before_any_write(api, public_url):
+@pytest.mark.parametrize("public_url", ["//evil.example", "https://example.test/path", "javascript:alert(1)"])
+def test_enabling_auth_rejects_an_invalid_fixed_origin_before_any_write(api, public_url):
     make, _, path, _ = api
     response = make().put(URL, json=fields(enabled=True, public_url=public_url), headers=HEADERS)
     assert response.status_code == 400 and "error" in response.json()
     assert not path.exists()
+
+
+@pytest.mark.parametrize("preset", ["intranet", "external"])
+def test_enabled_preset_persists_automatic_callback_across_restart(api, preset):
+    make, _, _, auth = api
+    client = make()
+    response = client.put(URL, json={"enabled": True, **PRESETS[preset], "expected_version": 0}, headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json()["requires_restart"] is True
+    assert response.json()["active"]["enabled"] is False
+    loaded = auth.AuthSettings.from_env()
+    assert loaded.enabled and loaded.public_url is None
+    assert loaded.app_id == PRESETS[preset]["app_id"]
+    assert loaded.platform_base_url == PRESETS[preset]["platform_base_url"]
 
 
 @pytest.mark.parametrize("app_id", [None, "", 0])

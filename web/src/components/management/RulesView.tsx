@@ -5,6 +5,7 @@ import {
   type RulePath, type RuleValue,
 } from '../../api/rules';
 import './rules.css';
+import { useApplicationLeaveGuard } from '../../hooks/useApplicationLeaveGuard';
 
 const pathKey = (path: RulePath) => JSON.stringify(path);
 function readValue(data: Record<string, unknown>, path: RulePath): RuleValue {
@@ -55,6 +56,7 @@ export function RulesView() {
     JSON.stringify(values[pathKey(field.path)]) !== JSON.stringify(readValue(detail.data, field.path)),
   ) || [], [detail, values]);
   const dirty = changedFields.length > 0;
+  useApplicationLeaveGuard({ dirty, busyMessage: busy ? '规则正在处理，请完成后再退出登录。' : undefined });
 
   useEffect(() => {
     let active = true;
@@ -93,10 +95,10 @@ export function RulesView() {
 
   useEffect(() => {
     if (!dirty && !busy) return;
-    const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
     const beforeNavigation = (event: MouseEvent) => {
       const target = event.target;
       if (!(target instanceof Element) || rootRef.current?.contains(target) || !target.closest('button, a')) return;
+      if (target.closest('[data-application-logout]')) return;
       if (busy) {
         event.preventDefault();
         event.stopPropagation();
@@ -107,10 +109,8 @@ export function RulesView() {
         event.stopPropagation();
       }
     };
-    window.addEventListener('beforeunload', beforeUnload);
     document.addEventListener('click', beforeNavigation, true);
     return () => {
-      window.removeEventListener('beforeunload', beforeUnload);
       document.removeEventListener('click', beforeNavigation, true);
     };
   }, [dirty, busy]);

@@ -3,6 +3,7 @@ import { FeedbackApiError, submitGenerationFeedback, type FeedbackRating, type F
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { newFeedbackRequestId, ratingLabels } from './feedbackPresentation';
 import '../../feedback.css';
+import { useApplicationLeaveGuard } from '../../hooks/useApplicationLeaveGuard';
 
 export function GenerationFeedback({ jid }: { jid: string }) {
   return <FeedbackForm key={jid} jid={jid} />;
@@ -31,6 +32,8 @@ function FeedbackForm({ jid }: { jid: string }) {
   const attempt = useRef<{ draft: string; requestId: string }>();
   const previousOwner = useRef<string>();
   const sessionExpired = useRef(false);
+  useApplicationLeaveGuard({ dirty: !receipt && Boolean(rating || comment.trim()),
+    busyMessage: pending ? '反馈正在提交，请完成后再退出登录。' : undefined });
 
   useEffect(() => {
     active.current = true;

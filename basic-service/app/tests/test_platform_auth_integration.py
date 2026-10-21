@@ -2,12 +2,19 @@
 import logging
 from urllib.parse import parse_qs, urlsplit
 
+import pytest
 from fastapi.testclient import TestClient
 
 from src.common.logger import UvicornSafePathFilter
 from src.common.platform_auth import PlatformTokenVerifier
 from src.controller import feedback_controller, taskbook_controller
 from src.main import create_app
+
+
+@pytest.fixture(autouse=True)
+def isolated_saved_auth_settings(tmp_path, monkeypatch):
+    """A user's saved login profile must not override this test's environment."""
+    monkeypatch.setenv("JTB_AUTH_SETTINGS_DB", str(tmp_path / "auth_settings.sqlite3"))
 
 
 def test_actual_factory_callback_identity_and_feedback_are_bound(tmp_path, monkeypatch):
@@ -38,11 +45,12 @@ def test_actual_factory_callback_identity_and_feedback_are_bound(tmp_path, monke
     denied = client.post("/api/feedback", json={"username": "冒名用户"})
     assert denied.status_code == 401 and denied.json()["auth_required"] is True
     redirect = client.get("/")
-    assert redirect.status_code == 302
+    assert redirect.status_code == 307
     return_uri = parse_qs(urlsplit(redirect.headers["location"]).query)["redirect_uri"][0]
-    nonce = parse_qs(urlsplit(return_uri).query)["_jtb_auth_state"][0]
-    callback = client.get("/", params={"userid": "employee007", "token": "synthetic-login-token", "_jtb_auth_state": nonce})
-    assert callback.status_code == 302 and callback.headers["location"] == "https://taskbook.example/"
+    assert return_uri == "https://taskbook.example/"
+    assert parse_qs(urlsplit(redirect.headers["location"]).query)["login_mode"] == ["auto"]
+    callback = client.get("/", params={"userid": "employee007", "token": "synthetic-login-token"})
+    assert callback.status_code == 307 and callback.headers["location"] == "https://taskbook.example/"
     assert "token" not in callback.headers["location"]
     identity = client.get("/api/current-user")
     assert identity.status_code == 200 and identity.headers["cache-control"] == "no-store"
@@ -56,6 +64,13 @@ def test_actual_factory_callback_identity_and_feedback_are_bound(tmp_path, monke
     assert record["snapshot"]["parameters"]["product_series"] == "CY"
     assert verified_calls == [("employee007", 137)]
     assert client.get("/api/feedback-admin").status_code == 404
+    assert client.get("/api/auth/me").json()["username"] == "张工程师"
+    logout = client.post("/api/system/logout")
+    assert logout.status_code == 200 and logout.json() == {"success": True}
+    assert client.get("/api/current-user").json()["authenticated"] is False
+    assert client.post("/api/feedback", json={"jid": "123456789a", "rating": "good"}).status_code == 401
+    assert store.get(record["id"])["identity"] == record["identity"]
+    assert client.get("/logged-out").status_code == 200
 
 
 def test_factory_disabled_identity_probe_and_manual_feedback_remain_local(monkeypatch):

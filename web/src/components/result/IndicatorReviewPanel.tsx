@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { clarifyIndicators, getIndicatorReview } from '../../api/jobs';
 import type { IndicatorCandidate, IndicatorReview } from '../../types';
+import { useApplicationLeaveGuard } from '../../hooks/useApplicationLeaveGuard';
 
 const comparisonLabels: Record<string, string> = {
   STANDARD_STRICTER: '规范值更严格', USER_STRICTER: '用户值更严格',
@@ -33,6 +34,8 @@ export function IndicatorReviewPanel({ jid }: { jid: string }) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [reload, setReload] = useState(0);
+  useApplicationLeaveGuard({ dirty: Object.values(values).some(value => value.trim()),
+    busyMessage: submitting ? '复核任务正在创建，请完成后再退出登录。' : undefined });
   useEffect(() => {
     let active = true;
     setLoading(true);

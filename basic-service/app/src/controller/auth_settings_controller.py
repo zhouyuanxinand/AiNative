@@ -15,7 +15,11 @@ from src.common.auth_settings_store import (
     validate_auth_profile,
     validate_expected_version,
 )
-from src.common.platform_auth import AuthSettings, get_deployment_auth_settings
+from src.common.platform_auth import (
+    AUTH_PRESETS,
+    AuthSettings,
+    get_deployment_auth_settings,
+)
 
 router = APIRouter(prefix="/api/settings/auth", tags=["auth-settings"])
 
@@ -50,6 +54,7 @@ def _view(request: Request, saved: dict | None) -> dict:
         "version": saved["version"] if saved else 0,
         "can_edit": _can_edit(request, active),
         "requires_restart": saved is not None and desired != active,
+        "presets": {name: dict(profile) for name, profile in AUTH_PRESETS.items()},
     }
 
 

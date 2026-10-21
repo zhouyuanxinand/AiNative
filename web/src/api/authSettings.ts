@@ -8,6 +8,7 @@ export interface PlatformAuthConfig {
 export interface AuthSettingsResponse {
   settings: PlatformAuthConfig;
   active: PlatformAuthConfig | null;
+  presets: Record<'intranet' | 'external', Omit<PlatformAuthConfig, 'enabled'>>;
   version: number;
   can_edit: boolean;
   requires_restart: boolean;

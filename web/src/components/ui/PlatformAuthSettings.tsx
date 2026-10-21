@@ -1,12 +1,14 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { AuthSettingsApiError, getAuthSettings, saveAuthSettings, type AuthSettingsResponse, type PlatformAuthConfig } from '../../api/authSettings';
+import { StyledSelect } from './StyledSelect';
 import './serviceCredentials.css';
 import './platformAuthSettings.css';
 
-interface Draft { enabled: boolean; app_id: string; platform_base_url: string; public_url: string }
+interface Draft { enabled: boolean; app_id: string; platform_base_url: string; public_url: string; callback_mode: 'auto' | 'manual' }
 type Field = 'app_id' | 'platform_base_url' | 'public_url';
-const draftFor = (config: PlatformAuthConfig): Draft => ({ ...config, app_id: config.app_id === null ? '' : String(config.app_id), public_url: config.public_url || '' });
+const draftFor = (config: PlatformAuthConfig): Draft => ({ enabled: config.enabled, app_id: config.app_id === null ? '' : String(config.app_id), platform_base_url: config.platform_base_url, public_url: config.public_url || '', callback_mode: config.public_url ? 'manual' : 'auto' });
+const draftSignature = (draft: Draft) => JSON.stringify({ ...draft, public_url: draft.callback_mode === 'auto' ? '' : draft.public_url });
 
 export function PlatformAuthSettings({ disabled = false }: { disabled?: boolean }) {
   const [open, setOpen] = useState(false);
@@ -29,7 +31,7 @@ function AuthSettingsDialog({ onClose }: { onClose: () => void }) {
   const request = useRef<AbortController>();
   const savingLock = useRef(false);
   const [response, setResponse] = useState<AuthSettingsResponse | null>(null);
-  const [draft, setDraft] = useState<Draft>({ enabled: false, app_id: '', platform_base_url: '', public_url: '' });
+  const [draft, setDraft] = useState<Draft>({ enabled: false, app_id: '', platform_base_url: '', public_url: '', callback_mode: 'auto' });
   const [baseline, setBaseline] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -38,13 +40,13 @@ function AuthSettingsDialog({ onClose }: { onClose: () => void }) {
   const [conflict, setConflict] = useState(false);
   const [success, setSuccess] = useState('');
   const [confirm, setConfirm] = useState<'close' | 'reload' | null>(null);
-  const dirty = !!response && JSON.stringify(draft) !== baseline;
+  const dirty = !!response && draftSignature(draft) !== baseline;
   const busy = loading || saving;
   const editable = !!response?.can_edit;
 
   function accept(result: AuthSettingsResponse) {
     const next = draftFor(result.settings);
-    setResponse(result); setDraft(next); setBaseline(JSON.stringify(next)); setInvalid(null); setConflict(false); setConfirm(null);
+    setResponse(result); setDraft(next); setBaseline(draftSignature(next)); setInvalid(null); setConflict(false); setConfirm(null);
   }
 
   async function load() {
@@ -80,6 +82,12 @@ function AuthSettingsDialog({ onClose }: { onClose: () => void }) {
     setDraft(previous => ({ ...previous, [field]: value })); setError(''); setSuccess(''); setInvalid(null); setConfirm(null);
   }
 
+  function applyPreset(name: keyof AuthSettingsResponse['presets']) {
+    if (!response?.presets || !editable || busy) return;
+    setDraft(previous => draftFor({ ...response.presets[name], enabled: previous.enabled }));
+    setError(''); setSuccess(''); setInvalid(null); setConfirm(null);
+  }
+
   function close() {
     if (savingLock.current) return;
     if (dirty) setConfirm('close'); else onClose();
@@ -102,8 +110,8 @@ function AuthSettingsDialog({ onClose }: { onClose: () => void }) {
       const url = new URL(platform);
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || /\s/.test(platform)) throw new Error();
     } catch { return validationError('platform_base_url', '请填写有效的神州问学 HTTP(S) 地址，不要包含账号、查询参数或片段。'); }
-    let callback = draft.public_url.trim();
-    if (!callback && draft.enabled) return validationError('public_url', '启用统一登录时，请填写回跳地址。');
+    let callback = draft.callback_mode === 'manual' ? draft.public_url.trim() : '';
+    if (!callback && draft.callback_mode === 'manual') return validationError('public_url', '手动指定时，请填写回跳地址；也可改为自动跟随访问地址。');
     if (callback) {
       try {
         const url = new URL(callback);
@@ -159,14 +167,21 @@ function AuthSettingsDialog({ onClose }: { onClose: () => void }) {
         {response && <>
           <div className="auth-settings-active">
             <strong>{response.active ? response.active.enabled ? '当前生效：统一登录' : '当前生效：本地模式' : '当前生效配置请在主站查看'}</strong>
-            {response.active?.enabled && <p>当前回跳地址：{response.active.public_url || '未记录'}</p>}
-            {(!response.active || !response.active.enabled) && <p>未启用时本地可直接使用，部署访问地址确定后再填写回跳地址并启用。</p>}
+            {response.active?.enabled && <p>当前回跳地址：{response.active.public_url || '自动跟随主站访问地址'}</p>}
+            {(!response.active || !response.active.enabled) && <p>未启用时本地可直接使用。启用后可自动跟随主站访问地址回跳。</p>}
             {response.requires_restart && <p>已保存的配置等待平台重启后生效。</p>}
           </div>
           {!editable && <p className="auth-settings-readonly" role="status">主站统一登录已启用，此处仅可查看配置。请通过反馈管理端口维护。</p>}
           <fieldset className="auth-settings-fields" disabled={busy || !editable}>
             <legend>下次启动使用的配置</legend>
             <label className="auth-settings-toggle" htmlFor={`${id}-enabled`}><input id={`${id}-enabled`} type="checkbox" checked={draft.enabled} onChange={event => change('enabled', event.target.checked)} /><span>启用统一登录</span></label>
+            {response.presets && <div className="auth-settings-presets">
+              <div className="credentials-history-actions">
+                <button type="button" onClick={() => applyPreset('intranet')}>使用内网配置</button>
+                <button type="button" onClick={() => applyPreset('external')}>使用外网配置</button>
+              </div>
+              <p className="auth-settings-field-hint">填写对应的应用 ID 和神州问学地址，并将回跳方式设为自动。启用状态保持不变，保存并重启后生效。</p>
+            </div>}
             <div className="credentials-field"><label htmlFor={`${id}-app-id`}>登录应用 ID</label><div className="credentials-input-row">
               <input ref={element => { inputs.current.app_id = element; }} id={`${id}-app-id`} value={draft.app_id} inputMode="numeric" maxLength={16} autoComplete="off"
                 required={draft.enabled} aria-invalid={invalid === 'app_id'} aria-describedby={describedBy('app_id')} onChange={event => change('app_id', event.target.value)} /></div>
@@ -175,13 +190,19 @@ function AuthSettingsDialog({ onClose }: { onClose: () => void }) {
             <div className="credentials-field"><label htmlFor={`${id}-platform-url`}>神州问学地址</label><div className="credentials-input-row">
               <input ref={element => { inputs.current.platform_base_url = element; }} id={`${id}-platform-url`} type="url" value={draft.platform_base_url} maxLength={2048} autoComplete="off" autoCapitalize="none" spellCheck={false}
                 required aria-invalid={invalid === 'platform_base_url'} aria-describedby={describedBy('platform_base_url')} onChange={event => change('platform_base_url', event.target.value)} /></div>
-              <p className="auth-settings-field-hint" id={`${id}-platform_base_url-hint`}>默认使用外网地址；部署到内网后可填写对应的神州问学地址。</p>
+              <p className="auth-settings-field-hint" id={`${id}-platform_base_url-hint`}>与登录应用 ID 对应，可使用上方的内网或外网配置。</p>
             </div>
-            <div className="credentials-field"><label htmlFor={`${id}-public-url`}>回跳地址</label><div className="credentials-input-row">
+            <div className="credentials-field"><label id={`${id}-callback-mode-label`} htmlFor={`${id}-callback-mode`}>回跳方式</label>
+              <StyledSelect id={`${id}-callback-mode`} className="credentials-history-select" aria-labelledby={`${id}-callback-mode-label`}
+                value={draft.callback_mode} disabled={busy || !editable} onChange={value => change('callback_mode', value === 'manual' ? 'manual' : 'auto')}
+                options={[{ value: 'auto', label: '自动跟随访问地址' }, { value: 'manual', label: '手动指定地址' }]} />
+              <p className="auth-settings-field-hint">自动模式使用发起登录时的主站访问地址和端口；重新部署后端口变化，无需修改回跳地址。</p>
+            </div>
+            {draft.callback_mode === 'manual' && <div className="credentials-field"><label htmlFor={`${id}-public-url`}>回跳地址</label><div className="credentials-input-row">
               <input ref={element => { inputs.current.public_url = element; }} id={`${id}-public-url`} type="url" value={draft.public_url} maxLength={2048} autoComplete="off" autoCapitalize="none" spellCheck={false}
-                placeholder="例如：https://平台域名:端口" required={draft.enabled} aria-invalid={invalid === 'public_url'} aria-describedby={describedBy('public_url')} onChange={event => change('public_url', event.target.value)} /></div>
-              <p className="auth-settings-field-hint" id={`${id}-public_url-hint`}>仅填写协议、主机和端口。未启用统一登录时可留空，待部署地址确定后再填写。</p>
-            </div>
+                placeholder="例如：https://平台域名:端口" required aria-invalid={invalid === 'public_url'} aria-describedby={describedBy('public_url')} onChange={event => change('public_url', event.target.value)} /></div>
+              <p className="auth-settings-field-hint" id={`${id}-public_url-hint`}>仅填写主站的协议、主机和端口，不含路径或查询参数。端口变化后需同步修改。</p>
+            </div>}
           </fieldset>
         </>}
         {confirm && <div ref={warning} tabIndex={-1} className="credentials-discard" role="alert">

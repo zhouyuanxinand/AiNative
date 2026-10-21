@@ -24,7 +24,14 @@ ENV PYTHONUNBUFFERED=1 \
     API_HOST=127.0.0.1 \
     API_PORT=18130 \
     JTB_FEEDBACK_HOST=127.0.0.1 \
-    JTB_FEEDBACK_PORT=18131
+    JTB_FEEDBACK_PORT=18131 \
+    JTB_AUTH_ENABLED=true \
+    JTB_AUTH_APP_ID=127 \
+    JTB_AUTH_PLATFORM_BASE_URL=http://172.23.255.36 \
+    JTB_AUTH_PUBLIC_URL=""
+
+# 发布镜像默认使用内网登录和自动回跳，不继承打包电脑 .env 的外网登录地址。
+# 平台的已保存登录配置或部署环境变量仍可覆盖；本地源码运行默认不启用登录。
 
 # gosu 用于降权运行后端；nginx 提供静态 SPA 与反代。
 RUN apt-get update \

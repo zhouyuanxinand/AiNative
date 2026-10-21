@@ -5,6 +5,7 @@ import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { ServiceCredentialsSettings } from '../ui/ServiceCredentialsSettings';
 import { HELP_RESOURCES } from '../help/helpResources';
 import { HelpResourceIcon } from '../help/HelpResourceIcon';
+import { SidebarLogout } from './SidebarLogout';
 import '../help/helpResources.css';
 import '../../feedback.css';
 import type { HistoryItem } from '../../types';
@@ -100,6 +101,7 @@ export function Sidebar({ onCredentialsSaved }: { onCredentialsSaved: () => Prom
         </div>
         <ServiceCredentialsSettings onSaved={onCredentialsSaved} />
       </div>
+      {user && <SidebarLogout onFailure={() => { if (!sidebarExpanded) toggleSidebar(); }} />}
       <button
         className="resize-handle resize-handle-left"
         id="left-resizer"

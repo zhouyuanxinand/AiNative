@@ -4,6 +4,7 @@ import { TaskbookProvider, useTaskbook, type TaskbookForm } from './hooks/useTas
 import { CurrentUserProvider } from './hooks/useCurrentUser';
 import { useSSE } from './hooks/useSSE';
 import { useDraft } from './hooks/useDraft';
+import { useApplicationLeaveGuard } from './hooks/useApplicationLeaveGuard';
 import { Toast } from './components/ui/Toast';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
@@ -45,6 +46,7 @@ function AppInner() {
   const [draftReady, setDraftReady] = useState(false);
   const [modelSettingsRevision, setModelSettingsRevision] = useState(0);
   const [modelCatalogState, setModelCatalogState] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading');
+  const [prechecking, setPrechecking] = useState(false);
 
   const sseCallbacks = useRef({
     onDone: (msg: SSEMessage) => {
@@ -220,11 +222,14 @@ function AppInner() {
     precheckForm.append('tech', tb.files.tech);
     precheckForm.append('spec', tb.files.spec);
     appendSelectionFields(precheckForm);
+    setPrechecking(true);
     try {
       tb.setPrecheck(await runPrecheck(precheckForm));
     } catch (error) {
       tb.addLog('❌ 预检失败：' + (error as Error).message, 'err');
       return;
+    } finally {
+      setPrechecking(false);
     }
 
     const fd = new FormData();
@@ -618,15 +623,16 @@ function AppInner() {
     applyHistory: handleApplyHistoryPreset,
     replayStarted: handleReplayStarted,
   };
-  const pendingStateRef = useRef(false);
-  pendingStateRef.current = Boolean(
+  useApplicationLeaveGuard({ dirty: Boolean(
     tb.form.productSeries ||
       tb.form.templateInstruction ||
       tb.files.tech ||
       tb.files.spec ||
       tb.isRunning ||
       tb.currentJid,
-  );
+  ), busyMessage: prechecking ? '资料正在预检，请等待完成后再退出登录。'
+    : tb.templatePreviewLoading ? '章节变更正在预览，请等待完成后再退出登录。'
+    : tb.isRunning ? '任务正在生成，请等待完成或取消任务后再退出登录。' : undefined });
 
   useEffect(() => {
     const onSubmit = () => eventHandlersRef.current.submit();
@@ -663,13 +669,6 @@ function AppInner() {
     };
     document.addEventListener('keydown', onKeyDown);
 
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!pendingStateRef.current) return;
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-
     return () => {
       window.removeEventListener('taskbook:submit', onSubmit);
       window.removeEventListener('taskbook:submit-local', onSubmitLocal);
@@ -681,7 +680,6 @@ function AppInner() {
       window.removeEventListener('taskbook:apply-history', onApplyHistory);
       window.removeEventListener('taskbook:replay-started', onReplayStarted);
       document.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('beforeunload', onBeforeUnload);
     };
   }, []);
 

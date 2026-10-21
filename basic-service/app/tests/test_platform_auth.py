@@ -6,7 +6,7 @@ import json
 import os
 from contextlib import ExitStack
 from dataclasses import FrozenInstanceError
-from urllib.parse import parse_qs, parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 import httpx
 import pytest
@@ -21,11 +21,12 @@ def settings_class():
     return importlib.import_module("src.common.platform_auth").AuthSettings
 
 
-def test_local_auth_defaults_remain_disabled_without_an_oa_application_id():
+def test_local_auth_defaults_remain_disabled_with_built_in_intranet_profile():
     settings = settings_class().from_env({})
     assert not settings.enabled
-    assert settings.app_id is None
-    assert settings.platform_base_url == "https://sv.dcsmartvision.com"
+    assert settings.app_id == 127
+    assert settings.platform_base_url == "http://172.23.255.36"
+    assert settings.public_url is None
 
 
 def test_namespaced_settings_take_precedence_and_are_loaded_at_construction(monkeypatch, isolated_auth_layout):
@@ -71,9 +72,9 @@ def test_public_url_must_be_an_http_origin(value):
         settings_class().from_env({"JTB_AUTH_PUBLIC_URL": value})
 
 
-def test_enabled_auth_requires_an_explicit_public_callback_origin():
-    with pytest.raises(ValueError, match="JTB_AUTH_PUBLIC_URL"):
-        settings_class().from_env({"JTB_AUTH_ENABLED": "true", "JTB_AUTH_APP_ID": "137"})
+def test_enabled_auth_can_derive_its_callback_origin_automatically():
+    settings = settings_class().from_env({"JTB_AUTH_ENABLED": "true", "JTB_AUTH_APP_ID": "137"})
+    assert settings.enabled and settings.public_url is None
 
 
 @pytest.mark.parametrize("name,value", [
@@ -99,6 +100,7 @@ def isolated_auth_layout(tmp_path, monkeypatch):
         "JTB_AUTH_ENABLED", "AUTH_ENABLED", "JTB_AUTH_APP_ID", "APP_ID",
         "JTB_AUTH_PLATFORM_BASE_URL", "PLATFORM_BASE_URL", "JTB_AUTH_PUBLIC_URL",
         "JTB_AUTH_TIMEOUT_SECONDS", "JTB_AUTH_CACHE_SECONDS", "JTB_AUTH_COOKIE_MAX_AGE",
+        "JTB_AUTH_CALLBACK_HOSTS",
     ):
         monkeypatch.delenv(key, raising=False)
     return auth, project_env, baked_env
@@ -168,7 +170,7 @@ def test_explicit_environment_mapping_never_reads_private_dotenv_files(isolated_
 
     monkeypatch.setattr(auth, "dotenv_values", forbidden_file_read, raising=False)
     settings = auth.AuthSettings.from_env({})
-    assert not settings.enabled and settings.app_id is None
+    assert not settings.enabled and settings.app_id == 127
 
 
 def test_baked_auth_configuration_is_read_fresh_for_each_application_construction(isolated_auth_layout):
@@ -245,44 +247,175 @@ def clients(monkeypatch):
         yield make
 
 
-def valid_cookies(client, *, token="valid-secret", userid="user-7", appid="137"):
-    client.cookies.set("sv_token", token)
-    client.cookies.set("sv_userid", userid)
+def valid_cookies(client, *, token="valid-secret", userid="user-7", appid="137", username="张工程师"):
+    client.cookies.set("jtb_sv_token", token)
+    client.cookies.set("jtb_sv_userid", userid)
     if appid is not None:
-        client.cookies.set("sv_appid", appid)
-
-
-def start_login(client, path="/auth/login"):
-    response = client.get(path, follow_redirects=False)
-    assert response.status_code == 302
-    redirect_uri = parse_qs(urlsplit(response.headers["location"]).query)["redirect_uri"][0]
-    state = parse_qs(urlsplit(redirect_uri).query)["_jtb_auth_state"][0]
-    return response, state
+        client.cookies.set("jtb_sv_appid", appid)
+    if username is not None:
+        client.cookies.set("jtb_sv_username", quote(username))
 
 
 def complete_callback(client, url):
-    _, state = start_login(client)
-    parsed = urlsplit(url)
-    query = [*parse_qsl(parsed.query, keep_blank_values=True), ("_jtb_auth_state", state)]
-    callback = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
-    return client.get(callback, follow_redirects=False)
+    return client.get(url, follow_redirects=False)
 
 
-def test_anonymous_pages_go_to_configured_oa_app_and_preserve_nonidentity_query(clients):
+def test_anonymous_pages_preserve_business_query_and_use_reference_auto_login(clients):
     client, _, calls = clients()
-    response = client.get("/review/job?tag=1&tag=2&title=%E4%B8%AD%E6%96%87&name=spoof", follow_redirects=False)
-    assert response.status_code == 302
-    location = urlsplit(response.headers["location"])
-    assert (location.scheme, location.netloc, location.path) == ("https", "oa.example", "/oauth2/login")
-    query = parse_qs(location.query)
-    assert query["app_id"] == ["137"]
-    redirect = urlsplit(query["redirect_uri"][0])
-    assert (redirect.scheme, redirect.netloc, redirect.path) == ("https", "taskbook.example", "/review/job")
-    redirect_query = parse_qs(redirect.query)
-    state = redirect_query.pop("_jtb_auth_state")[0]
-    assert redirect_query == {"tag": ["1", "2"], "title": ["中文"]}
-    assert state == client.cookies.get("sv_login_state")
+    response = client.get("/review/job?tag=1&tag=2&title=%E4%B8%AD%E6%96%87&name=business", follow_redirects=False)
+    assert response.status_code == 307
+    login = urlsplit(response.headers["location"])
+    assert (login.scheme, login.netloc, login.path) == ("https", "oa.example", "/oauth2/login")
+    query = parse_qs(login.query)
+    assert query["app_id"] == ["137"] and query["login_mode"] == ["auto"]
+    assert query["redirect_uri"] == ["https://taskbook.example/review/job?tag=1&tag=2&title=%E4%B8%AD%E6%96%87&name=business"]
     assert not calls
+
+
+def test_disabled_auth_exposes_no_cookie_identity(clients):
+    client, _, calls = clients(enabled=False)
+    valid_cookies(client)
+    assert client.get("/api/protected").json() == {"user": None, "immutable": True}
+    current = client.get("/api/current-user")
+    assert current.json() == {"auth_enabled": False, "authenticated": False, "user": None}
+    assert current.headers["cache-control"] == "no-store"
+    assert not calls
+
+
+@pytest.mark.parametrize("cookie,value", [
+    ("jtb_sv_token", "incomplete-secret"), ("jtb_sv_userid", "user-7"),
+    ("jtb_sv_token", ""), ("jtb_sv_userid", ""), ("jtb_sv_username", "name-only"),
+    ("sv_token", "legacy-secret"),
+])
+def test_incomplete_application_cookies_do_not_authenticate(clients, cookie, value):
+    client, _, calls = clients()
+    client.cookies.set(cookie, value)
+    response = client.get("/api/current-user")
+    assert response.status_code == 401 and response.json()["auth_required"] is True
+    assert not calls
+
+
+def test_direct_callback_checks_platform_and_exposes_compatible_identity(clients, caplog):
+    client, _, calls = clients()
+    response = complete_callback(client,
+        "/review/job?userid=user-7&token=callback-secret&appid=137&name=business&tag=1&tag=2",
+    )
+    assert response.status_code == 307
+    assert response.headers["location"] == "https://taskbook.example/review/job?appid=137&name=business&tag=1&tag=2"
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert len(calls) == 1
+    assert str(calls[0].url) == "https://oa.example/tenant-api/api/auth/check-app-token"
+    assert json.loads(calls[0].content) == {"userid": "user-7", "token": "callback-secret", "appid": 137}
+    current = client.get("/api/current-user").json()
+    assert current == {"auth_enabled": True, "authenticated": True, "user": {
+        "userid": "user-7", "name": "张工程师", "display_name": "张工程师", "source": "smartvision", "verified": True,
+    }}
+    assert len(calls) == 1
+    assert "callback-secret" not in caplog.text
+    assert client.get("/api/protected").json()["immutable"] is True
+
+
+@pytest.mark.parametrize("payload,accepted", [
+    ({"code": 401}, False), ({"code": "0"}, False),
+    ({"code": False}, True), ({"code": 0, "data": None}, True),
+])
+def test_callback_uses_the_reference_business_success_code(clients, payload, accepted):
+    client, platform, calls = clients()
+    platform["payload"] = payload
+    response = complete_callback(client, "/?userid=user-7&token=synthetic-token")
+    assert response.status_code == 307
+    assert len(calls) == 1
+    assert bool(client.cookies.get("jtb_sv_token")) is accepted
+    if accepted:
+        assert response.headers["location"] == "https://taskbook.example/"
+    else:
+        assert urlsplit(response.headers["location"]).netloc == "oa.example"
+
+
+def test_callback_name_only_comes_from_platform_payload(clients):
+    client, platform, _ = clients()
+    platform["payload"] = {"code": 0, "data": {}}
+    client.cookies.set("sv_username", "legacy-name")
+    response = complete_callback(client, "/?userid=user-7&token=valid-secret&name=query-name")
+    assert response.status_code == 307
+    assert client.get("/api/current-user").json()["user"]["name"] == "user-7"
+
+
+@pytest.mark.parametrize("field", ["sn", "name", "username", "userName", "nickname", "realName", "real_name", "display_name", "trueName", "nickName", "nick_name", "displayName", "user_name"])
+@pytest.mark.parametrize("nested", [True, False])
+def test_platform_name_aliases_are_supported_on_callback(clients, field, nested):
+    client, platform, _ = clients()
+    platform["payload"] = {"code": 0, **({"data": {field: " 李工程师 "}} if nested else {field: " 李工程师 "})}
+    complete_callback(client, "/?userid=user-7&token=valid-secret")
+    assert client.get("/api/current-user").json()["user"]["display_name"] == "李工程师"
+
+
+@pytest.mark.parametrize("status", [200, 401, 403, 500])
+def test_callback_follows_reference_json_result_independently_of_http_status(clients, status):
+    client, platform, _ = clients()
+    platform["status"] = status
+    response = complete_callback(client, "/?userid=user-7&token=valid-secret")
+    assert response.status_code == 307
+    assert response.headers["location"] == "https://taskbook.example/"
+    assert client.cookies.get("jtb_sv_userid") == "user-7"
+
+
+def test_platform_connection_failure_reenters_login_without_exposing_error(clients, caplog):
+    client, platform, calls = clients()
+    platform["error"] = httpx.ConnectError("synthetic-token private-upstream")
+    response = complete_callback(client, "/?userid=user-7&token=synthetic-token")
+    assert response.status_code == 307
+    assert urlsplit(response.headers["location"]).netloc == "oa.example"
+    assert len(calls) == 1
+    assert "synthetic-token" not in response.text + response.headers["location"] + caplog.text
+    assert "private-upstream" not in response.text + caplog.text
+
+
+def test_custom_verifier_supplies_callback_identity_without_network(clients):
+    async def verifier(userid, token, appid):
+        if (userid, token, appid) == ("user-7", "valid-secret", 137):
+            return {"code": 0, "data": {"realName": "验证用户"}}
+        return None
+
+    client, _, calls = clients(verifier=verifier)
+    complete_callback(client, "/?userid=user-7&token=valid-secret")
+    assert client.get("/api/current-user").json()["user"]["name"] == "验证用户"
+    assert not calls
+
+
+def test_fixed_https_origin_keeps_secure_session_cookies(clients):
+    client, _, _ = clients(public_url="https://public.example", base_url="https://internal.example")
+    response = complete_callback(client, "/?userid=user-7&token=secret")
+    assert response.headers["location"] == "https://public.example/"
+    headers = [value for value in response.headers.get_list("set-cookie") if value.startswith("jtb_sv_")]
+    assert len(headers) == 4
+    assert all("Secure" in value and "Max-Age" not in value for value in headers)
+
+
+def test_plain_http_callback_uses_session_cookies(clients):
+    client, _, _ = clients(public_url="http://taskbook.internal", base_url="http://taskbook.internal")
+    response = complete_callback(client, "/?userid=user-7&token=secret")
+    assert response.status_code == 307
+    assert all("Secure" not in value for value in response.headers.get_list("set-cookie"))
+    assert client.get("/api/current-user").json()["authenticated"] is True
+
+
+def test_explicit_login_clears_application_cookies_and_returns_to_root(clients):
+    client, _, calls = clients()
+    valid_cookies(client)
+    response = client.get("/auth/login?return=https://evil.example", follow_redirects=False)
+    assert response.status_code == 307
+    query = parse_qs(urlsplit(response.headers["location"]).query)
+    assert query == {"app_id": ["137"], "redirect_uri": ["https://taskbook.example/"], "login_mode": ["auto"]}
+    assert any("jtb_sv_token=" in value and "Max-Age=0" in value for value in response.headers.get_list("set-cookie"))
+    assert not calls
+
+
+def test_explicit_login_in_local_mode_returns_home(clients):
+    client, _, _ = clients(enabled=False)
+    response = client.get("/auth/login", follow_redirects=False)
+    assert response.status_code == 302 and response.headers["location"] == "/"
 
 
 def test_business_api_requires_login_without_trusting_identity_headers(clients):
@@ -346,313 +479,11 @@ def test_health_and_static_assets_remain_public(clients, path):
     assert not calls
 
 
-def test_disabled_auth_supports_local_use_and_exposes_no_claimed_identity(clients):
-    client, _, calls = clients(enabled=False)
-    valid_cookies(client)
-    client.cookies.set("sv_username", "forged")
-    assert client.get("/api/protected").json() == {"user": None, "immutable": True}
-    current = client.get("/api/current-user")
-    assert current.json() == {"auth_enabled": False, "authenticated": False, "user": None}
-    assert current.headers["cache-control"] == "no-store"
-    assert not calls
-
-
 def test_current_user_can_report_anonymous_auth_status(clients):
     client, _, _ = clients()
     response = client.get("/api/current-user")
     assert response.status_code == 200
     assert response.json() == {"auth_enabled": True, "authenticated": False, "user": None, "login_url": "/auth/login"}
-
-
-@pytest.mark.parametrize("cookie,value", [
-    ("sv_token", "incomplete-secret"), ("sv_userid", "user-7"),
-    ("sv_token", ""), ("sv_userid", ""), ("sv_username", "forged"),
-])
-def test_current_user_rejects_incomplete_credential_cookies(clients, cookie, value):
-    client, _, calls = clients()
-    client.cookies.set(cookie, value)
-    response = client.get("/api/current-user")
-    assert response.status_code == 401
-    assert response.json()["auth_required"] is True
-    assert not calls
-
-
-def test_current_user_does_not_hide_an_invalid_session_as_anonymous(clients):
-    client, platform, _ = clients()
-    platform["payload"] = {"code": 401}
-    valid_cookies(client)
-    response = client.get("/api/current-user")
-    assert response.status_code == 401
-    assert response.json()["auth_required"] is True
-
-
-def test_current_user_reports_validation_outage_instead_of_anonymous_mode(clients):
-    client, platform, _ = clients()
-    platform["error"] = httpx.ReadTimeout("secret")
-    valid_cookies(client)
-    assert client.get("/api/current-user").status_code == 503
-
-
-def test_callback_checks_server_side_then_sets_secure_cookies_and_cleans_the_url(clients, caplog):
-    client, _, calls = clients()
-    response = complete_callback(client,
-        "/review/job?userid=user-7&token=callback-secret&appid=137&name=forged&userName=forged"
-        "&tag=1&tag=2&title=%E4%B8%AD%E6%96%87",
-    )
-    assert response.status_code == 302
-    assert response.headers["location"] == "https://taskbook.example/review/job?tag=1&tag=2&title=%E4%B8%AD%E6%96%87"
-    assert response.headers["cache-control"] == "no-store"
-    assert response.headers["referrer-policy"] == "no-referrer"
-    assert len(calls) == 1
-    assert str(calls[0].url) == "https://oa.example/tenant-api/api/auth/check-app-token"
-    assert json.loads(calls[0].content) == {"userid": "user-7", "token": "callback-secret", "appid": 137}
-    for name in ("sv_appid", "sv_token", "sv_userid"):
-        header = next(value for value in response.headers.get_list("set-cookie") if value.startswith(name + "="))
-        assert "HttpOnly" in header and "Secure" in header and "SameSite=lax" in header and "Max-Age=28800" in header
-    current = client.get("/api/current-user").json()
-    assert current == {"auth_enabled": True, "authenticated": True, "user": {
-        "userid": "user-7", "name": "张工程师", "display_name": "张工程师", "source": "smartvision", "verified": True,
-    }}
-    assert "callback-secret" not in caplog.text
-    assert client.get("/api/protected").json()["immutable"] is True
-
-
-def test_cookie_identity_is_verified_and_forged_display_name_is_ignored(clients):
-    client, _, calls = clients()
-    valid_cookies(client)
-    client.cookies.set("sv_username", "%E7%AE%A1%E7%90%86%E5%91%98")
-    response = client.get("/api/protected", headers={"X-User": "admin", "X-Username": "forged"})
-    assert response.status_code == 200
-    assert response.json()["user"]["name"] == "张工程师"
-    assert response.json()["user"]["userid"] == "user-7"
-    assert len(calls) == 1
-
-
-@pytest.mark.parametrize("payload", [{"code": 401}, {"code": "0"}, {"code": False}, {"code": 0, "data": None, "ignored": "accepted"}])
-def test_only_an_integer_success_code_authenticates_the_session(clients, payload):
-    client, platform, _ = clients()
-    platform["payload"] = payload
-    valid_cookies(client)
-    response = client.get("/api/protected")
-    if payload.get("code") == 0 and type(payload.get("code")) is int:
-        assert response.status_code == 200
-        assert response.json()["user"]["name"] == "user-7"
-    else:
-        assert response.status_code == 401
-
-
-def test_invalid_cookie_never_reaches_protected_business_route(clients):
-    client, platform, calls = clients()
-    platform["payload"] = {"code": 401, "msg": "expired"}
-    valid_cookies(client)
-    response = client.get("/api/protected")
-    assert response.status_code == 401 and response.json()["auth_required"] is True
-    assert len(calls) == 1
-    assert any("sv_token=" in value and "Max-Age=0" in value for value in response.headers.get_list("set-cookie"))
-
-
-def test_name_query_and_legacy_cookie_never_supply_missing_verified_name(clients):
-    client, platform, _ = clients()
-    platform["payload"] = {"code": 0, "data": {}}
-    client.cookies.set("sv_username", "forged")
-    response = complete_callback(client, "/?userid=user-7&token=valid-secret&name=forged")
-    assert response.status_code == 302
-    assert client.get("/api/current-user").json()["user"]["name"] == "user-7"
-
-
-@pytest.mark.parametrize("field", ["name", "username", "userName", "nickname", "realName", "real_name", "display_name"])
-@pytest.mark.parametrize("nested", [True, False])
-def test_platform_name_aliases_are_supported(clients, field, nested):
-    client, platform, _ = clients()
-    platform["payload"] = {"code": 0, **({"data": {field: " 李工程师 "}} if nested else {field: " 李工程师 "})}
-    valid_cookies(client)
-    assert client.get("/api/current-user").json()["user"]["display_name"] == "李工程师"
-
-
-@pytest.mark.parametrize("kind", ["callback", "cookie"])
-def test_other_application_ids_are_rejected_without_using_them_for_validation(clients, kind):
-    client, _, calls = clients()
-    if kind == "callback":
-        response = client.get("/?userid=user-7&token=secret&appid=999", follow_redirects=False)
-    else:
-        valid_cookies(client, appid="999")
-        response = client.get("/api/protected")
-    assert response.status_code == 401
-    assert not calls
-
-
-@pytest.mark.parametrize("status", [401, 403, 302])
-def test_http_success_is_required_even_if_body_says_success(clients, status):
-    client, platform, _ = clients()
-    platform["status"] = status
-    valid_cookies(client)
-    assert client.get("/api/protected").status_code == 401
-
-
-@pytest.mark.parametrize("failure", ["timeout", "upstream500"])
-def test_platform_outage_returns_redacted_503(clients, failure, caplog):
-    client, platform, _ = clients()
-    if failure == "timeout":
-        platform["error"] = httpx.ConnectError("secret-token https://private.internal")
-    else:
-        platform["status"] = 500
-    valid_cookies(client, token="secret-token")
-    response = client.get("/api/protected")
-    assert response.status_code == 503 and "error" in response.json()
-    assert "secret-token" not in response.text + caplog.text
-    assert "private.internal" not in response.text + caplog.text
-
-
-def test_verified_cache_expires_and_cannot_be_reused_for_a_different_user_or_token(clients, monkeypatch):
-    auth = importlib.import_module("src.common.platform_auth")
-    now = [100.0]
-    monkeypatch.setattr(auth.time, "monotonic", lambda: now[0])
-    client, platform, calls = clients(cache_seconds=60)
-    valid_cookies(client)
-    assert client.get("/api/protected").status_code == 200
-    platform["payload"] = {"code": 401}
-    assert client.get("/api/protected").status_code == 200
-    assert len(calls) == 1
-    now[0] = 161.0
-    assert client.get("/api/protected").status_code == 401
-    assert len(calls) == 2
-    valid_cookies(client, userid="other-user")
-    assert client.get("/api/protected").status_code == 401
-    valid_cookies(client, token="different-token")
-    assert client.get("/api/protected").status_code == 401
-    assert len(calls) == 4
-
-
-def test_zero_cache_rechecks_existing_cookies_on_every_request(clients):
-    client, platform, calls = clients(cache_seconds=0)
-    valid_cookies(client)
-    assert client.get("/api/protected").status_code == 200
-    platform["payload"] = {"code": 401}
-    assert client.get("/api/protected").status_code == 401
-    assert len(calls) == 2
-
-
-def test_verification_cache_evicts_oldest_session_at_its_bound(clients, monkeypatch):
-    auth = importlib.import_module("src.common.platform_auth")
-    monkeypatch.setattr(auth, "_CACHE_LIMIT", 2)
-    client, platform, calls = clients()
-    for userid in ("user-a", "user-b", "user-c"):
-        valid_cookies(client, userid=userid)
-        assert client.get("/api/protected").status_code == 200
-    platform["payload"] = {"code": 401}
-    valid_cookies(client, userid="user-a")
-    assert client.get("/api/protected").status_code == 401
-    assert len(calls) == 4
-
-
-def test_custom_verifier_can_supply_verified_identity_without_a_network_request(clients):
-    async def verifier(userid, token, appid):
-        if (userid, token, appid) == ("user-7", "valid-secret", 137):
-            return {"code": 0, "data": {"realName": "验证用户"}}
-        return None
-
-    client, _, calls = clients(verifier=verifier)
-    valid_cookies(client)
-    assert client.get("/api/current-user").json()["user"]["name"] == "验证用户"
-    assert not calls
-
-
-def test_public_origin_overrides_request_origin_and_forwarded_headers_are_not_trusted(clients):
-    client, _, _ = clients(public_url="https://public.example", base_url="https://internal.example")
-    response = complete_callback(client, "/?userid=user-7&token=secret")
-    assert response.headers["location"] == "https://public.example/"
-    assert all("Secure" in value for value in response.headers.get_list("set-cookie"))
-
-
-def test_plain_http_local_callback_can_use_compatible_cookies(clients):
-    client, _, _ = clients(public_url="http://taskbook.internal", base_url="http://taskbook.internal")
-    response = complete_callback(client, "/?userid=user-7&token=secret")
-    assert response.status_code == 302
-    assert all("Secure" not in value for value in response.headers.get_list("set-cookie"))
-    assert client.get("/api/current-user").json()["authenticated"] is True
-
-
-def test_explicit_login_clears_cookies_and_uses_a_safe_root_return_url(clients):
-    client, _, calls = clients()
-    valid_cookies(client)
-    response = client.get("/auth/login?return=https://evil.example", follow_redirects=False)
-    assert response.status_code == 302
-    query = parse_qs(urlsplit(response.headers["location"]).query)
-    assert query["app_id"] == ["137"]
-    redirect = urlsplit(query["redirect_uri"][0])
-    assert (redirect.scheme, redirect.netloc, redirect.path) == ("https", "taskbook.example", "/")
-    assert parse_qs(redirect.query) == {"_jtb_auth_state": [client.cookies.get("sv_login_state")]}
-    assert any("sv_token=" in value and "Max-Age=0" in value for value in response.headers.get_list("set-cookie"))
-    assert not calls
-
-
-def test_explicit_login_in_local_mode_returns_home(clients):
-    client, _, _ = clients(enabled=False)
-    response = client.get("/auth/login", follow_redirects=False)
-    assert response.status_code == 302 and response.headers["location"] == "/"
-
-
-def test_login_state_is_unpredictable_and_held_in_a_short_lived_host_cookie(clients):
-    client, _, calls = clients()
-    first, first_state = start_login(client)
-    _, second_state = start_login(client)
-    assert len(first_state) >= 32 and first_state != second_state
-    header = next(value for value in first.headers.get_list("set-cookie") if value.startswith("sv_login_state="))
-    assert all(flag in header for flag in ("HttpOnly", "Secure", "SameSite=lax", "Max-Age=600", "Path=/"))
-    assert "Domain=" not in header
-    assert first.headers["cache-control"] == "no-store" and first.headers["referrer-policy"] == "no-referrer"
-    assert not calls
-
-
-def test_uninitiated_callback_cannot_write_an_attackers_session(clients):
-    client, _, calls = clients()
-    response = client.get("/?userid=attacker&token=attack-secret&name=forged", follow_redirects=False)
-    assert response.status_code == 302
-    location = urlsplit(response.headers["location"])
-    assert location.netloc == "oa.example" and location.path == "/oauth2/login"
-    redirect_uri = parse_qs(location.query)["redirect_uri"][0]
-    assert set(parse_qs(urlsplit(redirect_uri).query)) == {"_jtb_auth_state"}
-    assert "attack-secret" not in response.headers["location"]
-    assert not client.cookies.get("sv_token") and not client.cookies.get("sv_userid")
-    assert not calls
-
-
-@pytest.mark.parametrize("state", [None, "incorrect-state", "中文状态"])
-def test_missing_or_invalid_callback_state_restarts_login_without_checking_token(clients, state):
-    client, _, calls = clients()
-    _, original_state = start_login(client)
-    response = client.get("/review/job", params={
-        "userid": "attacker", "token": "attack-secret", **({"_jtb_auth_state": state} if state is not None else {}),
-    }, follow_redirects=False)
-    assert response.status_code == 302 and urlsplit(response.headers["location"]).netloc == "oa.example"
-    assert client.cookies.get("sv_login_state") != original_state
-    assert not client.cookies.get("sv_token") and not calls
-
-
-def test_callback_state_requires_the_matching_browser_cookie(clients):
-    client, _, calls = clients()
-    _, state = start_login(client)
-    client.cookies.clear()
-    response = client.get("/", params={"userid": "attacker", "token": "attack-secret", "_jtb_auth_state": state}, follow_redirects=False)
-    assert response.status_code == 302 and urlsplit(response.headers["location"]).netloc == "oa.example"
-    assert not calls
-
-
-def test_successful_callback_consumes_state_and_replayed_link_restarts_login(clients):
-    client, _, calls = clients()
-    _, state = start_login(client)
-    callback = "/review/job?" + urlencode([
-        ("userid", "user-7"), ("token", "valid-secret"), ("_jtb_auth_state", state),
-        ("tag", "first"), ("tag", "second"), ("title", "中文空 格"),
-    ])
-    response = client.get(callback, follow_redirects=False)
-    assert response.status_code == 302
-    assert response.headers["location"] == "https://taskbook.example/review/job?tag=first&tag=second&title=%E4%B8%AD%E6%96%87%E7%A9%BA+%E6%A0%BC"
-    assert client.cookies.get("sv_login_state") is None
-    assert client.cookies.get("sv_token") == "valid-secret"
-    replay = client.get(callback, follow_redirects=False)
-    assert replay.status_code == 302 and urlsplit(replay.headers["location"]).netloc == "oa.example"
-    assert len(calls) == 1
 
 
 def test_enabled_login_ignores_untrusted_host_and_forwarding_headers(clients):

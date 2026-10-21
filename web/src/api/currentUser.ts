@@ -40,3 +40,27 @@ export async function loadCurrentUser(signal: AbortSignal): Promise<CurrentUser>
     signal.removeEventListener('abort', cancel);
   }
 }
+
+/** Clear only this application's server-issued login cookies. */
+export async function logoutCurrentUser(signal: AbortSignal): Promise<void> {
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  if (signal.aborted) controller.abort();
+  else signal.addEventListener('abort', cancel, { once: true });
+  let timedOut = false;
+  const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); }, 20000);
+  try {
+    const response = await fetch('/api/system/logout', {
+      method: 'POST', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || data?.success !== true) throw new Error('退出登录失败，请重试。');
+  } catch (reason) {
+    if (timedOut) throw new Error('退出请求超时，请重试。');
+    if (reason instanceof TypeError) throw new Error('无法连接平台，请检查连接后重试退出。');
+    throw reason;
+  } finally {
+    window.clearTimeout(timeout);
+    signal.removeEventListener('abort', cancel);
+  }
+}

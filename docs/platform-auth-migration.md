@@ -78,7 +78,7 @@ HTTP 客户端设置 `trust_env=False`，此校验调用不使用 `HTTP_PROXY`�
 | 项目 | 压缩包基准 | 研制任务书实现 |
 | --- | --- | --- |
 | 登录模式 | `login_mode` 默认 `auto` | 固定发送 `login_mode=auto` |
-| 已有 Cookie | token、userid 存在且 appid 与配置一致时放行 | 同样放行本应用完整 Cookie，不向平台逐请求或定期复核 |
+| 已有 Cookie | token、userid 存在且 appid 与配置一致时放行 | 本应用完整 Cookie 仅在 URL 未传 `userid` 或与 Cookie 账号相同时放行；不同账号进入新回跳校验，不向平台逐请求或定期复核 |
 | 姓名 | 优先平台 `sn`，姓名 Cookie 缺失时补查 | 对齐并保留原有姓名字段兼容；姓名按百分号编码保存和解码 |
 | Cookie 名称 | `p02_sv_appid/token/userid/username` | 使用 `jtb_sv_appid/token/userid/username`，避免同主机其他应用的 Cookie 互相覆盖 |
 | Cookie 期限与跳转 | 浏览器会话 Cookie，307 | 对齐；HttpOnly、host-only、SameSite=Lax，HTTPS 入口启用 Secure |
@@ -89,6 +89,11 @@ HTTP 客户端设置 `trust_env=False`，此校验调用不使用 `HTTP_PROXY`�
 平台直接带回 `userid+token` 即可进入校验，不再因缺少额外 state 而重新登录。业务查询参数
 继续随回跳保留；清理身份参数时保留重复及中文参数，并将 `appid` 规范为服务端配置的编号。
 不能依靠 URL 姓名、客户端身份头或其他应用 Cookie 指定当前用户。
+
+2026-10-22 按补充参考代码修正账号切换：已有会话遇到 URL 中不同的 `userid` 时，
+必须验证该回跳的 `userid+token`，通过后覆盖账号与姓名 Cookie；未通过或信息不完整时
+清理旧会话并重新登录。显式空 `userid` 不视为未传参数。API 请求仍返回 401，不新增
+通过 API 回跳登录的通道。账号不一致仅记录事件及参数是否存在，不记录原始 token。
 
 验证成功写入四个 `jtb_sv_*` Cookie，随后 307 到清理身份参数后的地址；响应使用
 `no-store`、`no-referrer`。Cookie 不设置固定的 Max-Age；旧版 8 小时 Cookie 设置不再用于
@@ -218,6 +223,35 @@ SQLite 在事务内为旧表增加 `identity TEXT NOT NULL DEFAULT '{}'`：旧�
 修改请求需同源且带 `X-Admin-Action: 1`；不存在/过期会话返回 401，非名单或非 owner 操作被拒绝。
 OA 密码不经过本平台；已存在的 OA 登录会话可能直接完成自动登录，退出管理员不会退出 OA。
 上线需用实际 `wangxue` 账号确认平台返回的登录名字段和管理端口回跳授权；模拟身份测试不代表该真人账号已经通过联调。
+
+## MaaS 用户访问统计（2026-10-22）
+
+依据《【公开】ZH项目-自定义MaaS层访问统计标准》（2026-10-19），模型调用在 JSON 请求体的
+`extra_parameters` 中传递 `user_id` 和 `user_name`，两个值均取本应用有效 OA 会话的
+`jtb_sv_userid`。不使用显示姓名、前端表单姓名或顶层 `user` 字段替代，不上报 OA token。
+
+```json
+{
+  "extra_parameters": {
+    "model_id": "当前选择的模型 ID",
+    "user_id": "当前 OA 用户 ID",
+    "user_name": "当前 OA 用户 ID"
+  }
+}
+```
+
+`model_id` 继续来自模型选择；未指定模型 ID 时，用户统计字段仍会传递。
+主站请求在登录中间件内绑定独立的用户上下文，后台生成、澄清重跑、异步调用和语义规划线程池
+继承发起请求的身份；请求完成或发生异常后恢复上下文。切换 OA 账号须先完成新账号校验，
+已经开始的任务仍归属于原发起账号。
+
+统一构造逻辑覆盖 MaaS 对话调用、设置页的模型连通性测试，以及启用后的 embedding/rerank 请求；
+检索请求保留各自的模型 ID。模型目录 GET 不添加对话请求参数。只有神州问学服务
+（包括带 App ID 的 OpenAI 兼容配置）附带这些用户字段，直连 Azure、OpenAI、DashScope 保持原协议。
+
+本地免登录模式、独立 CLI 没有 OA 会话时不虚构统计账号，仍可调用模型，但不会有 OA 个人归属；
+需要按用户统计时应启用统一登录。外网应用 `9086` 和内网应用 `127` 使用相同逻辑，
+无需为该统计规则新增配置。发包测试可验证字段与并发隔离，实际算力统计是否入账仍需在问学后台确认。
 
 ## 验证范围与接入确认
 

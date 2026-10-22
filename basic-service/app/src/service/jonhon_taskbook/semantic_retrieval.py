@@ -120,7 +120,7 @@ def embed_texts(texts: str | Iterable[str]) -> list[list[float]]:
         json={
             "model": retrieval.embedding_model,
             "input": values if len(values) > 1 else values[0],
-            "extra_parameters": {"model_id": retrieval.embedding_model_id},
+            "extra_parameters": llm_client.request_extra_parameters(config, model_id=retrieval.embedding_model_id),
         },
         timeout=retrieval.timeout_seconds,
         follow_redirects=False,
@@ -151,7 +151,7 @@ def rerank_documents(
             "documents": docs,
             "top_n": min(max(int(top_n), 1), len(docs)),
             "return_documents": True,
-            "extra_parameters": {"model_id": retrieval.rerank_model_id},
+            "extra_parameters": llm_client.request_extra_parameters(config, model_id=retrieval.rerank_model_id),
         },
         timeout=retrieval.timeout_seconds,
         follow_redirects=False,

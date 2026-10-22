@@ -102,8 +102,9 @@ async def _request(config, *, catalog: bool) -> httpx.Response:
                 "max_tokens": COMPLETION_MAX_TOKENS,
                 "stream": False,
             }
-            if config.model_id:
-                body["extra_parameters"] = {"model_id": config.model_id}
+            extra_parameters = llm_client.request_extra_parameters(config)
+            if extra_parameters:
+                body["extra_parameters"] = extra_parameters
             response = await client.post(config.endpoint, headers=headers, json=body)
         _check_http(response)
         return response

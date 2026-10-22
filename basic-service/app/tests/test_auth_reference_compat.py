@@ -94,14 +94,95 @@ def test_complete_application_cookies_are_used_without_platform_revalidation(ref
     assert not calls
 
 
-def test_existing_session_precedes_callback_query_like_reference(reference_client):
+@pytest.mark.parametrize("username", ["已有会话姓名", None])
+def test_different_callback_user_replaces_existing_session_after_validation(reference_client, caplog, username):
+    client, calls, upstream = reference_client
+    caplog.set_level("DEBUG", logger=auth.__name__)
+    upstream["payload"] = {"code": 0, "data": {"sn": "切换用户"}}
+    session_cookies(client, username=username)
+    response = client.get("/?userid=another-user&token=another-synthetic-token&appid=127&tag=one&tag=two")
+    assert response.status_code == 307
+    assert response.headers["location"] == "http://172.23.255.36:32253/?appid=127&tag=one&tag=two"
+    assert calls == [("another-user", "another-synthetic-token", 127)]
+    assert client.cookies.get("jtb_sv_appid") == "127"
+    assert client.cookies.get("jtb_sv_userid") == "another-user"
+    assert client.cookies.get("jtb_sv_token") == "another-synthetic-token"
+    assert client.cookies.get("jtb_sv_username") == quote("切换用户")
+    identity = client.get("/api/current-user").json()
+    assert identity["authenticated"] is True
+    assert identity["user"]["userid"] == "another-user"
+    assert identity["user"]["display_name"] == "切换用户"
+    assert "synthetic-token" not in caplog.text
+    assert "another-synthetic-token" not in caplog.text
+
+
+@pytest.mark.parametrize("unavailable", [False, True])
+def test_failed_different_user_callback_clears_existing_session(reference_client, unavailable):
+    client, calls, upstream = reference_client
+    session_cookies(client)
+    upstream["payload"] = None
+    if unavailable:
+        upstream["error"] = auth.PlatformUnavailableError()
+    response = client.get("/?userid=another-user&token=another-synthetic-token&tag=one")
+    assert response.status_code == 307
+    login_url = urlsplit(response.headers["location"])
+    assert login_url.path == "/oauth2/login"
+    assert parse_qs(login_url.query)["redirect_uri"] == ["http://172.23.255.36:32253/?tag=one"]
+    assert calls == [("another-user", "another-synthetic-token", 127)]
+    assert not any(client.cookies.get(f"jtb_sv_{name}") for name in ("appid", "userid", "token", "username"))
+    assert client.get("/api/current-user").json()["authenticated"] is False
+
+
+@pytest.mark.parametrize("query,return_query", [
+    pytest.param("userid=another-user", "", id="missing-token"),
+    pytest.param("userid=another-user&token=", "", id="empty-token"),
+    pytest.param("userid=&token=another-synthetic-token", "", id="empty-userid"),
+    pytest.param("userid=another-user&token=another-synthetic-token&appid=9086", "?appid=127", id="wrong-appid"),
+])
+def test_unusable_different_user_callback_clears_existing_session(reference_client, query, return_query):
     client, calls, _ = reference_client
     session_cookies(client)
-    response = client.get("/?userid=another-user&token=another-synthetic-token")
+    response = client.get(f"/?{query}")
     assert response.status_code == 307
-    assert response.headers["location"] == "http://172.23.255.36:32253/"
-    assert client.get("/").json()["user"]["userid"] == "synthetic-user"
+    login_url = urlsplit(response.headers["location"])
+    assert login_url.path == "/oauth2/login"
+    assert parse_qs(login_url.query)["redirect_uri"] == [f"http://172.23.255.36:32253/{return_query}"]
     assert not calls
+    assert not any(client.cookies.get(f"jtb_sv_{name}") for name in ("appid", "userid", "token", "username"))
+    assert client.get("/api/current-user").json()["authenticated"] is False
+
+
+@pytest.mark.parametrize("query,status", [
+    pytest.param("?userid=synthetic-user&token=another-synthetic-token", 307, id="same-user-new-token"),
+    pytest.param("?userid=synthetic-user", 307, id="same-user-no-token"),
+    pytest.param("?token=another-synthetic-token", 307, id="missing-userid"),
+    pytest.param("", 200, id="no-callback"),
+])
+def test_same_or_absent_callback_user_preserves_existing_session(reference_client, query, status):
+    client, calls, upstream = reference_client
+    upstream["error"] = auth.PlatformUnavailableError()
+    session_cookies(client, username="已有会话姓名")
+    response = client.get(f"/{query}")
+    assert response.status_code == status
+    if status == 307:
+        assert response.headers["location"] == "http://172.23.255.36:32253/"
+    assert client.cookies.get("jtb_sv_token") == "synthetic-token"
+    identity = client.get("/api/current-user").json()
+    assert identity["user"]["userid"] == "synthetic-user"
+    assert identity["user"]["display_name"] == "已有会话姓名"
+    assert not calls
+
+
+@pytest.mark.parametrize("path", ["/api/protected", "/api/current-user"])
+def test_api_callback_for_different_user_rejects_and_clears_existing_session(reference_client, path):
+    client, calls, _ = reference_client
+    session_cookies(client)
+    response = client.get(path, params={"userid": "another-user", "token": "another-synthetic-token"})
+    assert response.status_code == 401
+    assert response.json()["auth_required"] is True
+    assert not calls
+    assert not any(client.cookies.get(f"jtb_sv_{name}") for name in ("appid", "userid", "token", "username"))
+    assert client.get("/api/current-user").json()["authenticated"] is False
 
 
 def test_missing_name_is_backfilled_after_serving_the_existing_session(reference_client):

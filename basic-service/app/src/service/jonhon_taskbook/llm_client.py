@@ -25,12 +25,13 @@ from pathlib import Path
 import httpx
 
 from .service_credentials import FIELDS as CREDENTIAL_FIELDS, get_credential_store
+from .usage_context import model_user_id_var
 
 logger = logging.getLogger(__name__)
 
 
 # Patch ThreadPoolExecutor so that contextvars (specifically the model
-# selection set by ``model_scope``) are propagated into worker threads.
+# selection and OA usage identity) are propagated into worker threads.
 # Business code spawns ThreadPoolExecutors (e.g. semantic_orchestrator);
 # without this patch the child threads lose the selected provider and fall
 # back to the default configuration, causing them to hit the wrong endpoint.
@@ -547,6 +548,21 @@ def _provider_kind(config: LLMConfig) -> str:
     if config.provider == "openai_compatible" and config.app_id:
         return "smartvision"
     return config.provider
+
+
+def request_extra_parameters(config: LLMConfig, *, model_id: str | None = None) -> dict[str, str]:
+    """Preserve model selection and attach the OA id for MaaS usage statistics.
+
+    The ZH standard requires both fields to contain the login userid, not the
+    display name. Direct providers and unauthenticated CLI/local calls do not
+    receive an invented OA identity.
+    """
+    selected_id = config.model_id if model_id is None else model_id
+    parameters = {"model_id": selected_id} if selected_id else {}
+    userid = model_user_id_var.get()
+    if _provider_kind(config) == "smartvision" and userid:
+        parameters.update(user_id=userid, user_name=userid)
+    return parameters
 
 
 def _resolve_model_config(selection: ModelSelection | None) -> LLMConfig:
@@ -1149,8 +1165,9 @@ def _request_compatible(
         "temperature": max(0.0, min(float(temperature), 1.0)),
         "max_tokens": min(int(max_tokens), config.max_tokens),
     }
-    if config.model_id:
-        body["extra_parameters"] = {"model_id": config.model_id}
+    extra_parameters = request_extra_parameters(config)
+    if extra_parameters:
+        body["extra_parameters"] = extra_parameters
     if json_mode:
         body["response_format"] = {"type": "json_object"}
     try:

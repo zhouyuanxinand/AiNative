@@ -8,11 +8,13 @@ An empty ``JTB_AUTH_PUBLIC_URL`` derives the callback from the current request,
 including its published port. Automatic callback hosts are restricted to the
 configured platform host, loopback, and explicit ``JTB_AUTH_CALLBACK_HOSTS``.
 Direct ``userid`` and ``token`` callbacks are checked with the platform. Existing
-application cookies follow the reference session flow; a missing display name
-is backfilled without blocking access. No shared session store is required.
+application cookies follow the reference session flow only when the callback
+does not select a different userid; a missing display name is backfilled without
+blocking access. No shared session store is required.
 """
 from __future__ import annotations
 
+import logging
 import math
 import os
 import re
@@ -29,6 +31,8 @@ from dotenv import dotenv_values
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
+
+from jonhon_taskbook.usage_context import model_user_scope
 
 AUTH_RESPONSE_HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
 COOKIE_APPID = "jtb_sv_appid"
@@ -60,6 +64,7 @@ _AUTH_ENV_GROUPS = (
 )
 CurrentUser = Mapping[str, Any]
 TokenVerifier = Callable[[str, str, int], Awaitable[dict[str, Any] | None]]
+logger = logging.getLogger(__name__)
 
 
 def _auth_environment() -> dict[str, str]:
@@ -337,6 +342,12 @@ class PlatformAuthMiddleware(BaseHTTPMiddleware):
         return response
 
     async def dispatch(self, request: Request, call_next) -> Response:
+        # Public/local requests have no OA identity. Never inherit attribution
+        # from an enclosing task; authenticated work binds its own userid below.
+        with model_user_scope():
+            return await self._dispatch_authenticated(request, call_next)
+
+    async def _dispatch_authenticated(self, request: Request, call_next) -> Response:
         request.state.auth_settings = self.settings
         request.state.current_user = None
         path = request.url.path
@@ -361,13 +372,24 @@ class PlatformAuthMiddleware(BaseHTTPMiddleware):
 
         cookie_userid = request.cookies.get(COOKIE_USERID, "")
         cookie_token = request.cookies.get(COOKIE_TOKEN, "")
-        if cookie_userid and cookie_token and request.cookies.get(COOKIE_APPID) == str(self.settings.app_id):
+        query_userid = request.query_params.get("userid")
+        matching_user = query_userid is None or cookie_userid == query_userid
+        application_session = cookie_userid and cookie_token and request.cookies.get(COOKIE_APPID) == str(self.settings.app_id)
+        if application_session and not matching_user:
+            # A new OA account must be validated instead of being hidden by the
+            # old session. Log the decision, never either credential's value.
+            logger.info("platform_auth_user_mismatch", extra={
+                "callback_user_present": bool(query_userid),
+                "callback_token_present": bool(request.query_params.get("token")),
+            })
+        if application_session and matching_user:
             username = unquote(request.cookies.get(COOKIE_USERNAME, "") or "")
             request.state.current_user = _verified_identity(cookie_userid, {"data": {"sn": username}})
             if any(key in request.query_params for key in ("userid", "token")):
                 response = RedirectResponse(clean_request_url(request, self.settings), status_code=307, headers=AUTH_RESPONSE_HEADERS)
             else:
-                response = await call_next(request)
+                with model_user_scope(cookie_userid):
+                    response = await call_next(request)
             if COOKIE_USERNAME not in request.cookies and time.time() >= self._backfill_cooldown_until:
                 try:
                     user = await self._verify(cookie_userid, cookie_token)
@@ -391,7 +413,7 @@ class PlatformAuthMiddleware(BaseHTTPMiddleware):
         if path.startswith("/api/"):
             return self._reject(request)
 
-        userid = request.query_params.get("userid")
+        userid = query_userid
         token = request.query_params.get("token")
         callback_appid = request.query_params.get("appid")
         if userid and token and (not callback_appid or callback_appid == str(self.settings.app_id)):

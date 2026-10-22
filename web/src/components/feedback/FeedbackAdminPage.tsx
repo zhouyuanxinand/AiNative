@@ -26,15 +26,18 @@ function filtersFromURL(): FeedbackFilters {
 }
 
 function filtersURL(filters: FeedbackFilters): string {
-  const params = new URLSearchParams();
+  const params = new URLSearchParams(window.location.search);
+  for (const field of Object.keys(initialFilters)) params.delete(field);
   for (const field of ['q', 'rating', 'status', 'date_from', 'date_to'] as const) if (filters[field]) params.set(field, filters[field]);
   if (filters.page > 1) params.set('page', String(filters.page));
   if (filters.page_size !== 20) params.set('page_size', String(filters.page_size));
   return `${window.location.pathname}${params.size ? `?${params}` : ''}`;
 }
 
-export function FeedbackAdminPage() {
+export function FeedbackAdminPage({ embedded = false, visible = true }: { embedded?: boolean; visible?: boolean }) {
   const [filters, setFilters] = useState<FeedbackFilters>(filtersFromURL);
+  const committedFilters = useRef(filters);
+  committedFilters.current = filters;
   const [draft, setDraft] = useState<FeedbackFilters>(filtersFromURL);
   const [data, setData] = useState<FeedbackPage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,19 +58,22 @@ export function FeedbackAdminPage() {
   useEffect(() => {
     active.current = true;
     const title = document.title;
-    document.title = '问题反馈管理 · 研制任务书平台';
+    if (!embedded) document.title = '问题反馈管理 · 研制任务书平台';
     const onPopState = () => {
-      listRequest.current?.abort();
-      const next = filtersFromURL(); setFilters(next); setDraft(next); setFilterError('');
+      const next = filtersFromURL();
+      if (JSON.stringify(committedFilters.current) === JSON.stringify(next)) return;
+      listRequest.current?.abort(); setFilters(next); setDraft(next); setFilterError('');
     };
     window.addEventListener('popstate', onPopState);
     return () => {
       active.current = false; listRequest.current?.abort(); mutation.current?.abort();
-      document.title = title; window.removeEventListener('popstate', onPopState);
+      if (!embedded) document.title = title;
+      window.removeEventListener('popstate', onPopState);
     };
   }, []);
 
   useEffect(() => {
+    if (!visible) return;
     const controller = new AbortController(); listRequest.current = controller;
     setLoading(true); setError(''); setData(null);
     listFeedback(filters, controller.signal).then(result => {
@@ -76,15 +82,17 @@ export function FeedbackAdminPage() {
       if (filters.page > pages) {
         const next = { ...filters, page: pages };
         window.history.replaceState(null, '', filtersURL(next)); setFilters(next); setDraft(next);
+        window.dispatchEvent(new Event('taskbook:admin-location'));
       } else setData(result);
     }).catch(reason => { if (!controller.signal.aborted) setError(feedbackError(reason)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [filters, revision]);
+  }, [filters, revision, visible]);
 
   function commit(next: FeedbackFilters) {
     listRequest.current?.abort();
     window.history.pushState(null, '', filtersURL(next));
+    window.dispatchEvent(new Event('taskbook:admin-location'));
     setFilters(next); setDraft(next); setFilterError(''); setNotice('');
   }
 
@@ -117,13 +125,13 @@ export function FeedbackAdminPage() {
   }
 
   const pages = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1;
-  return <div className="feedback-admin-page">
-    <header className="feedback-page-header"><div className="feedback-page-brand">
+  return <div className={`feedback-admin-page ${embedded ? 'feedback-admin-embedded' : ''}`}>
+    {!embedded && <header className="feedback-page-header"><div className="feedback-page-brand">
       <span className="feedback-page-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3h14v14H9l-4 4V3Z"/><path d="M9 7h6M9 11h6"/></svg></span>
       <div><h1>问题反馈管理</h1><p>研制任务书平台 · 生成效果与处理记录</p></div></div>
       <div className="auth-settings-admin-actions"><span className="feedback-timezone">北京时间 · UTC+8</span><PlatformAuthSettings /></div>
-    </header>
-    <main className="feedback-page-main">
+    </header>}
+    <div className="feedback-page-main">
       <section className="feedback-overview" aria-labelledby="feedback-overview-title">
         <div className="feedback-section-heading"><div><h2 id="feedback-overview-title">反馈概况</h2><p>统计当前筛选范围内的全部记录</p></div>
           <button type="button" className="feedback-button primary" onClick={() => setSelection({ mode: 'create', id: null })}>新增反馈</button></div>
@@ -186,11 +194,12 @@ export function FeedbackAdminPage() {
           </nav>
         </>}
       </section>
-    </main>
+    </div>
     {selection && <FeedbackRecordDialog key={`${selection.mode}-${selection.id ?? 'new'}`} id={selection.id} initialMode={selection.mode}
+      visible={visible}
       onClose={() => setSelection(null)} onSaved={record => { setNotice(`反馈 #${record.id} 已保存。`); setRevision(value => value + 1); }}
       onDelete={record => { setDeleteError(''); setRemove(record); }} />}
-    {remove && <FeedbackConfirmDialog title="删除反馈" danger confirm="确认删除" pending={deleting} error={deleteError}
+    {remove && <FeedbackConfirmDialog title="删除反馈" visible={visible} danger confirm="确认删除" pending={deleting} error={deleteError}
       onCancel={() => setRemove(null)} onConfirm={() => void confirmDelete()}>
       <p>确认删除 {remove.username} 提交的反馈 #{remove.id}？</p><p>评分：{ratingLabels[remove.rating]}。删除后无法恢复。</p>
     </FeedbackConfirmDialog>}

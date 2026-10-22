@@ -41,14 +41,16 @@ from starlette.responses import Response  # noqa: E402
 from src.common.logger import configure_logging, get_logger, shutdown_logging  # noqa: E402
 from src.common.platform_auth import AuthSettings, PlatformAuthMiddleware  # noqa: E402
 from src.common.request_context import correlation_id_var  # noqa: E402
+from src.common.request_archive import RequestArchiveMiddleware  # noqa: E402
+from src.common.request_log_store import get_request_log_store  # noqa: E402
 from src.controller.taskbook_controller import register as register_controller  # noqa: E402
 from src.controller.taskbook_controller import router as taskbook_router  # noqa: E402
 from src.controller.failure_database_controller import router as failure_database_router  # noqa: E402
 from src.controller.feedback_controller import public_router as feedback_router  # noqa: E402
+from src.controller.help_resources_controller import read_router as help_resources_router  # noqa: E402
 from src.controller.auth_controller import router as auth_router  # noqa: E402
 from src.controller.auth_settings_controller import router as auth_settings_router  # noqa: E402
 from src.controller.service_credentials_controller import router as service_credentials_router  # noqa: E402
-from src.controller.runtime_logs_controller import router as runtime_logs_router  # noqa: E402
 from src.controller.review_controller import router as review_router  # noqa: E402
 from src.controller.review_editor_controller import router as review_editor_router  # noqa: E402
 from src.utils.config_loader import AppConfig, get_config  # noqa: E402
@@ -155,8 +157,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         version="1.0.0",
     )
     application.state.config = settings
+    application.state.request_log_store = get_request_log_store(settings.logs_dir)
     auth_settings = AuthSettings.from_env()
     application.state.auth_settings = auth_settings
+    application.state.auth_settings_requires_admin = True
 
     allow_credentials = settings.cors_origins != ["*"]
     application.add_middleware(
@@ -169,6 +173,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     )
     application.add_middleware(UploadContentLengthLimitMiddleware)
     application.add_middleware(CorrelationIdMiddleware)
+    application.add_middleware(RequestArchiveMiddleware, store=application.state.request_log_store)
     application.add_middleware(PlatformAuthMiddleware, settings=auth_settings)
 
     application.include_router(taskbook_router)
@@ -176,10 +181,15 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     application.include_router(auth_settings_router)
     application.include_router(failure_database_router)
     application.include_router(feedback_router)
+    application.include_router(help_resources_router)
     application.include_router(service_credentials_router)
-    application.include_router(runtime_logs_router)
     application.include_router(review_editor_router)
     application.include_router(review_router)
+
+    @application.get("/log", include_in_schema=False)
+    @application.get("/logs", include_in_schema=False)
+    async def private_logs_only():
+        return JSONResponse({"error": "运行日志已移至独立管理员端口，请通过管理员页面登录后查看。"}, status_code=403, headers={"Cache-Control": "no-store"})
 
     web_index = _resolve_web_index()
 
@@ -187,8 +197,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         web_dir = web_index.parent
 
         @application.get("/", response_class=HTMLResponse, include_in_schema=False)
-        @application.get("/log", response_class=HTMLResponse, include_in_schema=False)
-        @application.get("/logs", response_class=HTMLResponse, include_in_schema=False)
         @application.get("/help/video", response_class=HTMLResponse, include_in_schema=False)
         @application.get("/help/manual", response_class=HTMLResponse, include_in_schema=False)
         @application.get("/review/{jid}", response_class=HTMLResponse, include_in_schema=False)
@@ -218,9 +226,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     settings = get_config()
+    archive_store = _app.state.request_log_store
+    # Only the single generation service owns recovery. Starting/restarting the
+    # independent admin listener must never close active generation archives.
+    archive_store.recover_interrupted()
     configure_logging(
         level=settings.log_level,
         log_dir=settings.logs_dir,
+        archive_store=archive_store,
     )
     register_controller(_app, settings)
     logger.info(

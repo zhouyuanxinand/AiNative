@@ -104,29 +104,49 @@ def test_document_server_callbacks_keep_their_own_signature_verification(tmp_pat
 
 
 def test_settings_save_is_staged_until_restart_and_private_manager_can_recover(tmp_path, monkeypatch):
+    from src.common.admin_access_store import AdminAccessStore
+    from src.common.admin_auth import ADMIN_COOKIE
     from src.feedback_main import create_app as create_management_app
 
     monkeypatch.setenv("JTB_AUTH_SETTINGS_DB", str(tmp_path / "auth_settings.sqlite3"))
     monkeypatch.setenv("JTB_AUTH_ENABLED", "false")
     monkeypatch.setenv("JTB_AUTH_APP_ID", "9192")
+    monkeypatch.setenv("JTB_AUTH_PLATFORM_BASE_URL", "https://login.example")
     monkeypatch.delenv("JTB_AUTH_PUBLIC_URL", raising=False)
+    monkeypatch.delenv("JTB_ADMIN_PUBLIC_URL", raising=False)
     client = TestClient(create_app(), base_url="https://taskbook.example")
     settings = client.get("/api/settings/auth").json()
     assert settings["settings"]["public_url"] is None and settings["settings"]["app_id"] == 9192
-    saved = client.put("/api/settings/auth", json={**settings["settings"], "enabled": True,
-                       "public_url": "https://taskbook.example", "expected_version": settings["version"]},
-                       headers={"X-Credential-Settings": "1", "Origin": "https://taskbook.example"})
+    assert settings["can_edit"] is False
+    changes = {**settings["settings"], "enabled": True,
+               "public_url": "https://taskbook.example", "expected_version": settings["version"]}
+    assert client.put("/api/settings/auth", json=changes,
+                      headers={"X-Credential-Settings": "1", "Origin": "https://taskbook.example"}).status_code == 403
+
+    # Exercise the real management middleware with a server-issued owner session.
+    store = AdminAccessStore(tmp_path / "admin_access.sqlite3")
+    management_app = create_management_app(admin_store=store)
+    manager_origin = "http://127.0.0.1:18131"
+    manager = TestClient(management_app, base_url=manager_origin)
+    assert manager.get("/api/settings/auth").status_code == 401
+    active_auth = management_app.state.admin_auth_settings
+    owner_session = store.create_session(
+        username="wangxue", userid="verified-wangxue-id", display_name="王工",
+        app_id=active_auth.app_id, base_url=active_auth.platform_base_url, origin=manager_origin,
+    )
+    manager.cookies.set(ADMIN_COOKIE, owner_session)
+    saved = manager.put("/api/settings/auth", json=changes,
+                        headers={"X-Credential-Settings": "1", "Origin": manager_origin})
     assert saved.status_code == 200 and saved.json()["requires_restart"] is True
     assert client.get("/api/current-user").json()["auth_enabled"] is False
     restarted = TestClient(create_app(), base_url="https://taskbook.example")
     assert restarted.get("/api/current-user").json()["auth_enabled"] is True
     assert restarted.put("/api/settings/auth", json={}).status_code == 401
-    manager = TestClient(create_management_app(), base_url="http://manager.example")
     managed = manager.get("/api/settings/auth").json()
     assert managed["active"] is None and managed["can_edit"] is True
     recovered = manager.put("/api/settings/auth", json={**managed["settings"], "enabled": False,
                             "public_url": None, "expected_version": managed["version"]},
-                            headers={"X-Credential-Settings": "1", "Origin": "http://manager.example"})
+                            headers={"X-Credential-Settings": "1", "Origin": manager_origin})
     assert recovered.status_code == 200
     assert TestClient(create_app()).get("/api/current-user").json()["auth_enabled"] is False
 

@@ -42,7 +42,6 @@ export function SidebarLogout({ onFailure }: { onFailure: () => void }) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M9 4H5v16h4M14 8l4 4-4 4M9 12h9" />
         </svg>
-        <span>{busy ? '正在退出…' : '退出登录'}</span>
       </button>
       {error && !confirm && <p id="sidebar-logout-error" className="sidebar-logout-error" role="alert">{error}</p>}
       {busy && !confirm && <FeedbackDialog title="正在退出登录" className="feedback-confirm-dialog" onCancel={() => {}}>

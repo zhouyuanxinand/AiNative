@@ -171,7 +171,7 @@ function AuthSettingsDialog({ onClose }: { onClose: () => void }) {
             {(!response.active || !response.active.enabled) && <p>未启用时本地可直接使用。启用后可自动跟随主站访问地址回跳。</p>}
             {response.requires_restart && <p>已保存的配置等待平台重启后生效。</p>}
           </div>
-          {!editable && <p className="auth-settings-readonly" role="status">主站统一登录已启用，此处仅可查看配置。请通过反馈管理端口维护。</p>}
+          {!editable && <p className="auth-settings-readonly" role="status">此处仅可查看配置。请由 wangxue 登录管理员页面维护统一登录设置。</p>}
           <fieldset className="auth-settings-fields" disabled={busy || !editable}>
             <legend>下次启动使用的配置</legend>
             <label className="auth-settings-toggle" htmlFor={`${id}-enabled`}><input id={`${id}-enabled`} type="checkbox" checked={draft.enabled} onChange={event => change('enabled', event.target.checked)} /><span>启用统一登录</span></label>

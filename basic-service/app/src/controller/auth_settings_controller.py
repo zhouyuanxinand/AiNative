@@ -38,6 +38,9 @@ def _active(request: Request) -> dict | None:
 
 
 def _can_edit(request: Request, active: dict | None) -> bool:
+    if getattr(request.app.state, "auth_settings_requires_admin", False):
+        user = getattr(request.state, "admin_user", None)
+        return bool(user and user.get("is_owner"))
     return getattr(request.app.state, "auth_settings_admin", False) is True or (active is not None and not active["enabled"])
 
 
@@ -94,13 +97,15 @@ async def put_auth_settings(request: Request):
         or request.headers.get("Sec-Fetch-Site") == "cross-site"
         or not _same_origin(request)
     ):
-        return _response({"error": "请从允许修改的本地平台或私有管理端设置入口操作。"}, 403)
+        return _response({"error": "请由 wangxue 登录管理员页面，从统一登录设置入口操作。"}, 403)
     try:
         payload = await request.json()
         if not isinstance(payload, dict) or set(payload) != {*AUTH_SETTINGS_FIELDS, "expected_version"}:
             raise ValueError("请完整提交统一登录设置，且不要包含其他字段。")
         version = validate_expected_version(payload["expected_version"])
         profile = validate_auth_profile({field: payload[field] for field in AUTH_SETTINGS_FIELDS})
+        if getattr(request.app.state, "auth_settings_requires_admin", False) and profile["app_id"] is None:
+            return _response({"error": "管理员登录仍需有效的问学应用编号，不能清空。"}, 400)
     except (ValueError, TypeError, RecursionError):
         return _response({"error": "统一登录配置格式不正确，请检查开关、应用编号和 HTTP(S) 回跳地址。"}, 400)
     try:

@@ -9,12 +9,15 @@ from types import SimpleNamespace
 
 import pytest
 from docx import Document
-from fastapi import FastAPI
+from fastapi import BackgroundTasks, FastAPI
 from fastapi.testclient import TestClient
 from jonhon_taskbook.template_registry import TemplateSelection
 
 from src import pipeline_cli
+from src.common.logger import RequestArchiveHandler
+from src.common.request_archive import RequestArchiveMiddleware, bind_archive_job
 from src.common.request_context import correlation_id_var, job_id_var, job_stage_var
+from src.common.request_log_store import RequestLogStore
 from src.controller import taskbook_controller as controller
 
 
@@ -102,6 +105,48 @@ def _docx_bytes(text: str) -> bytes:
     document.add_paragraph(text)
     document.save(stream)
     return stream.getvalue()
+
+
+def test_real_worker_progress_and_cancellation_are_preserved_in_archive(diagnostic_worker, monkeypatch, tmp_path):
+    state, jid, run, _ = diagnostic_worker
+    store = RequestLogStore(tmp_path / "archive.sqlite3")
+    app = FastAPI()
+    app.add_middleware(RequestArchiveMiddleware, store=store)
+    handler = RequestArchiveHandler(store)
+    root = logging.getLogger()
+    previous_level = root.level
+    root.setLevel(logging.INFO)
+    root.addHandler(handler)
+
+    def pipeline(**kwargs):
+        kwargs["cb"]("文件转换完成：2 个输入文件")
+        kwargs["cb"]("阶段进度：api_key=synthetic-secret")
+        state.jobs[jid]["cancel_requested"] = True
+        kwargs["cb"]("取消后不再执行")
+        raise AssertionError("Cancellation should have stopped this pipeline")
+
+    monkeypatch.setattr(pipeline_cli, "run_pipeline", pipeline)
+
+    @app.post("/api/submit")
+    async def submit(background_tasks: BackgroundTasks):
+        bind_archive_job(jid, state.jobs[jid])
+        background_tasks.add_task(run)
+        return {"jid": jid}
+
+    try:
+        with TestClient(app) as client:
+            assert client.post("/api/submit").status_code == 200
+    finally:
+        root.removeHandler(handler)
+        root.setLevel(previous_level)
+    item = store.list_requests()["items"][0]
+    assert item["status"] == "failed"
+    assert "终止" in item["error_summary"]
+    detail = store.detail(item["request_id"])
+    assert "synthetic-secret" not in str(detail)
+    assert any(row["message"] == "文件转换完成：2 个输入文件" for row in detail["entries"])
+    assert any(row.get("event") == "taskbook_job_cancelled" for row in detail["entries"])
+    assert detail["entries"][-1]["event"] == "generation_request_finished"
 
 
 def test_success_logs_stable_stages_once_with_required_context(

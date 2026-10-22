@@ -56,7 +56,8 @@ from jonhon_taskbook.template_registry import (
 from jonhon_taskbook.template_versions import TemplateVersions
 
 from src.common.logger import get_logger
-from src.common.request_context import correlation_id_var, job_id_var, job_stage_var
+from src.common.request_context import correlation_id_var, job_id_var, job_stage_var, request_archive_id_var
+from src.common.request_archive import archive_progress, bind_archive_job, update_archive_metadata
 from src.common.runtime_logs import redact_log_text
 from src.utils.config_loader import AppConfig
 
@@ -233,17 +234,21 @@ def _log_job_event(
     **details,
 ) -> None:
     job = _STATE.jobs.get(jid) or {}
-    _log_diagnostic_event(
-        event,
-        jid=jid,
-        stage=stage,
-        context=job.get("diagnostic_context") or {},
-        duration_ms=_job_elapsed_ms(job) if duration_ms is None else duration_ms,
-        error_type=error_type,
-        level=level,
-        exc_info=exc_info,
-        **details,
-    )
+    archive_token = request_archive_id_var.set(job.get("request_archive_id") or request_archive_id_var.get())
+    try:
+        _log_diagnostic_event(
+            event,
+            jid=jid,
+            stage=stage,
+            context=job.get("diagnostic_context") or {},
+            duration_ms=_job_elapsed_ms(job) if duration_ms is None else duration_ms,
+            error_type=error_type,
+            level=level,
+            exc_info=exc_info,
+            **details,
+        )
+    finally:
+        request_archive_id_var.reset(archive_token)
 
 
 def _log_job_exception(jid: str, stage: str, exc: Exception) -> None:
@@ -318,9 +323,11 @@ def _with_job_log_context(func):
         correlation_token = correlation_id_var.set(job.get("correlation_id") or "-")
         job_token = job_id_var.set(jid)
         stage_token = job_stage_var.set("queued")
+        archive_token = request_archive_id_var.set(job.get("request_archive_id") or request_archive_id_var.get())
         try:
             return func(jid, *args, **kwargs)
         finally:
+            request_archive_id_var.reset(archive_token)
             job_stage_var.reset(stage_token)
             job_id_var.reset(job_token)
             correlation_id_var.reset(correlation_token)
@@ -489,6 +496,14 @@ def _register_job(
             model=_requested_model(model_provider, model_name, model_id),
         )
         job["correlation_id"] = correlation_id_var.get()
+        bind_archive_job(jid, job)
+        update_archive_metadata({
+            "product_type": getattr(selection, "product_type_label", "") or getattr(selection, "product_type", ""),
+            "product_series": product_series, "process_classification": development_process,
+            "product_domain": getattr(selection, "product_domain_label", ""),
+            "product_scope": organization_scope, "cover_stage": cover_phase,
+            "model": _requested_model(model_provider, model_name, model_id), "model_provider": model_provider,
+        })
         _STATE.jobs[jid] = job
 
 
@@ -995,6 +1010,11 @@ async def submit_local(
     submission_started = time.perf_counter()
     tech = tech or _default_local_tech()
     spec = spec or _default_local_spec()
+    update_archive_metadata({
+        "files": {"tech": tech, "spec": spec}, "product_type": product_type,
+        "product_series": product_series, "process_classification": development_process,
+        "model": _requested_model(model_provider, model_name, model_id),
+    })
     if os.getenv("JTB_ALLOW_LOCAL_PATHS", "0") != "1":
         return JSONResponse(
             {"error": "本地路径接口默认关闭；仅开发环境可设置 JTB_ALLOW_LOCAL_PATHS=1"},
@@ -1523,6 +1543,12 @@ async def submit(
     template_edit_confirmed: str = Form("false"),
 ):
     submission_started = time.perf_counter()
+    update_archive_metadata({
+        "files": {"tech": tech.filename or "", "spec": spec.filename or ""},
+        "product_type": product_type, "product_series": product_series,
+        "process_classification": development_process,
+        "model": _requested_model(model_provider, model_name, model_id),
+    })
     _cleanup_expired_jobs()
     llm_error = _llm_submission_error(use_llm, model_provider, model_name, model_id)
     if llm_error:
@@ -1806,6 +1832,7 @@ async def indicator_review(jid: str):
 
 @router.post("/api/indicator_review/{jid}/clarify")
 async def clarify_indicators(jid: str, request: Request, background_tasks: BackgroundTasks):
+    update_archive_metadata({"parent_jid": jid})
     try:
         review = _indicator_review_payload(jid)
         if not review["can_clarify"]:
@@ -1845,6 +1872,7 @@ async def clarify_indicators(jid: str, request: Request, background_tasks: Backg
             "indicator_clarifications": combined,
             "original_filenames": original_job.get("result", {}).get("meta", {}).get("original_filenames", {}),
         })
+        update_archive_metadata({"files": original_job.get("result", {}).get("meta", {}).get("original_filenames", {})})
         _log_job_event(
             new_jid,
             "taskbook_job_submitted",
@@ -2539,6 +2567,7 @@ def _run_job(
         job["last_log_ts"] = job["updated_ts"]
         job["stage"] = str(msg).strip() or job.get("stage", "处理中")
         diagnostic_stage = _diagnostic_stage(msg)
+        archive_progress(str(msg), diagnostic_stage or job_stage_var.get())
         if diagnostic_stage and diagnostic_stage not in logged_diagnostic_stages:
             logged_diagnostic_stages.add(diagnostic_stage)
             job_stage_var.set(diagnostic_stage)

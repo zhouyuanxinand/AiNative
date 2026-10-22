@@ -3,6 +3,7 @@ import { FeedbackApiError, getFeedback, saveFeedback, type FeedbackFields, type 
 import { StyledSelect } from '../ui/StyledSelect';
 import { FeedbackConfirmDialog, FeedbackDialog } from './FeedbackDialog';
 import { feedbackError, feedbackIdentityLabel, feedbackTime, ratingLabels, ratingOptions, statusLabels, statusOptions } from './feedbackPresentation';
+import { useAdminUnsavedChanges } from '../management/adminDrafts';
 
 type Mode = 'view' | 'edit' | 'create';
 type Draft = Omit<FeedbackFields, 'rating'> & { rating: FeedbackRating | ''; jid: string };
@@ -11,8 +12,8 @@ const emptyDraft = (): Draft => ({ username: '', rating: '', comment: '', status
 const draftFor = (record: FeedbackRecord): Draft => ({ username: record.username, rating: record.rating, comment: record.comment,
   status: record.status, handling_note: record.handling_note, jid: record.snapshot.jid });
 
-export function FeedbackRecordDialog({ id, initialMode, onClose, onSaved, onDelete }: {
-  id: number | null; initialMode: Mode; onClose: () => void;
+export function FeedbackRecordDialog({ id, initialMode, visible = true, onClose, onSaved, onDelete }: {
+  id: number | null; initialMode: Mode; visible?: boolean; onClose: () => void;
   onSaved: (record: FeedbackRecord) => void; onDelete: (record: FeedbackRecord) => void;
 }) {
   const [mode, setMode] = useState<Mode>(initialMode);
@@ -30,6 +31,7 @@ export function FeedbackRecordDialog({ id, initialMode, onClose, onSaved, onDele
   const mutationPending = useRef(false);
   const errorPanel = useRef<HTMLDivElement>(null);
   const dirty = mode !== 'view' && baseline !== JSON.stringify(draft);
+  useAdminUnsavedChanges(dirty);
 
   function accept(result: FeedbackRecord) {
     const fields = draftFor(result);
@@ -63,8 +65,8 @@ export function FeedbackRecordDialog({ id, initialMode, onClose, onSaved, onDele
   }, [dirty]);
 
   useEffect(() => {
-    if (error) errorPanel.current?.focus();
-  }, [error]);
+    if (error && visible) errorPanel.current?.focus();
+  }, [error, visible]);
 
   function perform(action: LeaveAction) {
     setLeave(null);
@@ -103,7 +105,7 @@ export function FeedbackRecordDialog({ id, initialMode, onClose, onSaved, onDele
   const change = <K extends keyof Draft>(name: K, value: Draft[K]) => { setDraft(previous => ({ ...previous, [name]: value })); setLeave(null); };
   const title = mode === 'create' ? '新增反馈' : mode === 'edit' ? '编辑反馈' : '反馈详情';
   return <>
-    <FeedbackDialog title={title} className="feedback-record-dialog" onCancel={() => requestLeave('close')}>
+    <FeedbackDialog title={title} visible={visible} className="feedback-record-dialog" onCancel={() => requestLeave('close')}>
       <button type="button" className="feedback-dialog-close" aria-label="关闭详情" disabled={saving} onClick={() => requestLeave('close')}>
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg>
       </button>
@@ -156,6 +158,7 @@ export function FeedbackRecordDialog({ id, initialMode, onClose, onSaved, onDele
       </>}
     </FeedbackDialog>
     {leave && <FeedbackConfirmDialog title={leave === 'reload' ? '读取最新版本' : '放弃未保存的修改'}
+      visible={visible}
       confirm={leave === 'reload' ? '放弃修改并读取' : '放弃修改'} cancel="继续编辑" onCancel={() => setLeave(null)} onConfirm={() => perform(leave)}>
       <p>{leave === 'reload' ? '读取最新版本会替换当前表单中的修改。请先复制需要保留的内容。' : '当前修改尚未保存，放弃后无法恢复。'}</p>
     </FeedbackConfirmDialog>}

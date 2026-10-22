@@ -1,3 +1,5 @@
+import { notifyAdminAccessFailure } from './adminAccess';
+
 export type FeedbackRating = 'good' | 'average' | 'poor';
 export type FeedbackStatus = 'open' | 'in_progress' | 'resolved';
 
@@ -80,7 +82,10 @@ async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
   try {
     const response = await fetch(url, { ...init, signal: controller.signal });
     const data = await response.json().catch(reason => { if (controller.signal.aborted) throw reason; return null; });
-    if (!response.ok) throw new FeedbackApiError(data?.error || `请求未完成（HTTP ${response.status}），请重试。`, response.status);
+    if (!response.ok) {
+      notifyAdminAccessFailure(response.status, data);
+      throw new FeedbackApiError(data?.error || `请求未完成（HTTP ${response.status}），请重试。`, response.status);
+    }
     return data as T;
   } catch (reason) {
     if (timedOut) throw new FeedbackApiError(init.method && init.method !== 'GET'

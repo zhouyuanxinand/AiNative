@@ -1,9 +1,11 @@
 /** fetch 封装——统一 JSON 解析与错误处理。 */
+import { notifyAdminAccessFailure } from './adminAccess';
 
 export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   const data = await res.json();
   if (!res.ok) {
+    notifyAdminAccessFailure(res.status, data);
     const msg = (data as { error?: string })?.error || `HTTP ${res.status}`;
     throw new Error(msg);
   }

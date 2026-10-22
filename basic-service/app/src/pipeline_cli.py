@@ -15,6 +15,9 @@ pipeline_cli.py — 研制任务书自动填充流水线统一入口
 """
 from __future__ import annotations
 import argparse, json, sys, time
+from contextlib import contextmanager
+from contextvars import ContextVar
+from threading import Lock
 # Windows + Conda can fail to load ``_ssl.pyd`` after some document/image
 # native extensions have already altered the DLL search state.  The semantic
 # clients are imported lazily much later, so preload the stdlib SSL binding at
@@ -512,28 +515,26 @@ def run_pipeline(
     step("📝 规则填充…")
     try:
         from jonhon_taskbook.fill import fill
-        _patch_print(cb)
-        fill(
-            tech_path,
-            spec_path,
-            tpl_path,
-            out_path,
-            profile_path,
-            finalize=False,
-            requirement_classification=requirement_classification,
-            category_mapping_path=category_mapping_path,
-            preserve_unfilled_template=preserve_unfilled_template,
-            controlled_product_label=(selected_product_type_label or selected_product_type or ""),
-            controlled_product_domain=selected_product_domain,
-            development_process=development_process,
-            product_series=product_series,
-            organization_scope=organization_scope,
-            cover_phase=cover_phase,
-            indicator_clarifications=indicator_clarifications,
-        )
-        _restore_print()
+        with _capture_print(cb):
+            fill(
+                tech_path,
+                spec_path,
+                tpl_path,
+                out_path,
+                profile_path,
+                finalize=False,
+                requirement_classification=requirement_classification,
+                category_mapping_path=category_mapping_path,
+                preserve_unfilled_template=preserve_unfilled_template,
+                controlled_product_label=(selected_product_type_label or selected_product_type or ""),
+                controlled_product_domain=selected_product_domain,
+                development_process=development_process,
+                product_series=product_series,
+                organization_scope=organization_scope,
+                cover_phase=cover_phase,
+                indicator_clarifications=indicator_clarifications,
+            )
     except Exception as e:
-        _restore_print()
         result["error"] = f"规则填充失败: {e}"
         cb(f"❌ {result['error']}")
         return result
@@ -1018,22 +1019,66 @@ def _auto_profile(tech_path: str) -> str:
 # 辅助：临时重定向 print，让 fill.py 的日志也走 cb
 # ══════════════════════════════════════════════════════════════════
 
-_original_print = print   # 模块加载时保存，永远不会被替换
+_original_print = print
+_print_delegate = _original_print
+_print_callbacks: ContextVar[tuple[Callable[[str], None] | None, ...]] = ContextVar(
+    "pipeline_print_callbacks", default=(),
+)
+_print_capture_lock = Lock()
+_print_capture_count = 0
+
+
+def _dispatch_print(*args, **kwargs):
+    callbacks = _print_callbacks.get()
+    callback = callbacks[-1] if callbacks else None
+    if callback is None:
+        return _print_delegate(*args, **kwargs)
+    message = " ".join(str(item) for item in args)
+    # A callback may itself print (the CLI callback does). That output belongs
+    # to the console, rather than recursively entering this progress callback.
+    token = _print_callbacks.set(())
+    try:
+        try:
+            callback(message)
+        except Exception:
+            _print_delegate(message)
+    finally:
+        _print_callbacks.reset(token)
+
 
 def _patch_print(cb):
     import builtins
-    _real = _original_print
-    def _safe_print(*a, **kw):
-        msg = " ".join(str(x) for x in a)
-        try:
-            cb(msg)
-        except Exception:
-            _real(msg)
-    builtins.print = _safe_print
+    global _print_capture_count, _print_delegate
+    with _print_capture_lock:
+        if _print_capture_count == 0:
+            _print_delegate = builtins.print
+            builtins.print = _dispatch_print
+        _print_callbacks.set((*_print_callbacks.get(), cb))
+        _print_capture_count += 1
+
 
 def _restore_print():
     import builtins
-    builtins.print = _original_print
+    global _print_capture_count
+    callbacks = _print_callbacks.get()
+    if not callbacks:
+        return
+    _print_callbacks.set(callbacks[:-1])
+    with _print_capture_lock:
+        _print_capture_count -= 1
+        # One completed request must not disable capture for another request
+        # still filling its template in a different thread/task.
+        if _print_capture_count == 0:
+            builtins.print = _print_delegate
+
+
+@contextmanager
+def _capture_print(cb):
+    _patch_print(cb)
+    try:
+        yield
+    finally:
+        _restore_print()
 
 
 # ══════════════════════════════════════════════════════════════════

@@ -1,3 +1,5 @@
+import { notifyAdminAccessFailure } from './adminAccess';
+
 export interface PlatformAuthConfig {
   enabled: boolean;
   app_id: number | null;
@@ -31,7 +33,10 @@ async function request(settings: PlatformAuthConfig | undefined, version: number
       ...(settings ? { body: JSON.stringify({ ...settings, expected_version: version }) } : {}),
     });
     const data = await response.json().catch(reason => { if (controller.signal.aborted) throw reason; return null; });
-    if (!response.ok) throw new AuthSettingsApiError(data?.error || `登录配置请求失败（HTTP ${response.status}），请重试。`, response.status);
+    if (!response.ok) {
+      notifyAdminAccessFailure(response.status, data);
+      throw new AuthSettingsApiError(data?.error || `登录配置请求失败（HTTP ${response.status}），请重试。`, response.status);
+    }
     return data as AuthSettingsResponse;
   } catch (reason) {
     if (timedOut) throw new AuthSettingsApiError(settings ? '请求超时，保存结果尚未确认。请核对最新配置后重试。' : '读取登录配置超时，请重试。', 408);

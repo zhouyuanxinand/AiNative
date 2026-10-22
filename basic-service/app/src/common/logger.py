@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
+import sys
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
-from src.common.request_context import correlation_id_var, job_id_var, job_stage_var
+from src.common.request_context import (
+    correlation_id_var,
+    job_id_var,
+    job_stage_var,
+    request_archive_id_var,
+)
 from src.common.runtime_logs import redact_log_text, sanitize_log_value
 
 LOGGER_NAME = "src"
@@ -104,12 +111,33 @@ class UvicornSafePathFilter(logging.Filter):
         return True
 
 
+class RequestArchiveHandler(logging.Handler):
+    """Persist all structured logs within the active generation request."""
+
+    def __init__(self, store):
+        super().__init__()
+        self.store = store
+        self.setFormatter(JsonFormatter())
+        self.addFilter(CorrelationIdFilter())
+
+    def emit(self, record):
+        request_id = request_archive_id_var.get()
+        if not request_id:
+            return
+        try:
+            self.store.append(request_id, json.loads(self.format(record)))
+        except (OSError, sqlite3.Error):
+            # Never log recursively or print the unredacted LogRecord on failure.
+            sys.stderr.write("request archive storage unavailable\n")
+
+
 def configure_logging(
     *,
     level: str = "INFO",
     log_dir: Path | str | None = None,
     max_bytes: int = 10 * 1024 * 1024,
     backup_count: int = 7,
+    archive_store=None,
 ) -> None:
     """Install the JSON formatter, correlation filter and rotating file handler."""
     root = logging.getLogger()
@@ -125,6 +153,8 @@ def configure_logging(
     stream_handler.setFormatter(JsonFormatter())
     stream_handler.addFilter(CorrelationIdFilter())
     root.addHandler(stream_handler)
+    if archive_store is not None:
+        root.addHandler(RequestArchiveHandler(archive_store))
 
     # The platform emits its own bounded HTTP/LLM diagnostics.  Raw transport
     # DEBUG logs otherwise crowd all useful task events out of the latest-log

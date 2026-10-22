@@ -38,11 +38,12 @@ function displayContextValue(key: string, value: unknown) {
   return text;
 }
 
-function displayTime(value?: string | null) {
+export function displayLogTime(value?: string | null) {
   if (!value) return '时间未记录';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -69,7 +70,7 @@ function entryKey(entry: RuntimeLogEntry, index: number) {
   return [entry.timestamp, entry.correlation_id, entry.logger, entry.message, index].join('/');
 }
 
-function LogRow({ entry, index }: { entry: RuntimeLogEntry; index: number }) {
+export function LogRow({ entry, index }: { entry: RuntimeLogEntry; index: number }) {
   const ordered = new Set(CONTEXT_ORDER);
   const contextKeys = [
     ...CONTEXT_ORDER,
@@ -85,7 +86,7 @@ function LogRow({ entry, index }: { entry: RuntimeLogEntry; index: number }) {
 
   return (
     <li className="runtime-log-row" data-level={levelClass(entry.level)}>
-      <time dateTime={entry.timestamp || undefined}>{displayTime(entry.timestamp)}</time>
+      <time dateTime={entry.timestamp || undefined}>{displayLogTime(entry.timestamp)}</time>
       <span className={`runtime-log-level ${levelClass(entry.level)}`}>
         {levelName(entry.level)}
       </span>
@@ -115,7 +116,7 @@ function LogRow({ entry, index }: { entry: RuntimeLogEntry; index: number }) {
   );
 }
 
-export function RuntimeLogsView() {
+export function RuntimeLogsView({ active = true }: { active?: boolean }) {
   const [snapshot, setSnapshot] = useState<RuntimeLogSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -165,6 +166,7 @@ export function RuntimeLogsView() {
   }, []);
 
   useEffect(() => {
+    if (!active) return;
     mountedRef.current = true;
     void refresh();
     return () => {
@@ -172,10 +174,10 @@ export function RuntimeLogsView() {
       requestRef.current?.controller.abort();
       requestRef.current = null;
     };
-  }, [refresh]);
+  }, [refresh, active]);
 
   useEffect(() => {
-    if (!autoRefresh) return undefined;
+    if (!active || !autoRefresh) return undefined;
     let cancelled = false;
     let timer: number | undefined;
     const scheduleNext = () => {
@@ -190,7 +192,7 @@ export function RuntimeLogsView() {
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [autoRefresh, refresh]);
+  }, [active, autoRefresh, refresh]);
 
   const entries = snapshot?.entries || [];
   const returned = snapshot?.returned ?? entries.length;
@@ -204,7 +206,7 @@ export function RuntimeLogsView() {
           </p>
           <p className="runtime-log-meta" aria-live="polite">
             {snapshot
-              ? `${returned} 条记录${snapshot.truncated ? ` · 最多显示最新 ${snapshot.limit} 条` : ''}${snapshot.filtered_transport ? ` · 已过滤 ${snapshot.filtered_transport} 条底层网络调试记录` : ''} · 刷新于 ${displayTime(snapshot.updated_at)}`
+              ? `${returned} 条记录${snapshot.truncated ? ` · 最多显示最新 ${snapshot.limit} 条` : ''}${snapshot.filtered_transport ? ` · 已过滤 ${snapshot.filtered_transport} 条底层网络调试记录` : ''} · 刷新于 ${displayLogTime(snapshot.updated_at)}`
               : '正在连接日志服务…'}
           </p>
         </div>

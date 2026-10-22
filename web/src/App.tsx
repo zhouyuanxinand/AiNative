@@ -16,7 +16,7 @@ import { ProgressCard } from './components/workspace/ProgressCard';
 import { ManagementPanel } from './components/management/ManagementPanel';
 import { StandaloneRuntimeLogsPage } from './components/management/StandaloneRuntimeLogsPage';
 import { TaskbookReviewPage } from './components/review/TaskbookReviewPage';
-import { FeedbackAdminPage } from './components/feedback/FeedbackAdminPage';
+import { AdminPage } from './components/management/AdminPage';
 import { HelpResourcePage } from './components/help/HelpResourcePage';
 import { loadProductCatalog, loadModelCatalog, checkModelStatus } from './api/catalog';
 import {
@@ -730,7 +730,7 @@ function AppInner() {
 
 export default function App() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
-  if (path === '/feedback') return <FeedbackAdminPage />;
+  if (path === '/admin' || path === '/feedback') return <AdminPage />;
   if (path === '/help/video' || path === '/help/manual') {
     return <HelpResourcePage kind={path === '/help/video' ? 'video' : 'manual'} />;
   }

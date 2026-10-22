@@ -23,6 +23,7 @@ const requests = [];
 
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  await page.route('**/api/admin/session', route => route.fulfill({ json: { authenticated: true, user: { username: 'wangxue', display_name: '测试管理员', userid: 'owner-test' }, can_manage_admins: true } }));
   await page.route('**/api/feedback-admin**', async route => {
     const request = route.request();
     const url = new URL(request.url());

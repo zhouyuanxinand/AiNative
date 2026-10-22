@@ -24,6 +24,7 @@ async function open({ admin = false, editable = true, active = initial, settings
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (!path.startsWith('/api/')) return route.continue();
+    if (path === '/api/admin/session') return route.fulfill({ json: { authenticated: true, user: { username: 'wangxue', display_name: '测试管理员', userid: 'owner-test' }, can_manage_admins: true } });
     if (path === '/api/settings/auth') {
       assert.equal(request.headers()['x-credential-settings'], '1');
       if (request.method() === 'PUT') {

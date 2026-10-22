@@ -99,9 +99,9 @@ export function Sidebar({ onCredentialsSaved }: { onCredentialsSaved: () => Prom
             : identity.status === 'ready' && identity.identity.auth_enabled ? <a className="current-user-login" href="/auth/login" target="_blank" rel="noopener noreferrer" title="前往统一登录（在新标签页打开）">前往统一登录</a>
             : <span>{identity.status === 'loading' ? '请稍候' : '未启用统一登录'}</span>}
         </div>
+        {user && <SidebarLogout onFailure={() => { if (!sidebarExpanded) toggleSidebar(); }} />}
         <ServiceCredentialsSettings onSaved={onCredentialsSaved} />
       </div>
-      {user && <SidebarLogout onFailure={() => { if (!sidebarExpanded) toggleSidebar(); }} />}
       <button
         className="resize-handle resize-handle-left"
         id="left-resizer"

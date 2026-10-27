@@ -15,7 +15,6 @@ import logging
 import os
 import re
 import shutil
-import sys
 import zipfile
 from collections import defaultdict
 from pathlib import Path
@@ -35,6 +34,8 @@ from .source_scope import (
     is_signature_heading,
     nontechnical_text_reason,
     normalize_source_display_text,
+    review_reference_source_details,
+    review_reference_source_ids,
     source_exclusion_reasons,
     source_heading_label,
 )
@@ -53,19 +54,8 @@ _ALLOWED_EDIT_ACTIONS = {
 
 
 def _composer_class():
-    """优先使用已安装包，缺失时使用项目内受控的 docxcompose 副本。"""
-    try:
-        from docxcompose.composer import Composer
-        return Composer
-    except ModuleNotFoundError:
-        vendored_root = Path(__file__).resolve().parents[1] / "third_party_sources" / "docxcompose"
-        if not (vendored_root / "docxcompose" / "composer.py").is_file():
-            raise
-        vendored_text = str(vendored_root)
-        if vendored_text not in sys.path:
-            sys.path.insert(0, vendored_text)
-        from docxcompose.composer import Composer
-        return Composer
+    from .source_composer import SourceDocumentComposer
+    return SourceDocumentComposer
 
 
 def _text(el) -> str:
@@ -177,6 +167,8 @@ def _plan_cache_key(
     payload = {
         "schema": "semantic-plan-cache-v3",
         "module": _file_sha256(Path(__file__)),
+        "source_scope": _file_sha256(Path(__file__).with_name("source_scope.py")),
+        "review_reference_ids": sorted(review_reference_source_ids(requirement_classification)),
         "tech": _file_sha256(tech_path),
         "spec": _file_sha256(spec_path),
         "template": _file_sha256(template_path),
@@ -559,9 +551,10 @@ def _backfill_classified_routes(
         for source_id in (decision.get("source_ids", []) or [])
     }
     grouped: dict[str, list[tuple[str, str, float]]] = defaultdict(list)
+    review_ids = review_reference_source_ids(requirement_classification)
 
     for source_id, assignment in assignments.items():
-        if source_id in already_routed:
+        if source_id in already_routed or source_id in review_ids:
             continue
         block = block_by_id.get(source_id, {})
         # Product specifications are evidence for deterministic structured
@@ -601,6 +594,30 @@ def _backfill_classified_routes(
         } for source_id, category, _confidence in items)
 
     return completed, {"classification_backfilled_routes": backfilled}
+
+
+def enforce_review_reference_scope(plan: dict, requirement_classification: dict | None = None) -> dict:
+    """Keep reviewed historical artifacts out of every ordinary copy route.
+
+    Apply this to model plans, cached plans and direct execution of saved plans.
+    The original evidence stays in source_blocks and the route audit; it is not
+    reclassified into an arbitrary business category to satisfy body coverage.
+    """
+    classification = requirement_classification or {"source_blocks": plan.get("source_blocks", [])}
+    details = review_reference_source_details(classification)
+    filtered, suppressed = [], set()
+    for decision in plan.get("decisions", []):
+        original_ids = list(decision.get("source_ids", []) or [])
+        retained = [source_id for source_id in original_ids if source_id not in details]
+        suppressed.update(source_id for source_id in original_ids if source_id in details)
+        if retained or not original_ids:
+            filtered.append({**decision, "source_ids": retained})
+    audit = dict(plan.get("route_audit", {}))
+    audit["review_only_sources"] = list(details.values())
+    audit["review_only_sources_suppressed"] = sorted(
+        suppressed | set(audit.get("review_only_sources_suppressed", []))
+    )
+    return {**plan, "decisions": filtered, "route_audit": audit}
 
 
 def _suppress_structured_writer_sources(
@@ -1502,6 +1519,7 @@ def build_semantic_plan(
                     block["source_path"] = str(
                         Path(tech_path if block.get("source") == "tech" else spec_path).resolve()
                     )
+                cached = enforce_review_reference_scope(cached, requirement_classification)
                 Path(plan_path).write_text(
                     json.dumps(cached, ensure_ascii=False, indent=2), encoding="utf-8"
                 )
@@ -1608,6 +1626,7 @@ def build_semantic_plan(
         "decisions": decisions,
         "route_audit": route_audit,
     }
+    plan = enforce_review_reference_scope(plan, requirement_classification)
     from jonhon_taskbook.semantic_schema import SemanticPlan
     plan = SemanticPlan.model_validate(plan).model_dump(mode="json")
     if plan_path:
@@ -1735,6 +1754,10 @@ def apply_semantic_plan(
     from jonhon_taskbook.template_scanner import scan_template_tree
     Composer = _composer_class()
 
+    plan = enforce_review_reference_scope(plan)
+    review_details = plan["route_audit"]["review_only_sources"]
+    review_ids = {item["source_id"] for item in review_details}
+
     output_doc = Document(out_path)
     composer = Composer(output_doc, preserve_styles=True)
     body = output_doc.element.body
@@ -1758,7 +1781,6 @@ def apply_semantic_plan(
         if node["id"] in live_heading_by_id
     }
     source_cache: dict[str, Any] = {}
-    preserved_styles_by_source: dict[str, dict[str, str]] = {}
     prepared_sources: set[str] = set()
     inserted, skipped = [], []
     # Suppress repeat copies within one target only. A governed route can
@@ -1848,7 +1870,7 @@ def apply_semantic_plan(
         for source_id in requested_source_ids:
             expanded.extend(block_by_id.get(source_id, {}).get("media_group_members", []))
         return sorted(
-            dict.fromkeys(expanded),
+            dict.fromkeys(source_id for source_id in expanded if source_id not in review_ids),
             key=lambda source_id: (
                 block_by_id.get(source_id, {}).get("body_index", 10**9),
                 block_by_id.get(source_id, {}).get("source_span_start", -1),
@@ -2178,7 +2200,6 @@ def apply_semantic_plan(
             composer.reset_reference_mapping()
             # We import individual source elements instead of Composer.insert,
             # which normally initializes this per-document style map.
-            composer._current_preserved_styles = preserved_styles_by_source.setdefault(source_path, {})
             composer._create_style_id_mapping(source_doc)
             composer.add_referenced_parts(source_doc.part, output_doc.part, new_el)
             composer.add_styles(source_doc, new_el)
@@ -2189,6 +2210,8 @@ def apply_semantic_plan(
             composer.add_footnotes(source_doc, new_el)
             composer.remove_header_and_footer_references(source_doc, new_el)
             normalize_copied_body_paragraph(new_el, output_doc)
+            from .figure_references import mark_source_element
+            mark_source_element(new_el, source_id, output_doc)
             if insertion_mode == "before":
                 anchor.addprevious(new_el)
             else:
@@ -2215,7 +2238,6 @@ def apply_semantic_plan(
 
     if inserted:
         for source_path in prepared_sources:
-            composer._current_preserved_styles = preserved_styles_by_source[source_path]
             composer._create_style_id_mapping(source_cache[source_path])
             composer.add_styles_from_other_parts(source_cache[source_path])
         composer.renumber_bookmarks()
@@ -2290,6 +2312,7 @@ def apply_semantic_plan(
         "schema_version": "semantic-evidence-v2",
         "status": "blocked" if blocking_skipped else "complete",
         "policy": plan.get("policy", {}),
+        "review_only_sources": review_details,
         "inserted": inserted,
         "verified_present": verified_present,
         "safe_skipped": safe_skipped,

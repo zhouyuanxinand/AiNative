@@ -61,7 +61,7 @@ def test_review_only_results_leave_required_text_and_tables_in_coverage(tmp_path
     assert exclude_review_reference_sources(ledger, classification) == []
 
 
-def test_other_document_and_mixed_category_evidence_cannot_be_exempted(tmp_path):
+def test_source_coordinates_control_review_scope_independently_of_categories(tmp_path):
     source, classification = case(tmp_path)
     other = deepcopy(classification)
     for b in other["source_blocks"]:
@@ -69,7 +69,10 @@ def test_other_document_and_mixed_category_evidence_cannot_be_exempted(tmp_path)
     assert exclude_review_reference_sources(parse_docx_to_ledger(str(source)), other) == []
     for item in list(classification["classifications"]):
         classification["classifications"].append({**item, "category": "testability"})
-    assert exclude_review_reference_sources(parse_docx_to_ledger(str(source)), classification) == []
+    ledger = parse_docx_to_ledger(str(source))
+    references = exclude_review_reference_sources(ledger, classification)
+    assert len(references) == 2
+    assert all("必须" in block.raw_text for block in ledger.blocks)
 
 
 def test_quality_report_retains_every_reference_and_escapes_source_text(tmp_path):

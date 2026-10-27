@@ -16,6 +16,7 @@ pipeline_cli.py — 研制任务书自动填充流水线统一入口
 from __future__ import annotations
 import argparse, json, sys, time
 from contextlib import contextmanager
+from copy import deepcopy
 from contextvars import ContextVar
 from threading import Lock
 # Windows + Conda can fail to load ``_ssl.pyd`` after some document/image
@@ -161,6 +162,30 @@ def _category_evidence_count(classification: dict | None, category: str) -> int:
     })
 
 
+def _quality_issue_key(gate: str, issue: object) -> str:
+    """Identify a blocker independently of ZIP timestamps and figure numbering."""
+    if isinstance(issue, dict):
+        identity = {
+            key: issue[key]
+            for key in (
+                "code", "source_id", "source_ids", "parent_source_id", "target_slot",
+                "target_path", "category", "indicator", "field", "fact_id", "table_row",
+                "location", "label", "source_coordinates", "source_fragments",
+            )
+            if issue.get(key) is not None
+        }
+        if identity:
+            if isinstance(identity.get("source_ids"), list):
+                identity["source_ids"] = sorted(str(value) for value in identity["source_ids"])
+            return gate + ":" + json.dumps(identity, ensure_ascii=False, sort_keys=True)
+        issue = issue.get("message", issue.get("label", issue))
+    import re
+
+    # Existing QA reports expose some findings as text. Figure numbers change
+    # when a duplicate caption is repaired; its caption text remains identity.
+    return gate + ":" + re.sub(r"图\s*\d+", "图#", str(issue)).strip()
+
+
 def _run_delivery_gate_stage(
     out_path: str,
     result: dict,
@@ -226,7 +251,9 @@ def _run_delivery_gate_stage(
     if result.get("meta", {}).get("source_review_required"):
         gate["passed"] = False
         gate["deliverable"] = False
+        gate["approved_for_delivery"] = False
         gate.setdefault("blockers", []).append("输入文档经过格式转换或 OCR，识别内容尚需逐页复核；请下载原件与识别证据，核对或修正后上传 DOCX 重新生成")
+        gate["blocker_count"] = len(gate["blockers"])
     sidecar = Path(out_path).with_suffix(".delivery_gate.json")
     sidecar.write_text(json.dumps(gate, ensure_ascii=False, indent=2), encoding="utf-8")
     gate["sidecar"] = str(sidecar)
@@ -719,192 +746,282 @@ def run_pipeline(
     except Exception as e:
         result["warnings"].append(f"最终占位符清扫警告: {e}")
 
-    # ── 6. QA 门禁 ────────────────────────────────────────────
-    step("🔍 QA 门禁检查…")
-    qa_ok = False
-    try:
-        from jonhon_taskbook.fill import run_coverage_and_qa
-        _qa_cfg = None
+    # Candidate checks must start from pre-QA state. Failed first-pass warnings
+    # and booleans must not leak into an accepted candidate's final result.
+    quality_result_template = deepcopy(result)
+
+    def _evaluate(candidate_path: str) -> dict:
+        out_path = str(candidate_path)
+        result = deepcopy(quality_result_template)
+        result["out"] = out_path
+        _gate: dict = {}
+        configured_qa: dict = {"passed": False}
+        semantic_integrity: dict = {
+            "passed": False,
+            "violations": [{"code": "SEMANTIC_INTEGRITY_AUDIT_ERROR"}],
+        }
+        delivery_gate: dict = {"passed": False}
+        # ── 6. QA 门禁 ────────────────────────────────────────────
+        step("🔍 QA 门禁检查…")
+        qa_ok = False
         try:
-            import yaml as _yaml
-            _qa_cfg = _yaml.safe_load(Path(profile_path).read_text(encoding="utf-8"))
-        except Exception:
+            from jonhon_taskbook.fill import run_coverage_and_qa
             _qa_cfg = None
-        qa_ok = run_coverage_and_qa(
-            tech_path,
-            out_path,
-            _qa_cfg,
-            preserve_template_guidance=preserve_unfilled_template,
-            template_path=tpl_path,
-            selected_product_domain=selected_product_domain,
-        )
-        result["meta"]["qa_ok"] = bool(qa_ok)
-        _gate_rpt = Path(out_path).with_suffix(".qa_gate_report.md")
-        if _gate_rpt.exists():
             try:
-                from jonhon_taskbook.html_reporter import _load_qa_gate_report
-                _gate = _load_qa_gate_report(out_path)
-                result["meta"]["gate_result"] = _gate
-                if not qa_ok:
-                    for v in _gate.get("categories", {}).values():
-                        for issue in v:
-                            step(f"   ❌ {issue}")
-                    for w in _gate.get("warnings", []):
-                        step(f"   ⚠️ {w}")
+                import yaml as _yaml
+                _qa_cfg = _yaml.safe_load(Path(profile_path).read_text(encoding="utf-8"))
             except Exception:
-                pass
-        if not qa_ok:
-            result["warnings"].append("QA门禁有阻断项，请检查输出文件")
-    except Exception as e:
-        result["warnings"].append(f"QA检查警告: {e}")
-        result["meta"]["qa_ok"] = False
+                _qa_cfg = None
+            qa_ok = run_coverage_and_qa(
+                tech_path,
+                out_path,
+                _qa_cfg,
+                preserve_template_guidance=preserve_unfilled_template,
+                template_path=tpl_path,
+                selected_product_domain=selected_product_domain,
+            )
+            result["meta"]["qa_ok"] = bool(qa_ok)
+            _gate_rpt = Path(out_path).with_suffix(".qa_gate_report.md")
+            if _gate_rpt.exists():
+                try:
+                    from jonhon_taskbook.html_reporter import _load_qa_gate_report
+                    _gate = _load_qa_gate_report(out_path)
+                    result["meta"]["gate_result"] = _gate
+                    if not qa_ok:
+                        for v in _gate.get("categories", {}).values():
+                            for issue in v:
+                                step(f"   ❌ {issue}")
+                        for w in _gate.get("warnings", []):
+                            step(f"   ⚠️ {w}")
+                except Exception:
+                    pass
+            if not qa_ok:
+                result["warnings"].append("QA门禁有阻断项，请检查输出文件")
+        except Exception as e:
+            result["warnings"].append(f"QA检查警告: {e}")
+            result["meta"]["qa_ok"] = False
 
-    # ── 6.1 统一配置 QA 门禁 ─────────────────────────────────
-    # fill.run_coverage_and_qa 负责覆盖率与业务账本；这里另外执行
-    # config/qa_gate.yaml，保证 CLI、Web 和测试使用同一份版式/污染规则。
-    configured_qa_ok = False
-    try:
-        configured_qa = _run_configured_qa_gate(
-            out_path,
-            profile_data,
-            preserve_template_guidance=preserve_unfilled_template,
-            selected_product_domain=selected_product_domain,
-            template_path=tpl_path,
-        )
-        configured_qa_ok = bool(configured_qa.get("passed"))
-        result["meta"]["configured_qa_ok"] = configured_qa_ok
-        result["meta"]["configured_qa_config"] = configured_qa.get("config_path", "")
-        result["meta"]["configured_qa_gate"] = {
-            "blocked": bool(configured_qa.get("blocked")),
-            "block_reasons": configured_qa.get("block_reasons", []),
-            "warnings": configured_qa.get("warnings", []),
-        }
-        result["sidecars"]["configured_qa_gate"] = configured_qa.get("sidecar", "")
-        if not configured_qa_ok:
-            for issue in configured_qa.get("block_reasons", []):
-                step(f"   ❌ 配置门禁: {issue}")
-            result["warnings"].append("统一配置 QA 门禁有阻断项")
-    except Exception as e:
-        result["meta"]["configured_qa_ok"] = False
-        result["warnings"].append(f"统一配置 QA 门禁执行失败: {e}")
-    qa_ok = bool(qa_ok and configured_qa_ok)
-    result["meta"]["qa_ok"] = qa_ok
+        coverage_qa_ok = bool(qa_ok)
 
-    # ── 6.1.1 语义目标完整性门禁 ───────────────────────────────
-    # 全文覆盖率不能证明内容写在了正确章节。这里用 source_id、分类结果和
-    # 实时无编号标题树核对目标位置；需精确核对的类别由分类 YAML 外置配置。
-    semantic_integrity_ok = False
-    try:
-        from jonhon_taskbook.semantic_integrity_gate import (
-            run_semantic_integrity_gate,
-        )
-
-        semantic_integrity = run_semantic_integrity_gate(
-            out_path,
-            semantic_plan,
-            requirement_classification,
-            category_mapping_path,
-            require_complete_source_checks=profile_data.get("technical_requirements_mode") == "sections",
-        )
-        semantic_integrity_ok = bool(semantic_integrity.get("passed"))
-        result["meta"]["semantic_integrity_ok"] = semantic_integrity_ok
-        result["meta"]["semantic_integrity_gate"] = {
-            "checked": len(semantic_integrity.get("checked", [])),
-            "violations": semantic_integrity.get("violations", []),
-        }
-        result["sidecars"]["semantic_integrity_gate"] = semantic_integrity.get(
-            "sidecar", ""
-        )
-        if not semantic_integrity_ok:
-            for issue in semantic_integrity.get("violations", []):
-                step(
-                    "   ❌ 语义位置门禁: "
-                    f"{issue.get('code', 'UNKNOWN')} "
-                    f"{issue.get('source_id', '')} → {issue.get('target_path', '')}"
-                )
-            result["warnings"].append("语义目标完整性门禁存在阻断项")
-    except Exception as e:
-        result["meta"]["semantic_integrity_ok"] = False
-        result["warnings"].append(f"语义目标完整性门禁执行失败: {e}")
-
-    qa_ok = bool(qa_ok and semantic_integrity_ok)
-    result["meta"]["qa_ok"] = qa_ok
-
-    # 最终Word必须与本次受控指标裁决账本逐字段一致。该检查发生在全部
-    # 后处理之后，防止正文生成正确、但表格装配/清理阶段又把值丢失。
-    if profile_data.get("technical_requirements_mode") == "sections":
-        business_value_audit = {"applicable": False, "mode": "sections"}
-        result["meta"]["business_value_audit"] = business_value_audit
-    else:
-        business_value_audit: dict = {"passed": False, "blockers": []}
+        # ── 6.1 统一配置 QA 门禁 ─────────────────────────────────
+        # fill.run_coverage_and_qa 负责覆盖率与业务账本；这里另外执行
+        # config/qa_gate.yaml，保证 CLI、Web 和测试使用同一份版式/污染规则。
+        configured_qa_ok = False
         try:
-            from jonhon_taskbook.business_value_gate import audit_indicator_values
-
-            business_value_audit = audit_indicator_values(out_path)
-            result["meta"]["business_value_audit"] = {
-                "passed": bool(business_value_audit.get("passed")),
-                "checked_decisions": int(
-                    business_value_audit.get("checked_decisions", 0) or 0
-                ),
-                "blocker_count": len(business_value_audit.get("blockers") or []),
+            configured_qa = _run_configured_qa_gate(
+                out_path,
+                profile_data,
+                preserve_template_guidance=preserve_unfilled_template,
+                selected_product_domain=selected_product_domain,
+                template_path=tpl_path,
+            )
+            configured_qa_ok = bool(configured_qa.get("passed"))
+            result["meta"]["configured_qa_ok"] = configured_qa_ok
+            result["meta"]["configured_qa_config"] = configured_qa.get("config_path", "")
+            result["meta"]["configured_qa_gate"] = {
+                "blocked": bool(configured_qa.get("blocked")),
+                "block_reasons": configured_qa.get("block_reasons", []),
+                "warnings": configured_qa.get("warnings", []),
             }
-            result["sidecars"]["business_value_audit"] = business_value_audit.get(
+            result["sidecars"]["configured_qa_gate"] = configured_qa.get("sidecar", "")
+            if not configured_qa_ok:
+                for issue in configured_qa.get("block_reasons", []):
+                    step(f"   ❌ 配置门禁: {issue}")
+                result["warnings"].append("统一配置 QA 门禁有阻断项")
+        except Exception as e:
+            result["meta"]["configured_qa_ok"] = False
+            result["warnings"].append(f"统一配置 QA 门禁执行失败: {e}")
+        qa_ok = bool(qa_ok and configured_qa_ok)
+        result["meta"]["qa_ok"] = qa_ok
+
+        # ── 6.1.1 语义目标完整性门禁 ───────────────────────────────
+        # 全文覆盖率不能证明内容写在了正确章节。这里用 source_id、分类结果和
+        # 实时无编号标题树核对目标位置；需精确核对的类别由分类 YAML 外置配置。
+        semantic_integrity_ok = False
+        try:
+            from jonhon_taskbook.semantic_integrity_gate import (
+                run_semantic_integrity_gate,
+            )
+
+            semantic_integrity = run_semantic_integrity_gate(
+                out_path,
+                semantic_plan,
+                requirement_classification,
+                category_mapping_path,
+                require_complete_source_checks=profile_data.get("technical_requirements_mode") == "sections",
+            )
+            semantic_integrity_ok = bool(semantic_integrity.get("passed"))
+            result["meta"]["semantic_integrity_ok"] = semantic_integrity_ok
+            result["meta"]["semantic_integrity_gate"] = {
+                "checked": len(semantic_integrity.get("checked", [])),
+                "violations": semantic_integrity.get("violations", []),
+            }
+            result["sidecars"]["semantic_integrity_gate"] = semantic_integrity.get(
                 "sidecar", ""
             )
-            if not business_value_audit.get("passed"):
-                for blocker in business_value_audit.get("blockers", [])[:10]:
-                    step(f"   ❌ 指标值门禁: {blocker.get('message', blocker)}")
-                result["warnings"].append("最终Word与受控指标账本不一致")
+            if not semantic_integrity_ok:
+                for issue in semantic_integrity.get("violations", []):
+                    step(
+                        "   ❌ 语义位置门禁: "
+                        f"{issue.get('code', 'UNKNOWN')} "
+                        f"{issue.get('source_id', '')} → {issue.get('target_path', '')}"
+                    )
+                result["warnings"].append("语义目标完整性门禁存在阻断项")
         except Exception as e:
-            business_value_audit = {
-                "passed": False,
-                "blockers": [{
-                    "code": "BUSINESS_VALUE_AUDIT_ERROR",
-                    "message": f"指标值门禁执行失败: {e}",
-                }],
-            }
-            result["meta"]["business_value_audit"] = {
-                "passed": False,
-                "checked_decisions": 0,
-                "blocker_count": 1,
-            }
-            result["warnings"].append(f"指标值门禁执行失败: {e}")
+            result["meta"]["semantic_integrity_ok"] = False
+            result["warnings"].append(f"语义目标完整性门禁执行失败: {e}")
 
-    # ── 6.2 正式交付门禁 ─────────────────────────────────────
-    # 不能只把 Profile 的 delivery_gate 写进 meta；必须实际调用
-    # run_delivery_gate，让门禁结论参与最终 ok/blocked 状态。
-    delivery_gate_ok = False
-    try:
-        delivery_gate = _run_delivery_gate_stage(
-            out_path,
-            result,
-            profile_data,
-            requirement_classification,
-            business_value_audit,
-        )
-        delivery_gate_ok = bool(delivery_gate.get("passed"))
-        result["meta"]["delivery_gate_result"] = {
-            "passed": delivery_gate_ok,
-            "deliverable": bool(delivery_gate.get("deliverable", delivery_gate_ok)),
-            "blockers": delivery_gate.get("blockers", []),
-            "warnings": delivery_gate.get("warnings", []),
-        }
-        result["sidecars"]["delivery_gate"] = delivery_gate.get("sidecar", "")
-        for warning in delivery_gate.get("warnings", []):
-            step(f"   ⚠ {warning}")
-            result["warnings"].append(str(warning))
+        qa_ok = bool(qa_ok and semantic_integrity_ok)
+        result["meta"]["qa_ok"] = qa_ok
+
+        # 最终Word必须与本次受控指标裁决账本逐字段一致。该检查发生在全部
+        # 后处理之后，防止正文生成正确、但表格装配/清理阶段又把值丢失。
+        if profile_data.get("technical_requirements_mode") == "sections":
+            business_value_audit = {"applicable": False, "mode": "sections"}
+            result["meta"]["business_value_audit"] = business_value_audit
+        else:
+            business_value_audit: dict = {"passed": False, "blockers": []}
+            try:
+                from jonhon_taskbook.business_value_gate import audit_indicator_values
+
+                business_value_audit = audit_indicator_values(out_path)
+                result["meta"]["business_value_audit"] = {
+                    "passed": bool(business_value_audit.get("passed")),
+                    "checked_decisions": int(
+                        business_value_audit.get("checked_decisions", 0) or 0
+                    ),
+                    "blocker_count": len(business_value_audit.get("blockers") or []),
+                }
+                result["sidecars"]["business_value_audit"] = business_value_audit.get(
+                    "sidecar", ""
+                )
+                if not business_value_audit.get("passed"):
+                    for blocker in business_value_audit.get("blockers", [])[:10]:
+                        step(f"   ❌ 指标值门禁: {blocker.get('message', blocker)}")
+                    result["warnings"].append("最终Word与受控指标账本不一致")
+            except Exception as e:
+                business_value_audit = {
+                    "passed": False,
+                    "blockers": [{
+                        "code": "BUSINESS_VALUE_AUDIT_ERROR",
+                        "message": f"指标值门禁执行失败: {e}",
+                    }],
+                }
+                result["meta"]["business_value_audit"] = {
+                    "passed": False,
+                    "checked_decisions": 0,
+                    "blocker_count": 1,
+                }
+                result["warnings"].append(f"指标值门禁执行失败: {e}")
+
+        # ── 6.2 正式交付门禁 ─────────────────────────────────────
+        # 不能只把 Profile 的 delivery_gate 写进 meta；必须实际调用
+        # run_delivery_gate，让门禁结论参与最终 ok/blocked 状态。
+        delivery_gate_ok = False
+        try:
+            delivery_gate = _run_delivery_gate_stage(
+                out_path,
+                result,
+                profile_data,
+                requirement_classification,
+                business_value_audit,
+            )
+            delivery_gate_ok = bool(delivery_gate.get("passed"))
+            result["meta"]["delivery_gate_result"] = {
+                "passed": delivery_gate_ok,
+                "deliverable": bool(delivery_gate.get("deliverable", delivery_gate_ok)),
+                "blockers": delivery_gate.get("blockers", []),
+                "warnings": delivery_gate.get("warnings", []),
+            }
+            result["sidecars"]["delivery_gate"] = delivery_gate.get("sidecar", "")
+            for warning in delivery_gate.get("warnings", []):
+                step(f"   ⚠ {warning}")
+                result["warnings"].append(str(warning))
+            if not delivery_gate_ok:
+                for blocker in delivery_gate.get("blockers", []):
+                    step(f"   ❌ 交付门禁: {blocker}")
+                result["warnings"].append("正式交付门禁有阻断项")
+        except Exception as e:
+            result["meta"]["delivery_gate_result"] = {
+                "passed": False,
+                "deliverable": False,
+                "blockers": [f"交付门禁执行失败: {e}"],
+                "warnings": [],
+            }
+            result["warnings"].append(f"正式交付门禁执行失败: {e}")
+
+        blocking_keys: set[str] = set()
+        if not coverage_qa_ok:
+            categories = _gate.get("categories") or {}
+            for category, issues in categories.items():
+                blocking_keys.update(_quality_issue_key("coverage_qa:" + category, issue) for issue in issues)
+            if not categories:
+                blocking_keys.add("coverage_qa:CHECK_FAILED")
+        if not configured_qa_ok:
+            reasons = configured_qa.get("block_reasons") or ["CHECK_FAILED"]
+            blocking_keys.update(_quality_issue_key("configured_qa", issue) for issue in reasons)
+        if not semantic_integrity_ok:
+            issues = semantic_integrity.get("violations") or [{"code": "CHECK_FAILED"}]
+            blocking_keys.update(_quality_issue_key("semantic", issue) for issue in issues)
+        if business_value_audit.get("applicable") is not False and not business_value_audit.get("passed"):
+            issues = business_value_audit.get("blockers") or [{"code": "CHECK_FAILED"}]
+            blocking_keys.update(_quality_issue_key("business_value", issue) for issue in issues)
         if not delivery_gate_ok:
-            for blocker in delivery_gate.get("blockers", []):
-                step(f"   ❌ 交付门禁: {blocker}")
-            result["warnings"].append("正式交付门禁有阻断项")
-    except Exception as e:
-        result["meta"]["delivery_gate_result"] = {
-            "passed": False,
-            "deliverable": False,
-            "blockers": [f"交付门禁执行失败: {e}"],
-            "warnings": [],
+            issues = delivery_gate.get("blockers") or result["meta"]["delivery_gate_result"].get("blockers") or ["CHECK_FAILED"]
+            blocking_keys.update(_quality_issue_key("delivery", issue) for issue in issues)
+
+        covered_source_ids: list[str] = []
+        try:
+            ledger = json.loads(Path(out_path).with_suffix(".coverage_ledger.json").read_text(encoding="utf-8"))
+            blocks = ledger["blocks"]
+            if not isinstance(blocks, list) or any(not isinstance(item, dict) or not item.get("block_id") for item in blocks):
+                raise ValueError("覆盖账本缺少完整来源ID")
+            covered_source_ids = sorted({str(item["block_id"]) for item in blocks if item.get("covered") is True})
+            blocking_keys.update("source_coverage:" + str(item["block_id"]) for item in blocks if item.get("covered") is not True)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            qa_ok = False
+            result["meta"]["qa_ok"] = False
+            blocking_keys.add("source_coverage:AUDIT_UNREADABLE")
+            result["warnings"].append(f"修复复检缺少可验证覆盖账本: {exc}")
+        return {
+            "qa_ok": bool(qa_ok),
+            "delivery_gate_ok": delivery_gate_ok,
+            "semantic_integrity": semantic_integrity,
+            "configured_qa": configured_qa,
+            "coverage_qa": _gate,
+            "business_value_audit": business_value_audit,
+            "delivery_gate": delivery_gate,
+            "result": result,
+            "blocking_keys": sorted(blocking_keys),
+            "covered_source_ids": covered_source_ids,
         }
-        result["warnings"].append(f"正式交付门禁执行失败: {e}")
+
+    try:
+        from jonhon_taskbook.auto_repair import run_auto_repair
+
+        repair = run_auto_repair(
+            out_path, semantic_plan, requirement_classification,
+            evaluate=_evaluate, max_rounds=2, cb=step,
+        )
+        checked = repair["snapshot"]
+        result = checked["result"]
+        qa_ok = bool(checked["qa_ok"])
+        delivery_gate_ok = bool(checked["delivery_gate_ok"])
+        result["meta"]["auto_repair"] = {
+            "accepted_rounds": int(repair.get("accepted_rounds", 0)),
+            "attempted_rounds": len(repair.get("rounds") or []),
+            "stop_reason": str(repair.get("stop_reason", "")),
+        }
+        result["sidecars"]["auto_repair"] = repair["audit_path"]
+    except Exception as exc:
+        checked = _evaluate(out_path)
+        result = checked["result"]
+        qa_ok = False
+        delivery_gate_ok = bool(checked["delivery_gate_ok"])
+        result["meta"]["qa_ok"] = False
+        result["meta"]["auto_repair"] = {"stop_reason": "error", "error": str(exc)}
+        result["warnings"].append(f"自动修复复检失败: {exc}")
+        step(f"   ❌ 自动修复复检失败: {exc}")
 
     # ── 7. HTML 报告 ───────────────────────────────────────────
     try:

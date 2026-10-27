@@ -183,3 +183,13 @@ def test_populated_environment_section_cannot_retain_template_list_guidance(envi
     result = _gate(environmental_case)
     assert not result["passed"]
     assert "ENVIRONMENTAL_PROSE_REQUIRED" in {item["code"] for item in result["violations"]}
+
+
+def test_environmental_gate_detects_a_removed_target_section(environmental_case):
+    path, _, _, _ = environmental_case
+    output = Document()
+    output.add_heading("技术指标", 1)
+    output.save(path)
+    result = _gate(environmental_case)
+    assert not result["passed"]
+    assert "TARGET_SLOT_NOT_FOUND" in {item["code"] for item in result["violations"]}

@@ -389,7 +389,7 @@ def _normalize_row_flow(table_xml) -> None:
                 tr_pr.remove(node)
         if index == 0:
             header = OxmlElement("w:tblHeader")
-            header.set(f"{_W}val", "true")
+            header.set(f"{_W}val", "on")
             tr_pr.append(header)
         else:
             for node in list(tr_pr.findall(f"{_W}cantSplit")):

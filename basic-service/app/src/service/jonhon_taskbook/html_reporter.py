@@ -183,6 +183,23 @@ def _combined_gate_report(docx_path: Path) -> dict:
                 else:
                     messages.append(str(issue))
             gate["categories"][label] = messages or [f"{label}未通过，请查看任务检查记录"]
+    repair = _load_ledger(str(docx_path.with_suffix(".auto_repair.json"))) or {}
+    retained = repair.get("snapshot") or {}
+    # Rejected candidates do not describe the retained output. Its snapshot
+    # does, including rollback verification failures whose restored sidecars
+    # intentionally preserve the earlier checks unchanged.
+    rollback_failed = (
+        repair.get("stop_reason") == "rollback_verification_failed"
+        or "auto_repair:ROLLBACK_VERIFICATION_FAILED" in (retained.get("blocking_keys") or [])
+    )
+    if rollback_failed:
+        gate["passed"] = False
+        gate["categories"]["自动修复后检查"] = [
+            "ROLLBACK_VERIFICATION_FAILED：恢复后的复检失败，当前文件继续阻断交付",
+        ]
+    elif (retained.get("qa_ok") is False or retained.get("delivery_gate_ok") is False) and not any(gate["categories"].values()):
+        gate["passed"] = False
+        gate["categories"]["自动修复后检查"] = ["当前文件未通过修复后检查，请查看自动修复记录"]
     return gate
 
 
@@ -225,6 +242,50 @@ def _review_reference_panel(ledger: dict | None) -> str:
         '<div class="section"><h2>历史测试资料（仅供审阅）</h2>'
         f'<p>共 {len(references)} 项，不计入正文覆盖率。保留来源位置及原始证据，供审阅时对照。</p>'
         + ''.join(rows) + '</div>'
+    )
+
+
+def _auto_repair_panel(docx_path: str) -> str:
+    path = Path(docx_path).with_suffix(".auto_repair.json")
+    if not path.is_file():
+        return ""
+    try:
+        audit = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    labels = {
+        "REMOVE_VERIFIED_ENVIRONMENTAL_DUPLICATE": "移除环境章节的错放副本，保留正确章节的原文",
+        "NORMALIZE_WORD_PROPERTIES": "修正文档格式属性",
+    }
+    reasons = {
+        "no_verified_repair": "没有可自动修复的确定性问题",
+        "round_limit": "达到修复轮数上限",
+        "new_blocker": "候选产生新阻断，未采用",
+        "source_coverage_regressed": "候选减少来源覆盖，未采用",
+        "no_verified_progress": "复检没有确认改善",
+        "repair_failed": "修复失败，保留原稿",
+        "rollback_verification_failed": "已恢复原稿，恢复后的检查失败，继续阻断交付",
+        "no_document_change": "文件无变化",
+    }
+    rows = []
+    for record in audit.get("rounds") or []:
+        for action in record.get("actions") or []:
+            rows.append("<tr>" + "".join(f"<td>{escape(str(value))}</td>" for value in (
+                record.get("round", ""), "已采用" if record.get("accepted") else "未采用",
+                labels.get(action.get("code"), action.get("code", "")),
+                action.get("source_id", ""), action.get("text", ""),
+            )) + "</tr>")
+    details = (
+        "<table><thead><tr><th>轮次</th><th>结果</th><th>处理</th><th>来源编号</th>"
+        "<th>原文片段</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+    ) if rows else "<p>本次没有执行自动修改。</p>"
+    reason = str(audit.get("stop_reason", ""))
+    return (
+        '<div class="section"><h2>自动修复记录</h2>'
+        f"<p>已采用 {int(audit.get('accepted_rounds', 0))} 轮修复。"
+        f"{escape(reasons.get(reason, reason))}。</p>"
+        "<p>修复后仍以全部交付门禁结果为准；原文复核、冲突及证据不足不会自动放行。</p>"
+        + details + "</div>"
     )
 
 
@@ -383,6 +444,7 @@ ul{{padding-left:18px;line-height:1.7}}
 
   {image_warning_section}
 
+  {_auto_repair_panel(docx_path)}
   {_review_reference_panel(ledger)}
 
   <div class="section">

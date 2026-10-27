@@ -41,6 +41,47 @@ _CONTEXT_HEADER = re.compile(
     r"耐受阈值|阈值|约束条件|(?:环境)?适配约束(?:条件)?|安装约束|运行约束|贮存约束|"
     r"储存约束|运输约束|适用条件|施加方向|频率范围|加速度|循环次数|持续时间|升降温速率|恢复条件|恢复时间)$"
 )
+_PACKAGING_COMPONENT = re.compile(r"(?:防尘|防水|防潮|防护)(?:盖|罩|帽|塞|袋|包装)")
+_PACKAGING_DESIGN = re.compile(r"装配|装箱|包装|材质|材料|厚度|尺寸|采用|透明片材")
+_FIGURE_LABEL = re.compile(
+    r"^(?:图\s*[0-9一二三四五六七八九十百]+(?:[-－.]\d+)*|fig(?:ure)?\.?\s*\d+(?:[-.]\d+)*)",
+    re.IGNORECASE,
+)
+
+
+def environmental_source_rejection(block: dict, source_element=None, *, categories=()) -> str:
+    """Explain why a source block cannot supply environmental prose.
+
+    An empty reason only admits the block to clause/row selection; it does not
+    certify the entire block as an environmental requirement. Mixed technical
+    tables and explicit transport/test requirements remain eligible regardless
+    of their primary requirement category.
+    """
+    if block.get("source", "tech") != "tech":
+        return "non_requirement_source"
+    heading_context = " / ".join([*map(str, block.get("parent_headings") or []),
+                                   str(block.get("heading_text") or block.get("section") or "")])
+    if re.search(r"引用标准|引用文件|编制依据|参考文献|适用法律法规|规范性引用", heading_context):
+        return "reference_section"
+    categories = {str(item) for item in categories}
+    if categories and categories <= {"standards_reference", "schedule"}:
+        return "non_requirement_category"
+    if block.get("type") == "table":
+        return ""
+    text = str(block.get("text") or "").strip()
+    if source_element is not None and not block.get("is_fragment"):
+        text = "".join(node.text or "" for node in source_element.iter(qn("w:t"))).strip()
+    label = _FIGURE_LABEL.match(text)
+    if label and not re.match(r"\s*(?:所示|中|为|表示|的)", text[label.end():]):
+        return "figure_caption"
+    if block.get("media_group_id") and not block.get("has_drawing") and text:
+        return "media_group_caption"
+    if not text or text.startswith("[图片对象"):
+        if block.get("has_drawing") or block.get("media_group_id") or text.startswith("[图片对象"):
+            return "media_without_requirement_text"
+    if _packaging_description(text):
+        return "packaging_component_description"
+    return ""
 
 
 def is_environmental_slot(slot: dict | None) -> bool:
@@ -56,7 +97,15 @@ def _clean(text: str) -> str:
 
 def _environment_subject(text: str) -> bool:
     clean = _clean(text)
-    return bool(_ENVIRONMENT.search(clean) and not _OTHER_SUBJECT.match(clean))
+    # A cover named 防尘盖 is a packaging component, not a dust test. Ignore
+    # that noun only; a separate 防尘试验/运输温度 in the same clause still owns
+    # its original requirements and acceptance criteria.
+    return bool(_ENVIRONMENT.search(_PACKAGING_COMPONENT.sub("", clean)) and not _OTHER_SUBJECT.match(clean))
+
+
+def _packaging_description(text: str) -> bool:
+    return bool(_PACKAGING_COMPONENT.search(text) and _PACKAGING_DESIGN.search(text)
+                and not _environment_subject(text))
 
 
 def _paragraph_spans(text: str, *, environmental_context: bool = False, other_subject_context: bool = False) -> list[tuple[int, int]]:
@@ -82,6 +131,9 @@ def _paragraph_spans(text: str, *, environmental_context: bool = False, other_su
         elif other_subject and detail_label and not _environment_subject(label.group(1) if label else ""):
             active = False
         elif _OTHER_SUBJECT.match(clause):
+            active = False
+            other_subject = True
+        elif _packaging_description(clause):
             active = False
             other_subject = True
         elif other_label:
@@ -127,7 +179,7 @@ def _table_rows(block: dict, source_element) -> list[list[str]]:
             for row in Table(source_element, None).rows]
 
 
-def project_environmental_evidence(block: dict, source_element=None) -> list[dict]:
+def project_environmental_evidence(block: dict, source_element=None, *, categories=()) -> list[dict]:
     """Return exact source fragments plus permitted prose punctuation.
 
     No values come from specifications, templates or generated narration.
@@ -135,14 +187,12 @@ def project_environmental_evidence(block: dict, source_element=None) -> list[dic
     """
     if block.get("source", "tech") != "tech":
         return []
-    heading_context = " / ".join([*map(str, block.get("parent_headings") or []),
-                                   str(block.get("heading_text") or block.get("section") or "")])
-    if re.search(r"引用标准|引用文件|编制依据|参考文献|适用法律法规|规范性引用", heading_context):
-        return []
     if source_element is None and block.get("source_path") and isinstance(block.get("body_index"), int):
         from docx import Document
         document = Document(block["source_path"])
         source_element = document.element.body[block["body_index"]]
+    if environmental_source_rejection(block, source_element, categories=categories):
+        return []
     result: list[dict] = []
 
     def append(text, fragments, coordinates):
@@ -170,7 +220,8 @@ def project_environmental_evidence(block: dict, source_element=None) -> list[dic
                 text = original
         heading = str(block.get("heading_text") or block.get("section") or "")
         for start, end in _paragraph_spans(
-            text, environmental_context=_environment_subject(heading),
+            text, environmental_context=(not categories or "environmental_adaptability" in categories)
+            and _environment_subject(heading),
             other_subject_context=bool(_OTHER_SUBJECT.match(_clean(heading))),
         ):
             raw = text[start:end]

@@ -60,7 +60,8 @@ def test_unreviewed_conversion_blocks_an_otherwise_passing_delivery(
     monkeypatch.setattr(
         delivery_gate,
         "run_delivery_gate",
-        lambda *args, **kwargs: {"passed": True, "deliverable": True, "blockers": []},
+        lambda *args, **kwargs: {"passed": True, "deliverable": True,
+                                "approved_for_delivery": True, "blocker_count": 0, "blockers": []},
     )
     output = tmp_path / "review.docx"
     result = {"meta": {"source_review_required": True}}
@@ -71,3 +72,5 @@ def test_unreviewed_conversion_blocks_an_otherwise_passing_delivery(
         output.with_suffix(".delivery_gate.json").read_text(encoding="utf-8")
     )
     assert saved["passed"] is False
+    assert saved["approved_for_delivery"] is False
+    assert saved["blocker_count"] == len(saved["blockers"]) == 1

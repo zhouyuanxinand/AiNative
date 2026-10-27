@@ -136,6 +136,11 @@ def final_placeholder_sweep_docx(
     if not changed:
         return 0
 
+    # This is the last DOCX write in the controlled pipeline. A changed table
+    # receives font properties again above, so retain valid property order.
+    from jonhon_taskbook.ooxml_properties import normalize_properties
+
+    normalize_properties(root)
     document_xml = etree.tostring(
         root,
         xml_declaration=True,

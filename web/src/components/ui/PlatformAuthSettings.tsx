@@ -10,18 +10,18 @@ type Field = 'app_id' | 'platform_base_url' | 'public_url';
 const draftFor = (config: PlatformAuthConfig): Draft => ({ enabled: config.enabled, app_id: config.app_id === null ? '' : String(config.app_id), platform_base_url: config.platform_base_url, public_url: config.public_url || '', callback_mode: config.public_url ? 'manual' : 'auto' });
 const draftSignature = (draft: Draft) => JSON.stringify({ ...draft, public_url: draft.callback_mode === 'auto' ? '' : draft.public_url });
 
-export function PlatformAuthSettings({ disabled = false }: { disabled?: boolean }) {
+export function PlatformAuthSettings({ disabled = false, admin = false }: { disabled?: boolean; admin?: boolean }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   return <>
     <button ref={trigger} type="button" className="auth-settings-trigger" disabled={disabled} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>统一登录设置</button>
-    {open && createPortal(<AuthSettingsDialog onClose={() => {
+    {open && createPortal(<AuthSettingsDialog admin={admin} onClose={() => {
       setOpen(false); requestAnimationFrame(() => trigger.current?.focus());
     }} />, document.body)}
   </>;
 }
 
-function AuthSettingsDialog({ onClose }: { onClose: () => void }) {
+function AuthSettingsDialog({ onClose, admin }: { onClose: () => void; admin: boolean }) {
   const id = useId().replaceAll(':', '');
   const dialog = useRef<HTMLDialogElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -54,7 +54,7 @@ function AuthSettingsDialog({ onClose }: { onClose: () => void }) {
     const controller = new AbortController(); request.current = controller;
     setLoading(true); setError(''); setSuccess(''); setConfirm(null);
     try {
-      const result = await getAuthSettings(controller.signal);
+      const result = await getAuthSettings(controller.signal, admin);
       if (!controller.signal.aborted && request.current === controller) accept(result);
     } catch (reason) {
       if (!controller.signal.aborted && request.current === controller) setError(reason instanceof Error ? reason.message : '登录配置读取失败，请重试。');
@@ -130,7 +130,7 @@ function AuthSettingsDialog({ onClose }: { onClose: () => void }) {
     savingLock.current = true; setSaving(true); setError(''); setSuccess(''); setConflict(false); setConfirm(null); setInvalid(null);
     const controller = new AbortController(); request.current = controller;
     try {
-      const result = await saveAuthSettings(outgoing, response.version, controller.signal);
+      const result = await saveAuthSettings(outgoing, response.version, controller.signal, admin);
       if (!controller.signal.aborted && request.current === controller) { accept(result); setSuccess('已保存，重启平台后生效'); }
     } catch (reason) {
       if (!controller.signal.aborted && request.current === controller) {

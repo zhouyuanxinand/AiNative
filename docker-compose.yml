@@ -8,8 +8,8 @@ services:
     restart: unless-stopped
     ports:
       # 仅绑定 loopback；远程暴露请同时评估 TLS、CORS 与认证。
+      # 主站与 /admin 共用此映射，不需要发布容器 81。
       - "127.0.0.1:18130:80"
-      - "127.0.0.1:${JTB_FEEDBACK_PUBLISHED_PORT:-18131}:81"
     env_file:
       # 从服务根 .env 注入 LLM 凭据与非密钥运行配置（.env 已被 .gitignore 忽略）。
       - .env
@@ -33,6 +33,7 @@ services:
       - taskbook-logs:/opt/local/agent-develop-task-doc/basic-service/app/logs
       - taskbook-runtime:/opt/local/agent-develop-task-doc/basic-service/app/runtime
     healthcheck:
+      # 81 只在容器内部探测管理员服务，不依赖宿主机端口映射。
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:80/api/health && curl -fsS http://127.0.0.1:81/api/health"]
       interval: 30s
       timeout: 5s

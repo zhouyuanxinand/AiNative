@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
-  addHelpResourceLink, deleteHelpResource, getHelpResources, helpResourceDownloadUrl, uploadHelpResource,
+  addHelpResourceLink, deleteHelpResource, getAdminHelpResources, helpResourceDownloadUrl, uploadHelpResource,
   type HelpResource, type HelpResourceKind,
 } from '../../api/helpResources';
 import { FeedbackConfirmDialog } from '../feedback/FeedbackDialog';
@@ -59,7 +59,7 @@ export function HelpResourcesView({ active }: { active: boolean }) {
     if (!active) return;
     const controller = new AbortController(); listRequest.current = controller;
     setLoading(true); setLoadError('');
-    Promise.all([getHelpResources('video', controller.signal), getHelpResources('manual', controller.signal)]).then(results => {
+    Promise.all([getAdminHelpResources('video', controller.signal), getAdminHelpResources('manual', controller.signal)]).then(results => {
       if (!controller.signal.aborted) setItems(results.flatMap(result => result.items).sort((a, b) => b.created_at.localeCompare(a.created_at)));
     }).catch(cause => {
       if (!controller.signal.aborted) setLoadError(cause instanceof Error ? cause.message : '资料列表读取失败，请重试。');

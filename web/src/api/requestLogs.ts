@@ -1,5 +1,6 @@
 import type { RuntimeLogEntry } from './runtimeLogs';
 import { notifyAdminAccessFailure } from './adminAccess';
+import { urlWithQuery } from '../lib/url';
 
 export type RequestLogStatus = 'running' | 'success' | 'failed';
 export interface RequestLogSummary {
@@ -72,7 +73,7 @@ export function listRequestLogs(filters: { status: string; q: string }, signal?:
   const query = new URLSearchParams();
   if (filters.status) query.set('status', filters.status);
   if (filters.q) query.set('q', filters.q);
-  return getRequestLogs<RequestLogList>(`/api/logs/requests${query.size ? `?${query}` : ''}`, signal);
+  return getRequestLogs<RequestLogList>(urlWithQuery('/api/logs/requests', query), signal);
 }
 
 export function readRequestLogs(requestId: string, after: number, signal?: AbortSignal) {

@@ -27,10 +27,15 @@
 | Toast | 反馈流程的 inline status/alert；不调用全站 Toast | 本约定的就地反馈决策 | 成功回执 `role=status`，错误 `role=alert`；不自动消失 | 浏览器成功回执和失败提示 |
 | CRUD | `FeedbackAdminPage`、`FeedbackRecordDialog`、`FeedbackConfirmDialog` 与反馈 API | 反馈 API 版本契约 | 新增/编辑成功停留详情；删除回列表；查询保留 URL 状态 | `web/tests/feedback.browser.mjs` 完整流程 |
 | 管理导航 | `AdminPage` 侧栏与 URL `view` | 用户指定侧边栏形式、`feedback_main.py` 的私有服务边界 | 桌面左侧栏；窄屏纵向折叠菜单；旧路径重定向 | `web/tests/admin.browser.mjs` 的导航、草稿、前后退与手机测试 |
+| 审阅定位与滚动 | `TaskbookReviewPage`、`taskbookReview.css` 的目录和文档容器 | 用户指定的连续切换对照点行为 | 桌面目录常驻；窄屏通过顶部“目录 / 来源 / 任务书”切换；文档独立滚动，宽表格局部横向滚动 | `web/tests/review-navigation.browser.mjs` 的长文档、旧视口单位兼容、双向定位和阅读位置检查 |
 | 操作资料表单与删除 | `HelpResourcesView`、`StyledSelect`、`FeedbackConfirmDialog` | 资料 API 与既有控件 | 单条文件或链接添加、分类筛选、上传进度、原件访问及删除确认 | `web/tests/help-resources.browser.mjs` 的普通管理员维护、校验、草稿和恢复测试 |
 | 操作资料阅读 | `HelpResourcePage`、浏览器 video 与 iframe、Word 内容渲染 | 资料 API 返回的预览类型与内容 | 多资料切换、刷新、视频/PDF/Word 内容预览和原件入口 | 同一浏览器用例的视频播放、PDF、Word 表格图片及手机截图 |
 
 本轮没有表格多选和批量动作，因此 Table Selection 不适用。已有其他页面的原生 select 与纵向拖拽 textarea 不由本文件迁移。
+
+管理员导航与筛选共用 `web/src/lib/url.ts` 序列化查询参数，以序列化字符串是否为空决定是否附加查询串，不依赖较新浏览器才提供的 `URLSearchParams.size`；切换视图及前进、后退保留其余筛选参数。
+
+审阅页使用受视口约束的工作区，`100vh` 为 `100dvh` 提供兼容回退。章节、待核对项和双向来源定位仅移动文档容器及必要的内部表格滚动区域，不滚动整页。隐藏面板收到定位请求时，在面板展示后执行一次；完成后切换面板应保留用户手动阅读的位置。定位动画遵循减少动态效果偏好。
 
 ## Flow and URL state
 

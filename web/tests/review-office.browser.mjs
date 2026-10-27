@@ -1,7 +1,7 @@
 /** Synthetic ONLYOFFICE bridge verifies save acknowledgement and session lifetime. */
 import assert from 'node:assert/strict';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined });
 const base = process.env.TEST_BASE_URL || 'http://127.0.0.1:5173';
 const bundle = { jid: 'office-browser-fixture', title: '版式编辑保存测试', selection: {}, baseline_revision_id: 'baseline', current_revision_id: 'baseline', assets: [], warnings: [],
   revisions: [{ id: 'baseline', created_at: '2026-09-22T10:00:00+08:00', sha256: 'baseline', annotations: [] }] };

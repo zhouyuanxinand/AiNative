@@ -33,6 +33,18 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 export const getHelpResources = (kind: HelpResourceKind, signal?: AbortSignal) =>
   request<{ items: HelpResource[] }>(`/api/help-resources?kind=${kind}`, { signal });
 
+function adminResource(item: HelpResource): HelpResource {
+  if (item.source_type !== 'file') return item;
+  // The admin session is independent of the main site's OA session.
+  const adminUrl = (url: string | null) => url?.replace(/^\/api\/help-resources(?=\/|\?|$)/, '/admin/api/help-resources') ?? null;
+  return { ...item, content_url: adminUrl(item.content_url), preview_url: adminUrl(item.preview_url) };
+}
+
+export async function getAdminHelpResources(kind: HelpResourceKind, signal?: AbortSignal) {
+  const result = await request<{ items: HelpResource[] }>(`/admin/api/help-resources?kind=${kind}`, { signal });
+  return { items: result.items.map(adminResource) };
+}
+
 export const addHelpResourceLink = (body: { kind: HelpResourceKind; title: string; source_url: string }, signal?: AbortSignal) =>
   request<{ item: HelpResource }>('/api/help-resources-admin/links', {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Action': '1' }, body: JSON.stringify(body), signal,
@@ -65,7 +77,7 @@ export function uploadHelpResource(body: { kind: HelpResourceKind; title: string
         reject(new Error(result?.error || `上传失败（HTTP ${xhr.status}），请重试。`));
       } else if (!result?.item) {
         reject(new Error('未收到资料保存结果，请刷新列表核对后重试。'));
-      } else resolve({ item: result.item });
+      } else resolve({ item: adminResource(result.item) });
     };
     xhr.onerror = () => { cleanup(); reject(new Error('上传连接中断，请检查网络后重试。')); };
     xhr.onabort = () => { cleanup(); reject(new DOMException('上传已取消。', 'AbortError')); };

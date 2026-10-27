@@ -28,11 +28,9 @@ spec:
           # 内网无镜像仓库时禁止远程拉取，避免回退到 Docker Hub 后 ImagePullBackOff。
           imagePullPolicy: Never
           ports:
+            # 主站与 /admin 共用 80，无需单独暴露管理员端口。
             - containerPort: 80
               name: http
-              protocol: TCP
-            - containerPort: 81
-              name: feedback-admin
               protocol: TCP
           env:
             - name: APP_ENV
@@ -94,6 +92,7 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
+            # 81 是容器内部的兼容入口；探测不依赖 Service 或 NodePort 映射。
             exec:
               command:
                 - sh
@@ -124,22 +123,6 @@ spec:
       port: 80
       targetPort: 80
       nodePort: 30130
-      protocol: TCP
----
-# 管理端口单独提供 ClusterIP，通过 kubectl port-forward 本地访问。
-apiVersion: v1
-kind: Service
-metadata:
-  name: agent-develop-task-doc-feedback
-  namespace: agent-develop-task-doc
-spec:
-  type: ClusterIP
-  selector:
-    app: agent-develop-task-doc
-  ports:
-    - name: feedback-admin
-      port: 81
-      targetPort: feedback-admin
       protocol: TCP
 ---
 # 持久化存储（可选：保留生成结果和日志）

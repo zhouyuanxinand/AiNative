@@ -5,6 +5,7 @@ import { PlatformAuthSettings } from '../ui/PlatformAuthSettings';
 import { FeedbackConfirmDialog } from './FeedbackDialog';
 import { FeedbackRecordDialog } from './FeedbackRecordDialog';
 import { feedbackError, feedbackIdentityLabel, feedbackTime, ratingLabels, ratingOptions, statusLabels, statusOptions } from './feedbackPresentation';
+import { urlWithQuery } from '../../lib/url';
 import '../../feedback.css';
 
 const initialFilters: FeedbackFilters = { q: '', rating: '', status: '', date_from: '', date_to: '', page: 1, page_size: 20 };
@@ -31,7 +32,7 @@ function filtersURL(filters: FeedbackFilters): string {
   for (const field of ['q', 'rating', 'status', 'date_from', 'date_to'] as const) if (filters[field]) params.set(field, filters[field]);
   if (filters.page > 1) params.set('page', String(filters.page));
   if (filters.page_size !== 20) params.set('page_size', String(filters.page_size));
-  return `${window.location.pathname}${params.size ? `?${params}` : ''}`;
+  return urlWithQuery(window.location.pathname, params);
 }
 
 export function FeedbackAdminPage({ embedded = false, visible = true }: { embedded?: boolean; visible?: boolean }) {
@@ -129,7 +130,7 @@ export function FeedbackAdminPage({ embedded = false, visible = true }: { embedd
     {!embedded && <header className="feedback-page-header"><div className="feedback-page-brand">
       <span className="feedback-page-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3h14v14H9l-4 4V3Z"/><path d="M9 7h6M9 11h6"/></svg></span>
       <div><h1>问题反馈管理</h1><p>研制任务书平台 · 生成效果与处理记录</p></div></div>
-      <div className="auth-settings-admin-actions"><span className="feedback-timezone">北京时间 · UTC+8</span><PlatformAuthSettings /></div>
+      <div className="auth-settings-admin-actions"><span className="feedback-timezone">北京时间 · UTC+8</span><PlatformAuthSettings admin /></div>
     </header>}
     <div className="feedback-page-main">
       <section className="feedback-overview" aria-labelledby="feedback-overview-title">

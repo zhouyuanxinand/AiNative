@@ -114,6 +114,30 @@ def test_admin_upload_is_shared_with_public_reader_and_can_be_deleted(api):
     assert admin.delete(f'/api/help-resources-admin/{item["id"]}', headers=WRITE_HEADERS).status_code == 404
 
 
+def test_admin_read_namespace_supports_files_and_word_without_main_login(api):
+    _, admin, admin_app, _ = api
+    video = _upload(admin).json()["item"]
+    document = Document()
+    document.add_paragraph("管理员操作手册")
+    content = io.BytesIO()
+    document.save(content)
+    manual = _upload(admin, kind="manual", filename="manual.docx", content=content.getvalue(),
+                     media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document").json()["item"]
+    assert len(admin.get("/admin/api/help-resources").json()["items"]) == 2
+    video_url = "/admin" + video["content_url"]
+    response = admin.get(video_url, headers={"Range": "bytes=0-7"})
+    assert response.status_code == 206 and response.content == MP4[:8]
+    download = admin.get(video_url, params={"download": 1})
+    assert download.content == MP4 and download.headers["content-disposition"].startswith("attachment")
+    preview_url = "/admin" + manual["preview_url"]
+    preview = admin.get(preview_url)
+    assert preview.status_code == 200 and "管理员操作手册" in preview.text
+    with TestClient(admin_app, base_url=ADMIN_ORIGIN) as anonymous:
+        for path in ("/admin/api/help-resources", video_url, preview_url):
+            denied = anonymous.get(path, headers={"Cookie": "jtb_sv_userid=wangxue; jtb_sv_token=synthetic-token; jtb_sv_appid=127"})
+            assert denied.status_code == 401 and denied.json()["code"] == "AUTH_REQUIRED"
+
+
 @pytest.mark.parametrize("range_header,expected,content_range", [
     ("bytes=0-7", MP4[:8], f"bytes 0-7/{len(MP4)}"),
     ("bytes=12-", MP4[12:], f"bytes 12-{len(MP4) - 1}/{len(MP4)}"),

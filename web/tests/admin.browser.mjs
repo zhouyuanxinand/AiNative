@@ -21,15 +21,22 @@ try {
   page.setDefaultTimeout(8000);
   page.setDefaultNavigationTimeout(30000);
   page.on('pageerror', error => errors.push(error.message));
+  // Older intranet Chrome versions lack this property. Keep all navigation
+  // checks in that environment so URL parameters cannot silently disappear.
+  await page.addInitScript(() => { delete URLSearchParams.prototype.size; });
   const requests = [];
   let logsMode = 'ready';
   let listMode = 'ready';
   await page.route('**/api/**', async route => {
     const request = route.request();
     const url = new URL(request.url());
-    if (!url.pathname.startsWith('/api/')) return route.continue();
+    if (!url.pathname.startsWith('/api/') && !url.pathname.startsWith('/admin/api/')) return route.continue();
     requests.push({ path: url.pathname, url: url.href, headers: request.headers() });
     if (url.pathname === '/api/admin/session') return route.fulfill({ json: { authenticated: true, user: { username: 'wangxue', display_name: '测试管理员', userid: 'owner-test' }, can_manage_admins: true } });
+    if (url.pathname === '/api/admin/members') return route.fulfill({ json: { items: [
+      { username: 'wangxue', is_owner: true, created_at: '2026-10-22T01:20:00Z', created_by: 'system' },
+    ], can_manage_admins: true } });
+    if (url.pathname === '/admin/api/help-resources') return route.fulfill({ json: { items: [] } });
     if (url.pathname === '/api/logs/latest') {
       if (logsMode === 'error') return route.fulfill({ status: 503, json: { error: '日志源暂不可用' } });
       return route.fulfill({ json: logsMode === 'empty' ? { ...snapshot, entries: [], returned: 0 } : snapshot });
@@ -41,13 +48,14 @@ try {
       return route.fulfill({ json: { items, total: items.length, page: 1, page_size: 20,
         stats: { total: items.length, good: 0, average: items.length, poor: 0, good_rate: 0, open: items.length, in_progress: 0, resolved: 0 } } });
     }
-    if (url.pathname === '/api/settings/auth') return route.fulfill({ json: { settings: { enabled: false, app_id: 9086, platform_base_url: 'https://sv.dcsmartvision.com', public_url: null },
+    if (url.pathname === '/admin/api/settings/auth') return route.fulfill({ json: { settings: { enabled: false, app_id: 9086, platform_base_url: 'https://sv.dcsmartvision.com', public_url: null },
       active: { enabled: false, app_id: 9086, platform_base_url: 'https://sv.dcsmartvision.com', public_url: null }, can_edit: true, version: 1, requires_restart: false } });
     return route.fulfill({ status: 404, json: { error: 'Unexpected API' } });
   });
   const nav = page.getByRole('navigation', { name: '管理员导航', exact: true });
   await page.goto(`${base}/admin?q=CY&log_source=service`);
   await page.getByRole('table', { name: '生成效果反馈列表' }).waitFor();
+  assert.equal(await page.evaluate(() => 'size' in URLSearchParams.prototype), false);
   assert.equal(await nav.getByRole('link', { name: '用户反馈', exact: true }).getAttribute('aria-current'), 'page');
   assert.equal(requests.filter(item => item.path === '/api/current-user').length, 0);
   assert.equal(requests.filter(item => item.path === '/api/logs/latest').length, 0, 'inactive logs never start polling');
@@ -109,6 +117,35 @@ try {
   await nav.getByRole('link', { name: '用户反馈', exact: true }).click();
   await page.getByRole('table', { name: '生成效果反馈列表' }).waitFor();
   if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'admin-feedback-desktop.png'), fullPage: true });
+
+  async function assertView(view, label) {
+    await page.getByRole('heading', { name: view === 'feedback' ? '问题反馈管理' : label, exact: true }).waitFor();
+    assert.equal(new URL(page.url()).searchParams.get('view'), view === 'feedback' ? null : view);
+    assert.equal(new URL(page.url()).searchParams.get('q'), '提交筛选');
+    assert.equal(new URL(page.url()).searchParams.get('log_source'), 'service');
+    assert.equal(await nav.getByRole('link', { name: label, exact: true }).getAttribute('aria-current'), 'page');
+    assert.equal(await nav.locator('[aria-current="page"]').count(), 1);
+    if (view === 'resources') await page.getByText('暂无操作资料', { exact: true }).waitFor();
+    else if (view === 'admins') await page.getByRole('table', { name: '管理员权限名单', exact: true }).waitFor();
+    else if (view === 'logs') await page.getByText('演示任务需要人工核查', { exact: true }).waitFor();
+    else await page.getByRole('table', { name: '生成效果反馈列表', exact: true }).waitFor();
+  }
+  const destinations = [['resources', '操作资料上传'], ['admins', '管理员名单'], ['logs', '运行日志'], ['feedback', '用户反馈']];
+  for (const [view, label] of destinations) {
+    await nav.getByRole('link', { name: label, exact: true }).click();
+    await assertView(view, label);
+    if (process.env.SCREENSHOT_DIR && (view === 'resources' || view === 'admins')) {
+      await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, `admin-${view}-desktop.png`), fullPage: true, animations: 'disabled' });
+    }
+  }
+  for (const [view, label] of destinations.slice(0, -1).reverse()) {
+    await page.goBack();
+    await assertView(view, label);
+  }
+  for (const [view, label] of destinations.slice(1)) {
+    await page.goForward();
+    await assertView(view, label);
+  }
   await page.locator('#feedback-rating-filter').click();
   await page.waitForFunction(() => Math.abs(document.getElementById('feedback-rating-filter').getBoundingClientRect().width - document.getElementById('feedback-rating-filter-menu').getBoundingClientRect().width) <= 1);
   const selectBox = await page.locator('#feedback-rating-filter').boundingBox();
@@ -147,5 +184,5 @@ try {
   await page.getByRole('heading', { name: '运行日志', exact: true }).waitFor();
   await page.getByRole('link', { name: '返回研制任务书平台', exact: true }).waitFor();
   assert.deepEqual(errors, []);
-  console.log('Unified admin browser passed: sidebar, URL history, filter/editor drafts, polling lifecycle, API errors/empty/recovery, Beijing time, keyboard/select, mobile, settings and legacy routes.');
+  console.log('Unified admin browser passed without URLSearchParams.size: all four sidebar views, URL history, filter/editor drafts, polling lifecycle, API errors/empty/recovery, Beijing time, keyboard/select, mobile, settings and legacy routes.');
 } finally { await browser.close(); }

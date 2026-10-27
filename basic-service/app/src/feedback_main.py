@@ -61,8 +61,12 @@ def create_app(
     application.include_router(admin_auth_router)
     application.include_router(feedback_controller.admin_router)
     application.include_router(help_resources_router)
+    # Same-port deployments route this namespace directly to admin auth. Keep
+    # the original read URLs for existing standalone management deployments.
+    application.include_router(help_resources_router, prefix="/admin")
     application.include_router(help_resources_admin_router)
     application.include_router(auth_settings_router)
+    application.include_router(auth_settings_router, prefix="/admin")
     # The shared config points at the main platform's logs directory. The admin
     # process writes its own logs below feedback-admin, but reads generation logs.
     application.include_router(runtime_logs_router)

@@ -20,14 +20,14 @@ export class AuthSettingsApiError extends Error {
   constructor(message: string, public readonly status: number) { super(message); this.name = 'AuthSettingsApiError'; }
 }
 
-async function request(settings: PlatformAuthConfig | undefined, version: number | undefined, signal: AbortSignal): Promise<AuthSettingsResponse> {
+async function request(settings: PlatformAuthConfig | undefined, version: number | undefined, signal: AbortSignal, admin: boolean): Promise<AuthSettingsResponse> {
   const controller = new AbortController();
   const cancel = () => controller.abort();
   if (signal.aborted) controller.abort(); else signal.addEventListener('abort', cancel, { once: true });
   let timedOut = false;
   const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); }, 20000);
   try {
-    const response = await fetch('/api/settings/auth', {
+    const response = await fetch(admin ? '/admin/api/settings/auth' : '/api/settings/auth', {
       method: settings ? 'PUT' : 'GET', signal: controller.signal, credentials: 'same-origin', cache: 'no-store',
       headers: { 'X-Credential-Settings': '1', ...(settings ? { 'Content-Type': 'application/json' } : {}) },
       ...(settings ? { body: JSON.stringify({ ...settings, expected_version: version }) } : {}),
@@ -47,10 +47,10 @@ async function request(settings: PlatformAuthConfig | undefined, version: number
   }
 }
 
-export function getAuthSettings(signal: AbortSignal): Promise<AuthSettingsResponse> {
-  return request(undefined, undefined, signal);
+export function getAuthSettings(signal: AbortSignal, admin = false): Promise<AuthSettingsResponse> {
+  return request(undefined, undefined, signal, admin);
 }
 
-export function saveAuthSettings(settings: PlatformAuthConfig, version: number, signal: AbortSignal): Promise<AuthSettingsResponse> {
-  return request(settings, version, signal);
+export function saveAuthSettings(settings: PlatformAuthConfig, version: number, signal: AbortSignal, admin = false): Promise<AuthSettingsResponse> {
+  return request(settings, version, signal, admin);
 }

@@ -1,4 +1,4 @@
-.taskbook-review{display:flex;flex-direction:column;height:100dvh;min-height:0;background:var(--color-bg-page);color:var(--color-text-primary);font-size:var(--font-size-sm)}
+.taskbook-review{display:flex;flex-direction:column;height:100vh;height:100dvh;min-height:0;overflow:hidden;background:var(--color-bg-page);color:var(--color-text-primary);font-size:var(--font-size-sm)}
 .taskbook-review button,.taskbook-review select,.review-confirm button,.review-initial button{font:inherit;color:var(--color-text-primary);background:var(--color-bg-surface);border:1px solid var(--color-border-strong);border-radius:var(--radius-sm);padding:8px 12px;cursor:pointer}
 .taskbook-review a{color:var(--color-action);text-underline-offset:3px}
 .taskbook-review button:hover:not(:disabled),.review-confirm button:hover:not(:disabled){background:var(--color-action-subtle)}

@@ -14,6 +14,30 @@ const time = (value?: string) => value ? new Date(value).toLocaleString('zh-CN',
 const checkLabel = (checks?: ReviewChecks) => ({ passed: '基础检查通过', failed: '检查未通过', blocked: '检查未通过', error: '检查失败', unchecked: '未检查', pending: '待重新检查', needs_review: '需人工核对' }[checks?.status || 'unchecked'] || '未检查');
 const errorText = (reason: unknown) => reason instanceof Error ? reason.message : '请求失败，请重试。';
 
+function scrollReviewTarget(container: HTMLDivElement | null, targetId: string, block: 'start' | 'center') {
+  const target = document.getElementById(targetId);
+  if (!container || !target || !container.contains(target) || !container.clientHeight) return false;
+  const revealHorizontal = (scroller: HTMLElement) => {
+    const rect = target.getBoundingClientRect();
+    const left = scroller.getBoundingClientRect().left + scroller.clientLeft;
+    const right = left + scroller.clientWidth;
+    const delta = rect.left < left ? rect.left - left : rect.right > right ? Math.min(rect.left - left, rect.right - right) : 0;
+    return scroller.scrollLeft + delta;
+  };
+  // A cell may be inside one or more wide tables, each with its own scrollbar.
+  for (let parent = target.parentElement; parent && parent !== container; parent = parent.parentElement) {
+    if (parent.classList.contains('review-table-scroll')) parent.scrollLeft = revealHorizontal(parent);
+  }
+  const targetRect = target.getBoundingClientRect();
+  const margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
+  const offset = block === 'center' ? Math.max(margin, (container.clientHeight - targetRect.height) / 2) : margin;
+  // Scroll only the document, leaving the page, outline and toolbar in place.
+  // CSS owns smooth scrolling and the reduced-motion preference.
+  container.scrollTo({ top: container.scrollTop + targetRect.top - container.getBoundingClientRect().top - container.clientTop - offset,
+    left: revealHorizontal(container), behavior: 'auto' });
+  return true;
+}
+
 export function TaskbookReviewPage({ jid }: { jid: string }) {
   const [bundle, setBundle] = useState<ReviewBundle | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,6 +64,10 @@ export function TaskbookReviewPage({ jid }: { jid: string }) {
   const [mobilePane, setMobilePane] = useState<'output' | 'source' | 'tree'>('output');
   const [split, setSplit] = useState(45);
   const panelArea = useRef<HTMLDivElement>(null);
+  const sourceScroll = useRef<HTMLDivElement>(null);
+  const positionedSourceLink = useRef<ReviewLink | null>(null);
+  const outputScroll = useRef<HTMLDivElement>(null);
+  const [outputScrollTarget, setOutputScrollTarget] = useState<{ id: string; block: 'start' | 'center' } | null>(null);
   const uploadInput = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState<ReviewDraft>(emptyReviewDraft);
   const undo = useRef<ReviewDraft[]>([]);
@@ -91,7 +119,7 @@ export function TaskbookReviewPage({ jid }: { jid: string }) {
   useEffect(() => {
     if (!revisionId) return;
     const controller = new AbortController();
-    setOutputLoading(true); setOutput(null); setOutputError(''); setLinks([]); setLinkError(''); setSelectedOutput(''); setActiveLink(null);
+    setOutputLoading(true); setOutput(null); setOutputError(''); setLinks([]); setLinkError(''); setSelectedOutput(''); setActiveLink(null); setOutputScrollTarget(null);
     getReviewDocument(jid, { revision_id: revisionId }, controller.signal)
       .then(result => setOutput(result)).catch(reason => { if (!controller.signal.aborted) setOutputError(errorText(reason)); })
       .finally(() => { if (!controller.signal.aborted) setOutputLoading(false); });
@@ -116,10 +144,16 @@ export function TaskbookReviewPage({ jid }: { jid: string }) {
     window.addEventListener('beforeunload', handler); return () => window.removeEventListener('beforeunload', handler);
   }, [dirty]);
   useEffect(() => {
-    if (!verifiedLink || !activeLink) return;
-    const target = document.getElementById(`review-source-${activeLink.source_element_ids[0]}`);
-    target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [verifiedLink, activeLink]);
+    if (!verifiedLink || !activeLink) { positionedSourceLink.current = null; return; }
+    if (positionedSourceLink.current !== activeLink && scrollReviewTarget(sourceScroll.current, `review-source-${activeLink.source_element_ids[0]}`, 'center')) {
+      positionedSourceLink.current = activeLink;
+    }
+  }, [verifiedLink, activeLink, mobilePane]);
+  useEffect(() => {
+    if (outputScrollTarget && !outputLoading && scrollReviewTarget(outputScroll.current, `review-output-${outputScrollTarget.id}`, outputScrollTarget.block)) {
+      setOutputScrollTarget(null);
+    }
+  }, [outputScrollTarget, mobilePane, rightTab, outputLoading]);
   function clearDraft() { setDraft(emptyReviewDraft()); undo.current = []; setUndoCount(0); setNote(annotation?.note || ''); }
   function guard(action: () => void) {
     if (busy) return;
@@ -139,6 +173,7 @@ export function TaskbookReviewPage({ jid }: { jid: string }) {
     if (noteDirty) guard(() => selectOutput(id)); else selectOutput(id);
   }
   function selectOutput(id: string) {
+      setOutputScrollTarget(null);
       setSelectedOutput(id);
       const path = elementPath(output?.blocks || [], id);
       const link = links.find(item => item.output_element_ids.some(element => path.includes(element)) && item.status === 'verified') || links.find(item => item.output_element_ids.some(element => path.includes(element)));
@@ -162,14 +197,14 @@ export function TaskbookReviewPage({ jid }: { jid: string }) {
     if (link && link.output_element_ids.every(item => outputIds.includes(item))) {
       setActiveLink(link); setSelectedOutput(link.output_element_ids[0]);
       setLinkNotice(`${link.label || '来源证据'}：已找到任务书中的对应内容。`);
-      document.getElementById(`review-output-${link.output_element_ids[0]}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      setOutputScrollTarget({ id: link.output_element_ids[0], block: 'center' });
     } else if (sourceLinks.length) { showLink(sourceLinks[0]); }
     else { setActiveLink(null); setLinkNotice('此来源段落未建立可靠的任务书对应位置。'); }
   }
   function navigateParagraph(id: string) {
     guard(() => {
       setRightTab('review'); setMobilePane('output'); selectOutput(id);
-      requestAnimationFrame(() => document.getElementById(`review-output-${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+      setOutputScrollTarget({ id, block: 'start' });
     });
   }
   async function runAction(name: string, action: () => Promise<void>) {
@@ -248,7 +283,7 @@ export function TaskbookReviewPage({ jid }: { jid: string }) {
       <div className="review-panels" ref={panelArea} style={{ '--review-source-width': `${split}%` } as CSSProperties}>
         <section className="review-source-panel" aria-label="来源文档"><div className="review-panel-tabs" role="tablist" aria-label="来源文件">{sourceTabs.map(tab => <button key={tab.role} type="button" role="tab" aria-selected={sourceRole === tab.role} onClick={() => { setSourceRole(tab.role); setSourceAssetOverride(''); setActiveLink(null); }}>{tab.label}</button>)}</div>
           <div className="review-document-toolbar"><span title={sourceAsset?.name}>{sourceAsset?.name || '未留存来源文件'}</span>{sourceAsset?.available && <a href={sourceAsset.url} download>下载原件</a>}</div>
-          <div className="review-document-scroll">
+          <div className="review-document-scroll" ref={sourceScroll}>
             {sourceLoading ? <p className="review-empty" role="status">正在读取来源文档…</p> : sourceError ? <div className="review-feedback error" role="alert">{sourceError}<button type="button" onClick={() => setSourceRetry(value => value + 1)}>重试读取来源</button></div>
               : source ? <ReviewDocumentPane document={source} side="source" selected={selectedSource} highlighted={verifiedLink ? activeLink!.source_element_ids : []} onSelect={chooseSource} />
                 : sourceAsset?.available && sourceAsset.format.toLowerCase() === 'pdf' ? <div className="review-original-preview"><p>PDF 原件预览：没有段落索引，无法自动精确定位。</p><iframe src={sourceAsset.url} title={`${sourceAsset.label} PDF 原件预览`} /></div>
@@ -280,7 +315,7 @@ export function TaskbookReviewPage({ jid }: { jid: string }) {
                 {rightTab === 'edit' && <div><button type="button" disabled={!undoCount || Boolean(busy)} onClick={() => { setDraft(undo.current.pop()!); setUndoCount(undo.current.length); }}>撤销</button><button type="button" disabled={!draftCount || Boolean(busy)} onClick={() => guard(clearDraft)}>放弃修改</button><button className="review-primary" type="button" disabled={!draftCount || Boolean(busy)} onClick={() => void save()}>{busy === 'save' ? '正在保存…' : '保存修订'}</button></div>}
                 {rightTab === 'review' && current && <button type="button" disabled={Boolean(busy)} onClick={() => guard(() => uploadInput.current?.click())}>导入修订 DOCX</button>}
               </div>
-              <div className="review-document-scroll">
+              <div className="review-document-scroll" ref={outputScroll}>
                 {outputLoading ? <p className="review-empty" role="status">正在读取任务书内容…</p> : outputError ? <div className="review-feedback error" role="alert">{outputError}<button type="button" onClick={() => setOutputRetry(value => value + 1)}>重试读取任务书</button></div>
                   : output ? <ReviewDocumentPane document={output} side="output" selected={selectedOutput} highlighted={verifiedLink ? activeLink!.output_element_ids : []} onSelect={chooseOutput}
                     editing={rightTab === 'edit'} draft={draft} busy={Boolean(busy)} onText={replaceText} onDelete={deleteParagraph}

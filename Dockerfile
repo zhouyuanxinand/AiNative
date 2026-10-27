@@ -89,8 +89,11 @@ RUN mkdir -p \
     && find /opt/local/agent-develop-task-doc -type d -name __pycache__ -prune -exec rm -rf {} + \
     && nginx -t
 
-EXPOSE 80 81
+# 单一发布入口：主站 / 与管理员 /admin 共用容器 80。
+# nginx 81 仅保留旧部署兼容和容器内部管理服务健康检查。
+EXPOSE 80
 
+# 内部访问 81 不要求发布、映射或对外开放该端口。
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -fsS http://127.0.0.1:80/api/health && curl -fsS http://127.0.0.1:81/api/health || exit 1
 

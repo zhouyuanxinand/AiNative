@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const base = process.env.TEST_BASE_URL || 'http://127.0.0.1:5173';
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined });
 const paragraph = (id, text, level = 0) => ({ id, kind: 'paragraph', text, heading_level: level, editable: true, can_delete: true, images: [] });
 const outputBlocks = [paragraph('heading', '1 技术要求', 1), paragraph('requirement', '插入损耗不大于 0.5 dB。'),
   { id: 'table', kind: 'table', rows: [{ cells: [{ id: 'cell', blocks: [paragraph('cell-text', '工作温度：-40 ℃～85 ℃。')] }] }] },

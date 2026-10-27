@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { listRequestLogs, readRequestLogs, RequestLogError, type RequestLogDetail, type RequestLogList, type RequestLogStatus } from '../../api/requestLogs';
 import { StyledSelect } from '../ui/StyledSelect';
 import { displayLogTime, LogRow, RuntimeLogsView } from './RuntimeLogsView';
+import { urlWithQuery } from '../../lib/url';
 import './requestLogs.css';
 
 const statusLabels: Record<RequestLogStatus, string> = { running: '执行中', success: '成功', failed: '失败' };
@@ -140,7 +141,7 @@ export function RequestLogsView({ active = true }: { active?: boolean }) {
     if (next.q) params.set('log_q', next.q);
     if (next.request) params.set('log_request', next.request);
     if (next.source === 'service') params.set('log_source', 'service');
-    window.history.pushState(null, '', `${window.location.pathname}${params.size ? `?${params}` : ''}`);
+    window.history.pushState(null, '', urlWithQuery(window.location.pathname, params));
     window.dispatchEvent(new Event('taskbook:admin-location'));
   }
 

@@ -7,6 +7,7 @@ import { FeedbackConfirmDialog } from '../feedback/FeedbackDialog';
 import { AdminMembersView } from './AdminMembersView';
 import { HelpResourcesView } from './HelpResourcesView';
 import { hasAdminUnsavedChanges } from './adminDrafts';
+import { urlWithQuery } from '../../lib/url';
 import '../../feedback.css';
 import './adminPage.css';
 
@@ -20,7 +21,7 @@ const currentView = (): AdminView => {
 function viewURL(view: AdminView) {
   const params = new URLSearchParams(window.location.search);
   if (view !== 'feedback') params.set('view', view); else params.delete('view');
-  return `/admin${params.size ? `?${params}` : ''}`;
+  return urlWithQuery('/admin', params);
 }
 
 function MenuIcon({ view }: { view: AdminView }) {
@@ -193,7 +194,7 @@ function AdminWorkspace({ session, logoutPending, logoutError, onLogout }: { ses
       <header className="admin-header">
         <div><h1>管理员页面</h1><p>研制任务书平台 · 反馈、运行与资料管理</p></div>
         <div className="admin-header-actions"><span className="admin-current-user" aria-label="当前管理员">{session.user.display_name || session.user.username}<small>{session.user.username}</small></span>
-          {session.can_manage_admins && <PlatformAuthSettings disabled={logoutPending} />}
+          {session.can_manage_admins && <PlatformAuthSettings admin disabled={logoutPending} />}
           <a className="feedback-button" href="/admin/home" aria-disabled={logoutPending || undefined}
             onClick={event => { if (logoutPending) event.preventDefault(); }}>返回主页</a>
           <button type="button" className="feedback-button" disabled={logoutPending} onClick={onLogout}>{logoutPending ? '正在退出…' : '退出登录'}</button></div>

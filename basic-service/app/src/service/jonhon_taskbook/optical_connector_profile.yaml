@@ -1,0 +1,248 @@
+schema_version: '3.1'
+profile_id: optical_connector
+product_type: 光连接器
+integration_status: available
+template_variant_policy: template_variant_policy.yaml
+template_source:
+  file: optical_connector_taskbook.docx
+  sha256: 6254bdedb553e9bedcbd29a8528f9ae5940a4dacb772c8c776d33476608d4a29
+  indicator_policy: 原模板指标名称；数值仅来自本次需求和产品规范
+semantic_routing:
+  category_mapping: optical_connector_requirement_categories.yaml
+  chapter_numbers_are_identity: false
+  source_order_is_identity: false
+  copy_source_text_only: true
+semantic_structures:
+  performance_indicator:
+    mode: indicator_table
+indicator_sources:
+  workbook: false
+  reference_families: []
+standards_policy: merge_template
+spec_model_filter:
+  enabled: true
+delivery_gate:
+  min_indicator_rows: 0
+  min_interface_fills: 0
+  required_headings:
+  - 产品组成
+  - 适用的法律法规要求
+  - 通用质量特性要求
+  - 任务进度要求
+  - 任务书编制依据
+  - 来源和功能
+  - 技术指标
+indicator_map:
+  光学性能:
+  - name: 传输模式
+    tech_kws:
+    - 传输模式
+    std_kws:
+    - 传输模式
+  - name: 工作波长
+    tech_kws:
+    - 工作波长
+    - 波长
+    std_kws:
+    - 工作波长
+    - 波长
+  - name: 插入损耗
+    tech_kws:
+    - 插入损耗
+    - 插损
+    std_kws:
+    - 插入损耗
+    - 插损
+  - name: 互换性
+    tech_kws:
+    - 互换性
+    std_kws:
+    - 互换性
+  - name: 重复性
+    tech_kws:
+    - 重复性
+    std_kws:
+    - 重复性
+  - name: 回波损耗
+    tech_kws:
+    - 回波损耗
+    - 回损
+    std_kws:
+    - 回波损耗
+    - 回损
+  - name: 光不连续性
+    tech_kws:
+    - 光不连续性
+    - 光学不连续性
+    std_kws:
+    - 光不连续性
+    - 光学不连续性
+  - name: 负载传输
+    tech_kws:
+    - 负载传输
+    std_kws:
+    - 负载传输
+  - name: 3D面型
+    tech_kws:
+    - 3D面型
+    - 端面几何
+    std_kws:
+    - 3D面型
+    - 端面几何
+  - name: 端面检查
+    tech_kws:
+    - 端面检查
+    - 端面质量
+    std_kws:
+    - 端面检查
+    - 端面质量
+  环境性能指标:
+  - name: 工作温度
+    tech_kws:
+    - 工作温度
+    std_kws:
+    - 工作温度
+  - name: 高温寿命
+    tech_kws:
+    - 高温寿命
+    std_kws:
+    - 高温寿命
+  - name: 温度循环
+    tech_kws:
+    - 温度循环
+    std_kws:
+    - 温度循环
+  - name: 温度冲击
+    tech_kws:
+    - 温度冲击
+    std_kws:
+    - 温度冲击
+  - name: 低气压(高度)
+    tech_kws:
+    - 低气压(高度)
+    - 低气压
+    - 海拔高度
+    std_kws:
+    - 低气压(高度)
+    - 低气压
+    - 海拔高度
+  - name: 浸渍
+    tech_kws:
+    - 浸渍
+    std_kws:
+    - 浸渍
+  - name: 低气压浸渍
+    tech_kws:
+    - 低气压浸渍
+    std_kws:
+    - 低气压浸渍
+  - name: 水压和冰冻
+    tech_kws:
+    - 水压和冰冻
+    std_kws:
+    - 水压和冰冻
+  - name: 湿热
+    tech_kws:
+    - 湿热
+    std_kws:
+    - 湿热
+  - name: 盐雾
+    tech_kws:
+    - 盐雾
+    std_kws:
+    - 盐雾
+  - name: 砂尘
+    tech_kws:
+    - 砂尘
+    std_kws:
+    - 砂尘
+  - name: 易燃性
+    tech_kws:
+    - 易燃性
+    - 阻燃
+    - 可燃性
+    std_kws:
+    - 易燃性
+    - 阻燃
+    - 可燃性
+  - name: 霉菌
+    tech_kws:
+    - 霉菌
+    std_kws:
+    - 霉菌
+  机械性能指标:
+  - name: 机械耐久性
+    tech_kws:
+    - 机械耐久性
+    - 机械寿命
+    - 插拔寿命
+    std_kws:
+    - 机械耐久性
+    - 机械寿命
+    - 插拔寿命
+  - name: 啮合和分离力
+    tech_kws:
+    - 啮合和分离力
+    - 插拔力
+    std_kws:
+    - 啮合和分离力
+    - 插拔力
+  - name: 啮合和分离力矩
+    tech_kws:
+    - 啮合和分离力矩
+    - 插拔力矩
+    std_kws:
+    - 啮合和分离力矩
+    - 插拔力矩
+  - name: 光缆保持力
+    tech_kws:
+    - 光缆保持力
+    - 光缆拉脱力
+    std_kws:
+    - 光缆保持力
+    - 光缆拉脱力
+  - name: 扭转
+    tech_kws:
+    - 扭转
+    std_kws:
+    - 扭转
+  - name: 光缆尾部弯曲
+    tech_kws:
+    - 光缆尾部弯曲
+    std_kws:
+    - 光缆尾部弯曲
+  - name: 振动
+    tech_kws:
+    - 振动
+    std_kws:
+    - 振动
+  - name: 冲击
+    tech_kws:
+    - 冲击
+    std_kws:
+    - 冲击
+  - name: 加速度
+    tech_kws:
+    - 加速度
+    std_kws:
+    - 加速度
+  - name: 撞击
+    tech_kws:
+    - 撞击
+    std_kws:
+    - 撞击
+  - name: 抗挤压
+    tech_kws:
+    - 抗挤压
+    std_kws:
+    - 抗挤压
+  - name: 耐水压
+    tech_kws:
+    - 耐水压
+    std_kws:
+    - 耐水压
+qa_profile:
+  required_headings:
+  - 技术指标
+  - 其他要求
+  forbidden_phrases: []

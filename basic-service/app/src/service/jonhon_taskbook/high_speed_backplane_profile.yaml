@@ -1,0 +1,158 @@
+schema_version: "3.0"
+profile_id: high_speed_backplane
+product_type: 高速连接器-高速背板连接器
+integration_status: available
+
+# 独立产品 Profile；2026-09-17 按用户要求正式启用。
+# 公共词表、语义路由及质量策略来自 connector_profile.yaml；本次没有新增产品专属指标。
+# 指标名称仅作匹配词表，指标是否输出及具体数值必须来自本次设计输入。
+# 未沿用历史样例的接点数量/电流值提取正则，不预设型号、性能值或产品专属门槛。
+# 仅允许受控参考目录 common 族按本次来源证据扩展；产品差异须有受控依据再补充。
+indicator_sources:
+  workbook: false
+  reference_families: [common]
+
+semantic_routing:
+  category_mapping: connector_requirement_categories.yaml
+  chapter_numbers_are_identity: false
+  source_order_is_identity: false
+  copy_source_text_only: true
+
+std_sort_order:
+  - [GB/T, GB]
+  - [GJB]
+  - [GJB/Z]
+  - [KJB]
+  - [Q/]
+  - [TE-]
+  - [AS9]
+  - [MIL]
+  - [SAE]
+  - [国务院]
+# 7-22：适用标准由技术要求、产品规范和任务书模板合并后去重。
+standards_policy: merge_template
+
+# 技术指标是唯一仍需要结构化成模板表格的类别。目标位置由
+# connector_requirement_categories.yaml 中“技术指标”的标题语义决定。
+semantic_structures:
+  performance_indicator:
+    mode: indicator_table
+
+# 指标清单只控制技术指标表。具有独立模板槽位的语义要求不能再次作为
+# 指标行写入；该排除表外置配置，新增产品可在自己的 profile 中调整。
+indicator_excluded_names: [互换性, 互配性]
+indicator_excluded_routes: {}
+
+# 交付门槛是本产品的质量策略，不是模板章节号。更换模板或新增产品时，
+# 在对应 Profile 中单独声明，不要把这些数量写进路由/填充算法。
+delivery_gate:
+  # 7-22按本次设计输入完整覆盖，不使用跨产品固定数量作为交付条件。
+  # 实际完整性由 indicator_audit、coverage_ledger 与语义分类证据证明。
+  min_indicator_rows: 0
+  min_interface_fills: 0
+  required_headings:
+    - 来源和功能
+    - 使用环境和部位
+    - 产品组成
+    - 适用的法律法规要求
+    - 技术指标
+    - 接口尺寸要求
+    - 通用质量特性要求
+    - 任务进度要求
+    - 任务书编制依据
+
+# 产品规范表格按标题路径、表头和指标语义扫描，不允许用章节号白名单筛选。
+spec_model_filter:
+  # 带型号/系列适用范围的规范行必须明确命中本次受控选择才可采用。
+  enabled: true
+
+indicator_map:
+  电性能:
+    - name: 工作电压
+      tech_kws: [工作电压, 额定工作电压, 工作电压范围]
+      std_kws: [工作电压, 额定工作电压, 工作电压范围]
+      related_kws: [额定电压, 电压范围]
+    - name: 额定电流
+      tech_kws: [额定电流, 额定载流量]
+      std_kws: [额定电流, 额定载流量]
+      related_kws: [载流量]
+      preserve_scope_context: true
+    - name: 工作电流
+      tech_kws: [工作电流]
+      std_kws: [工作电流]
+      related_kws: [额定电流, 载流量]
+    - name: 冲击电流
+      tech_kws: [冲击电流, 脉冲电流, 浪涌电流]
+      std_kws: [冲击电流, 脉冲电流, 浪涌电流]
+      preserve_scope_context: true
+    - name: 其他接点总载流
+      tech_kws: [总共过电流, 总电流, 总载流]
+      std_kws: [总共过电流, 总电流, 总载流]
+      preserve_scope_context: true
+    - name: 接触电阻
+      tech_kws: [接触电阻, 接触阻抗, 导通电阻]
+      std_kws: [接触电阻, 接触阻抗, 导通电阻]
+    - name: 介质耐电压
+      tech_kws: [介质耐电压, 耐电压, 耐压]
+      std_kws: [介质耐电压, 耐电压, 耐压]
+    - name: 绝缘电阻
+      tech_kws: [绝缘电阻, 绝缘阻抗]
+      std_kws: [绝缘电阻, 绝缘阻抗]
+  机械性能:
+    - name: 插拔力
+      tech_kws: [插拔力, 总插拔力, 插合分离力]
+      std_kws: [插拔力, 总插拔力, 插合分离力]
+      related_kws: [插入力, 插合力, 分离力, 拔出力]
+      spec_exact_names: [插拔力]
+    - name: 总分离力
+      tech_kws: [总分离力, 总分离力或分离扭矩]
+      std_kws: [总分离力, 总分离力或分离扭矩]
+      related_kws: [分离扭矩]
+    - name: 机械寿命
+      tech_kws: [机械寿命, 插拔寿命, 插拔次数]
+      std_kws: [机械寿命, 插拔寿命, 插拔次数]
+    - name: 振动
+      tech_kws: [振动, 随机振动, 正弦振动]
+      std_kws: [振动, 随机振动, 正弦振动]
+      adopt_policy: standard_if_more_complete
+    - name: 冲击
+      tech_kws: [机械冲击, 冲击试验]
+      std_kws: [机械冲击, 冲击试验, 冲击]
+    - name: 加速度
+      tech_kws: [加速度, 恒加速度]
+      std_kws: [加速度, 恒加速度]
+    - name: 按压力
+      tech_kws: [按压力, 按钮力, 承压力]
+      std_kws: [按压力, 按钮力, 承压力]
+  环境性能:
+    - name: 工作温度
+      tech_kws: [工作温度, 环境温度, 使用温度, 工作温度范围]
+      std_kws: [工作温度, 环境温度, 使用温度, 工作温度范围]
+      related_kws: [温度范围]
+    - name: 高温
+      tech_kws: [高温, 高温试验]
+      std_kws: [高温, 高温试验]
+    - name: 低温
+      tech_kws: [低温, 低温试验]
+      std_kws: [低温, 低温试验]
+    - name: 低气压
+      tech_kws: [低气压, 低气压试验]
+      std_kws: [低气压, 低气压试验]
+    - name: 温度冲击
+      tech_kws: [温度冲击, 热冲击, 冷热冲击]
+      std_kws: [温度冲击, 热冲击, 冷热冲击]
+      related_kws: [温度循环]
+    - name: 盐雾
+      tech_kws: [盐雾, 盐雾腐蚀]
+      std_kws: [盐雾, 盐雾腐蚀]
+    - name: 湿热
+      tech_kws: [湿热, 恒定湿热, 交变湿热]
+      std_kws: [湿热, 恒定湿热, 交变湿热]
+      related_kws: [潮湿]
+    - name: 霉菌
+      tech_kws: [霉菌, 防霉]
+      std_kws: [霉菌, 防霉]
+
+qa_profile:
+  required_headings: [技术指标, 其他要求]
+  forbidden_phrases: []

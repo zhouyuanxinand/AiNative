@@ -1,0 +1,9 @@
+version: "7-22"
+
+matching:
+  mode: exact_product_and_series
+  auto_similar_record_recall: false
+
+no_applicable_record:
+  action: write_no_history_marker
+  text: 未查询到历史故障信息

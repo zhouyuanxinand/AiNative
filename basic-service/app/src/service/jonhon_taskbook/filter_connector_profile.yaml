@@ -1,0 +1,208 @@
+schema_version: '3.1'
+profile_id: filter_connector
+product_type: 滤波连接器
+integration_status: available
+template_variant_policy: single_budget_template_variant_policy.yaml
+template_source:
+  file: filter_connector_taskbook.docx
+  sha256: 5abef25b63e8fe44fc74f65247d09ad34f0f08594b282160e9a373b2dabb44ed
+  indicator_policy: 原模板指标名称；数值仅来自本次需求和产品规范
+semantic_routing:
+  category_mapping: filter_connector_requirement_categories.yaml
+  chapter_numbers_are_identity: false
+  source_order_is_identity: false
+  copy_source_text_only: true
+semantic_structures:
+  performance_indicator:
+    mode: indicator_table
+indicator_sources:
+  workbook: false
+  reference_families: []
+standards_policy: merge_template
+spec_model_filter:
+  enabled: true
+delivery_gate:
+  min_indicator_rows: 0
+  min_interface_fills: 0
+  required_headings:
+  - 产品组成
+  - 适用的法律法规要求
+  - 通用质量特性要求
+  - 任务进度要求
+  - 任务书编制依据
+  - 来源和功能
+  - 技术指标
+indicator_map:
+  电性能:
+  - name: 特性阻抗
+    tech_kws: [特性阻抗, 阻抗]
+    std_kws: [特性阻抗, 阻抗]
+  - name: 阻带衰减
+    tech_kws: [阻带衰减, 阻带衰减性能]
+    std_kws: [阻带衰减, 阻带衰减性能]
+  # 寄生电容与滤波主电容独立，不能用“电容”子串互相替代。
+  - name: 寄生电容
+    tech_kws: [寄生电容]
+    std_kws: [寄生电容]
+  - name: 电磁屏蔽效能
+    tech_kws: [电磁屏蔽效能, 屏蔽效能]
+    std_kws: [电磁屏蔽效能, 屏蔽效能]
+  - name: 滤波稳定性
+    tech_kws: [滤波稳定性]
+    std_kws: [滤波稳定性]
+  - name: 工作电压
+    tech_kws:
+    - 工作电压
+    std_kws:
+    - 工作电压
+  - name: 耐电压
+    tech_kws:
+    - 耐电压
+    std_kws:
+    - 耐电压
+  - name: 电路形式
+    tech_kws:
+    - 电路形式
+    std_kws:
+    - 电路形式
+  - name: 电容或电感量
+    tech_kws:
+    - 电容或电感量
+    std_kws:
+    - 电容或电感量
+  - name: 截止频率
+    tech_kws:
+    - 截止频率
+    std_kws:
+    - 截止频率
+  - name: 漏电流
+    tech_kws:
+    - 漏电流
+    std_kws:
+    - 漏电流
+  机械性能:
+  - name: 锁紧力矩
+    tech_kws: [锁紧力矩]
+    std_kws: [锁紧力矩]
+  - name: 线缆保持力
+    tech_kws: [线缆保持力, 电缆保持力]
+    std_kws: [线缆保持力, 电缆保持力]
+  - name: 抗扭转性能
+    tech_kws: [抗扭转性能]
+    std_kws: [抗扭转性能]
+  - name: 结构牢固性
+    tech_kws: [结构牢固性]
+    std_kws: [结构牢固性]
+  - name: 机械寿命
+    tech_kws:
+    - 机械寿命
+    - 插拔寿命
+    std_kws:
+    - 机械寿命
+    - 插拔寿命
+  - name: 振动
+    tech_kws:
+    - 振动
+    - 振动试验
+    - 振动测试
+    std_kws:
+    - 振动
+  - name: 冲击
+    tech_kws:
+    - 冲击
+    std_kws:
+    - 冲击
+  - name: 加速度
+    tech_kws:
+    - 加速度
+    std_kws:
+    - 加速度
+  - name: 总分离力或分离扭矩
+    tech_kws:
+    - 总分离力或分离扭矩
+    std_kws:
+    - 总分离力或分离扭矩
+  环境性能:
+  - name: 电磁兼容
+    tech_kws: [电磁兼容, 电磁兼容要求, 电磁兼容（EMC）要求, 电磁兼容(EMC)要求, EMC要求]
+    std_kws: [电磁兼容, 电磁兼容要求, EMC要求]
+  - name: 存储温度
+    tech_kws: [存储温度, 贮存温度]
+    std_kws: [存储温度, 贮存温度]
+  - name: 工作湿度
+    tech_kws: [工作湿度, 相对湿度]
+    std_kws: [工作湿度, 相对湿度]
+  - name: 防护等级
+    tech_kws: [防护等级, IP防护等级]
+    std_kws: [防护等级, IP防护等级]
+  - name: 高低温循环
+    tech_kws: [高低温循环, 高低温循环试验, 高低温循环测试]
+    std_kws: [高低温循环, 温度循环]
+  - name: 工作温度
+    tech_kws:
+    - 工作温度
+    std_kws:
+    - 工作温度
+  - name: 低温低气压
+    tech_kws:
+    - 低温低气压
+    std_kws:
+    - 低温低气压
+  - name: 高温
+    tech_kws:
+    - 高温
+    std_kws:
+    - 高温
+  - name: 低温
+    tech_kws:
+    - 低温
+    std_kws:
+    - 低温
+  - name: 温度冲击
+    tech_kws:
+    - 温度冲击
+    std_kws:
+    - 温度冲击
+  - name: 湿热
+    tech_kws:
+    - 湿热
+    - 湿热试验
+    - 湿热测试
+    - 湿热老化试验
+    - 湿热老化测试
+    std_kws:
+    - 湿热
+  - name: 盐雾
+    tech_kws:
+    - 盐雾
+    - 盐雾试验
+    - 盐雾测试
+    std_kws:
+    - 盐雾
+  - name: 阻燃
+    tech_kws:
+    - 阻燃
+    std_kws:
+    - 阻燃
+  - name: 霉菌
+    tech_kws:
+    - 霉菌
+    std_kws:
+    - 霉菌
+  - name: 密封性
+    tech_kws:
+    - 密封性
+    - 气密性
+    - 气密性要求
+    std_kws:
+    - 密封性
+    - 气密性
+  可靠性:
+  - name: 长期通电可靠性
+    tech_kws: [长期通电可靠性, 长期工作可靠性]
+    std_kws: [长期通电可靠性, 长期工作可靠性]
+qa_profile:
+  required_headings:
+  - 技术指标
+  - 其他要求
+  forbidden_phrases: []

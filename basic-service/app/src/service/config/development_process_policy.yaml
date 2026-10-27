@@ -1,0 +1,117 @@
+# 研制流程分类与模板治理规则。
+# 只使用稳定的业务语义标题，不使用可能随模板变化的显示章节号。
+
+canonical_processes:
+  - 全新
+  - 改型I
+  - 改型II
+  - 改型III
+
+aliases:
+  改型I类: 改型I
+  改型II类: 改型II
+  改型III类: 改型III
+  新研: 全新
+  新研制: 全新
+  改型派生I: 改型I
+  改型派生II: 改型II
+  改型派生III: 改型III
+  改型一: 改型I
+  改型二: 改型II
+  改型三: 改型III
+
+# 2026-09-18 业务补充：按研制流程保留或删除整个语义章节。
+# 未勾选的流程删除章节及关联附录；保留时沿用模板正文和待填位置。
+section_retention_rules:
+  - id: qfd
+    label: 产品需求分解（QFD质量功能分解）
+    semantic_titles: [产品需求分解, QFD质量功能分解]
+    keep_processes: [全新]
+    linked_semantic_titles: []
+  - id: running_scene
+    label: 产品运行场景识别
+    semantic_titles: [产品运行场景识别]
+    keep_processes: [全新, 改型I]
+    linked_semantic_titles: [附录A]
+
+# 7-22 开发逻辑 B56：未特别规定的内容保留原模板。
+# 旧版规则键保留为空；章节选择统一在 section_retention_rules 中配置。
+non_new_remove_sections: []
+new_process_manual_sections: []
+
+# 同义章节只按标题和父章语义匹配，避免误删其他章节中的同名要求。
+failure_mode_section_titles: [初步的失效模式分析, 初步失效模式分析]
+quality_section_parent_titles: [通用质量特性要求, 可通用质量特性要求]
+
+# 非全新流程的六性章节只有在本次设计输入存在对应证据时保留。
+# evidence_roles 是分类器的稳定语义类别；indicator_signals 用于处理同一
+# 原文既是 4.1 指标、又是六性章节证据的情况。不得使用显示章节号。
+quality_section_evidence:
+  - id: reliability
+    semantic_title: 可靠性要求
+    evidence_roles: [reliability]
+    leaf_evidence_roles: [reliability_quantitative, reliability_qualitative, reliability_test, reliability_testing]
+    indicator_signals: [MTBF, 平均无故障工作时间, 可靠度, 故障率, 寿命周期可靠性]
+
+  - id: maintainability
+    semantic_title: 维修性要求
+    evidence_roles: [maintainability]
+    leaf_evidence_roles: [maintainability_quantitative, maintainability_qualitative]
+    indicator_signals: [MTTR, 平均修复时间, 可维修性, 维修时限]
+
+  - id: testability
+    semantic_title: 测试性要求
+    evidence_roles: [testability]
+    leaf_evidence_roles: [testability_quantitative, testability_qualitative]
+    indicator_signals: [BIT, 故障检测率, 故障隔离率, 虚警率, 测试覆盖率]
+
+  - id: supportability
+    semantic_title: 保障性要求
+    evidence_roles: [supportability]
+    leaf_evidence_roles: [supportability_quantitative, supportability_qualitative]
+    indicator_signals: [保障资源, 备件储备, 保障流程, 保障成本]
+
+  - id: safety
+    semantic_title: 安全性定性要求
+    semantic_aliases: [安全性要求]
+    evidence_roles: [safety]
+    leaf_evidence_roles: [safety_quantitative, safety_qualitative]
+    indicator_signals: [电气安全, 机械安全, 防火防爆, 防误操作, 安全防护]
+
+  - id: environmental_adaptability
+    semantic_title: 环境适应性要求
+    evidence_roles: [environmental_adaptability]
+    leaf_evidence_roles: [high_temperature, low_temperature, thermal_shock, damp_heat, mold, salt_spray, acid_atmosphere, vibration, shock, acceleration, electromagnetic_environment, special_environment]
+    indicator_signals:
+      - 工作温度
+      - 环境温度
+      - 使用温度
+      - 贮存温度
+      - 储存温度
+      - 存储温度
+      - 运输温度
+      - 高低温循环
+      - 温度冲击
+      - 湿热
+      - 湿热交变
+      - 盐雾
+      - 盐雾腐蚀
+      - 耐腐蚀
+      - 霉菌
+      - 霉菌生长
+      - 淋雨
+      - 浸水
+      - 沙尘
+      - 砂尘
+      - 振动
+      - 冲击
+      - 力学过载
+      - 低气压
+      - 高原环境
+      - 海拔
+      - 海洋环境
+      - 工业干扰环境
+      - 电磁环境
+      - 老化耐受
+      - 长期环境稳定性
+      - 环境适配约束

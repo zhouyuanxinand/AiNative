@@ -1,0 +1,66 @@
+version: "1.0"
+
+# 7-14 规则定义的通用分类本体。本文件不包含模板标题、章节号或产品型号。
+# 每个具体模板的 target_heading_keywords 由模板候选包生成器根据实时标题树产生。
+semantic_roles:
+  standards_reference:
+    label: 适用的法律法规要求
+    write_mode: standards_merge
+  intro_other:
+    label: 产品功能用途中的其他
+    empty_policy: fill_none
+
+categories:
+  source_and_function:
+    label: 来源和功能
+  usage_environment:
+    label: 使用环境和部位
+  installation_form:
+    label: 安装形式和方法
+  product_composition:
+    label: 产品组成
+  performance_indicator:
+    label: 技术指标
+    write_mode: indicator_table
+  outline_dimension:
+    label: 外形尺寸
+  installation_dimension:
+    label: 安装尺寸
+  installation_method:
+    label: 安装方式
+  termination_method:
+    label: 端接形式
+  interface_definition:
+    label: 接口尺寸
+    container_only: true
+  interchangeability:
+    label: 互换性要求
+  technical_support:
+    label: 保障要求
+    source_content_patterns:
+      - '(?:随产品|随机|交付时)[^。；;\n]*(?:提供|配备)[^。；;\n]*(?:使用说明书|技术说明书|维修手册|合格证|工具|备件|技术资料)'
+      - '(?:提供|配备)[^。；;\n]*(?:使用说明书|技术说明书|维修手册|随机工具|随机备件|接触件备件|合格证)'
+    content_priority: 100
+    write_mode: dynamic_children
+    empty_policy: clear_body
+  reliability:
+    label: 可靠性要求
+  maintainability:
+    label: 维修性要求
+  testability:
+    label: 测试性要求
+  supportability:
+    label: 保障性要求
+  safety:
+    label: 安全性定性要求
+  environmental_adaptability:
+    label: 环境适应性要求
+  process_requirement:
+    label: 工艺要求
+  schedule:
+    label: 进度要求
+  other:
+    label: 其他要求
+    preserve_child_headings: true
+    empty_policy: fill_none
+    insert_position: after_children

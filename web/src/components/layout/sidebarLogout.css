@@ -1,0 +1,13 @@
+.sidebar .sidebar-user-row{height:auto;min-height:52px;flex-basis:auto;flex-wrap:wrap}
+.sidebar-session-actions{display:contents}
+.sidebar-logout{display:grid;place-items:center;flex:0 0 38px;width:38px;height:38px;margin:0 var(--space-2);padding:8px;border:1px solid var(--color-border);border-radius:var(--radius-control);background:var(--color-bg-surface);color:var(--color-text-secondary);font:inherit;cursor:pointer;transition:background var(--motion-duration-fast),border-color var(--motion-duration-fast)}
+.sidebar-logout svg{width:22px;height:22px}
+.sidebar-logout:hover:not(:disabled){background:var(--color-bg-hover);border-color:var(--color-border-hover);color:var(--color-text-primary)}
+.sidebar-logout:active:not(:disabled){background:var(--color-bg-selected)}
+.sidebar-logout:focus-visible{outline:2px solid var(--color-border-focus);outline-offset:2px}
+.sidebar-logout:disabled{opacity:.6;cursor:not-allowed}
+.sidebar-logout-error{order:1;flex:0 0 100%;min-width:0;margin:var(--space-2) 0 0;color:var(--color-error);font-size:var(--font-size-xs);line-height:1.6;overflow-wrap:anywhere}
+.workspace-shell:not(.sidebar-expanded) .sidebar-user-row{flex-wrap:nowrap}
+.workspace-shell:not(.sidebar-expanded) .sidebar-logout{margin:0}
+.workspace-shell:not(.sidebar-expanded) .sidebar-user-row .current-user-info{display:none}
+@media(prefers-reduced-motion:reduce){.sidebar-logout{transition:none}}

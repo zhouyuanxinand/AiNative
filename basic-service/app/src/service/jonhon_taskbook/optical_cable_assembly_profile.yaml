@@ -1,0 +1,198 @@
+schema_version: '3.1'
+profile_id: optical_cable_assembly
+product_type: 光缆组件
+integration_status: available
+template_variant_policy: template_variant_policy.yaml
+template_source:
+  file: optical_cable_assembly_taskbook.docx
+  sha256: 3277d58a5f96ce437cdc195d5dc0b504bce80df018c8065fc66e7849606def7d
+  indicator_policy: 原模板指标名称；数值仅来自本次需求和产品规范
+semantic_routing:
+  category_mapping: optical_cable_assembly_requirement_categories.yaml
+  chapter_numbers_are_identity: false
+  source_order_is_identity: false
+  copy_source_text_only: true
+semantic_structures:
+  performance_indicator:
+    mode: indicator_table
+indicator_sources:
+  workbook: false
+  reference_families: []
+standards_policy: merge_template
+spec_model_filter:
+  enabled: true
+delivery_gate:
+  min_indicator_rows: 0
+  min_interface_fills: 0
+  required_headings:
+  - 产品组成
+  - 适用的法律法规要求
+  - 通用质量特性要求
+  - 任务进度要求
+  - 任务书编制依据
+  - 来源和功能
+  - 技术指标
+indicator_map:
+  光学性能:
+  - name: 传输模式
+    tech_kws: &id001
+    - 传输模式
+    std_kws: *id001
+  - name: 工作波长
+    tech_kws: &id002
+    - 工作波长
+    - 波长
+    std_kws: *id002
+  - name: 带宽
+    tech_kws: &id003
+    - 带宽
+    std_kws: *id003
+  - name: 插入损耗
+    tech_kws: &id004
+    - 插入损耗
+    - 插损
+    std_kws: *id004
+  - name: 互换性
+    tech_kws: &id005
+    - 互换性
+    std_kws: *id005
+  - name: 重复性
+    tech_kws: &id006
+    - 重复性
+    std_kws: *id006
+  - name: 回波损耗
+    tech_kws: &id007
+    - 回波损耗
+    - 回损
+    std_kws: *id007
+  环境性能指标:
+  - name: 工作温度
+    tech_kws: &id008
+    - 工作温度
+    std_kws: *id008
+  - name: 高温寿命
+    tech_kws: &id009
+    - 高温寿命
+    std_kws: *id009
+  - name: 高温工作
+    tech_kws: &id010
+    - 高温工作
+    std_kws: *id010
+  - name: 低温工作
+    tech_kws: &id011
+    - 低温工作
+    std_kws: *id011
+  - name: 低气压(高度)
+    tech_kws: &id012
+    - 低气压(高度)
+    - 低气压
+    - 海拔高度
+    std_kws: *id012
+  - name: 温度高度
+    tech_kws: &id013
+    - 温度高度
+    std_kws: *id013
+  - name: 温度循环
+    tech_kws: &id014
+    - 温度循环
+    std_kws: *id014
+  - name: 温度冲击
+    tech_kws: &id015
+    - 温度冲击
+    std_kws: *id015
+  - name: 浸渍
+    tech_kws: &id016
+    - 浸渍
+    std_kws: *id016
+  - name: 湿热
+    tech_kws: &id017
+    - 湿热
+    std_kws: *id017
+  - name: 盐雾
+    tech_kws: &id018
+    - 盐雾
+    std_kws: *id018
+  - name: 砂尘
+    tech_kws: &id019
+    - 砂尘
+    std_kws: *id019
+  - name: 阻燃
+    tech_kws: &id020
+    - 阻燃
+    std_kws: *id020
+  - name: 霉菌
+    tech_kws: &id021
+    - 霉菌
+    std_kws: *id021
+  机械性能指标:
+  - name: 机械耐久性
+    tech_kws: &id022
+    - 机械耐久性
+    - 机械寿命
+    - 插拔寿命
+    std_kws: *id022
+  - name: 光缆保持力（光缆互连抗拉）
+    tech_kws: &id023
+    - 光缆保持力（光缆互连抗拉）
+    - 光缆保持力
+    - 光缆互连抗拉
+    std_kws: *id023
+  - name: 光缆互连抗扭
+    tech_kws: &id024
+    - 光缆互连抗扭
+    std_kws: *id024
+  - name: 光缆尾部弯曲
+    tech_kws: &id025
+    - 光缆尾部弯曲
+    std_kws: *id025
+  - name: 耐水压
+    tech_kws: &id026
+    - 耐水压
+    std_kws: *id026
+  - name: 振动
+    tech_kws: &id027
+    - 振动
+    std_kws: *id027
+  - name: 冲击
+    tech_kws: &id028
+    - 冲击
+    std_kws: *id028
+  - name: 加速度
+    tech_kws: &id029
+    - 加速度
+    std_kws: *id029
+  电气指标:
+  - name: 额定工作电流
+    tech_kws: &id030
+    - 额定工作电流
+    std_kws: *id030
+  - name: 接触电阻
+    tech_kws: &id031
+    - 接触电阻
+    std_kws: *id031
+  - name: 耐电压
+    tech_kws: &id032
+    - 耐电压
+    std_kws: *id032
+  光缆性能要求:
+  - name: 带状光缆最小弯曲半径（静态）
+    tech_kws: &id033
+    - 带状光缆最小弯曲半径（静态）
+    - 静态最小弯曲半径
+    - 静态弯曲半径
+    std_kws: *id033
+  - name: 带状光缆最小弯曲半径（动态）
+    tech_kws: &id034
+    - 带状光缆最小弯曲半径（动态）
+    - 动态最小弯曲半径
+    - 动态弯曲半径
+    std_kws: *id034
+  - name: 带状光缆抗拉力
+    tech_kws: &id035
+    - 带状光缆抗拉力
+    std_kws: *id035
+qa_profile:
+  required_headings:
+  - 技术指标
+  - 其他要求
+  forbidden_phrases: []

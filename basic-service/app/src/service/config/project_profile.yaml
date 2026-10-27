@@ -1,0 +1,33 @@
+# 项目画像 — 每个产品项目修改这一个文件，其余规则文件不动
+# ============================================================
+
+project:
+  name: "机电一体化快速换装接口连接器"
+  product_type: "连接器"
+  phase: "C"                    # F/C/S/D 四选一，不知道则填 ""
+  design_unit: "中航光电科技股份有限公司"
+  user_unit: ""                 # 使用单位，从技术要求封面读取
+
+# 输入文件路径（相对于项目根目录）
+inputs:
+  template: "jonhon_taskbook/resources/研制任务书模板.docx"
+  tech_requirement: ""          # 技术要求 .docx 路径，留空则跳过
+  product_spec: ""              # 产品规范 .docx 路径，留空则跳过
+
+# 输出路径
+output:
+  docx: "正式输出/研制任务书_output.docx"
+  ledger_dir: "正式输出/ledger"  # 中间账本目录
+
+# 项目适用性标志 — 决定哪些模板分支保留/删除
+flags:
+  is_as9100: false              # 是否符合 AS9100（false → 删除 AS9100 相关分支）
+  is_airworthiness: false       # 是否有适航要求
+  is_civil_aircraft: false      # 是否民机产品
+  is_military_regulated: false  # 是否军方监管（true → 全新产品/军方监管进度表）
+  is_central_research: false    # 是否中央研究院产品
+  need_failure_db: false        # 是否需要接入失效模式库
+  need_running_scene: false     # 是否填写产品运行场景识别（附录A）
+  has_emc: false                # 是否有电磁兼容要求
+  has_large_test: false         # 是否有大型试验要求
+  is_aviation: false            # 是否航空军品

@@ -1,0 +1,13 @@
+server:
+  host: 127.0.0.1
+  port: 18130
+
+storage:
+  upload_dir: uploads
+  output_dir: 正式输出
+
+semantic:
+  rerank: false
+
+logging:
+  level: DEBUG

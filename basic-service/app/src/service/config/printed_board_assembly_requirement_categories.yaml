@@ -1,0 +1,699 @@
+version: '3.1'
+template_id: printed_board_assembly
+technical_requirements_mode: sections
+exact_fragment_routing:
+  enabled: true
+  min_text_length: 24
+  max_fragments_per_block: 12
+  source_categories:
+  - source_and_function
+  - usage_environment
+  - installation_form
+  - product_composition
+  - outline_dimension
+  - interface_definition
+  - signal_definition
+  - circuit_design
+  - power_supply
+  - signal_requirement
+  - power_open_circuit
+  - signal_continuity
+  - connector_open_circuit
+  - transmission_eye
+  - near_end_crosstalk
+  - bit_error_rate
+  - insertion_loss
+  - return_loss
+  - adapter_board
+  - supporting_cables
+  - rf_cables
+  - optical_fiber
+  - technical_support
+  - user_manual
+  - removal_tools
+  - customer_special
+  - beyond_technology
+  - beyond_product
+  - delivery_documents
+  - reliability
+  - reliability_quantitative
+  - reliability_qualitative
+  - reliability_testing
+  - maintainability
+  - testability
+  - supportability
+  - safety
+  - environmental_adaptability
+  - process_requirement
+  - previous_design
+  - packaging
+  - acceptance
+  - supporting_requirement
+  - confidentiality
+  - schedule
+  - budget
+  - other
+  - performance_indicator
+  - electrical_characteristics
+  target_categories:
+  - source_and_function
+  - usage_environment
+  - installation_form
+  - product_composition
+  - outline_dimension
+  - interface_definition
+  - signal_definition
+  - circuit_design
+  - power_supply
+  - signal_requirement
+  - power_open_circuit
+  - signal_continuity
+  - connector_open_circuit
+  - transmission_eye
+  - near_end_crosstalk
+  - bit_error_rate
+  - insertion_loss
+  - return_loss
+  - adapter_board
+  - supporting_cables
+  - rf_cables
+  - optical_fiber
+  - technical_support
+  - user_manual
+  - removal_tools
+  - customer_special
+  - beyond_technology
+  - beyond_product
+  - delivery_documents
+  - reliability
+  - reliability_quantitative
+  - reliability_qualitative
+  - reliability_testing
+  - maintainability
+  - testability
+  - supportability
+  - safety
+  - environmental_adaptability
+  - process_requirement
+  - previous_design
+  - packaging
+  - acceptance
+  - supporting_requirement
+  - confidentiality
+  - schedule
+  - budget
+  - other
+evidence_projections: []
+semantic_roles:
+  standards_reference:
+    label: 适用的法律法规要求
+    definition: 需求文件及产品规范中的适用标准、引用标准、执行标准、法律法规、规范性引用文件；只整理原文，不编造或推断标准
+    source_heading_keywords:
+    - 执行标准
+    - 适用标准
+    - 引用标准
+    - 规范性引用文件
+    source_content_patterns:
+    - ^(?:\d+(?:\.\d+)*[.、]?\s*)?(?:适用标准|执行标准|引用标准|规范性引用文件)\s*[:：]
+    content_priority: 120
+    target_heading_keywords:
+    - 适用的法律法规要求
+    write_mode: standards_merge
+    target_heading_level: 1
+categories:
+  source_and_function:
+    label: 来源和功能
+    definition: 产品的功能用途 / 来源和功能的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 来源和功能
+    - 产品功能
+    - 用途
+    - 应用背景
+    - 概述
+    target_heading_keywords:
+    - 来源和功能
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 产品的功能用途
+  usage_environment:
+    label: 使用环境和部位
+    definition: 产品的功能用途 / 使用环境和部位的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 使用环境和部位
+    - 使用环境
+    - 安装环境
+    - 使用场景
+    target_heading_keywords:
+    - 使用环境和部位
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 产品的功能用途
+  installation_form:
+    label: 安装形式和方法
+    definition: 产品的功能用途 / 安装形式和方法的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 安装形式和方法
+    - 安装形式
+    - 安装方法
+    target_heading_keywords:
+    - 安装形式和方法
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 产品的功能用途
+  product_composition:
+    label: 产品组成
+    definition: 产品组成的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 产品组成
+    - 组成结构
+    - 构成
+    target_heading_keywords:
+    - 产品组成
+    target_heading_level: 1
+    target_integrity: exact
+  outline_dimension:
+    label: 结构尺寸
+    definition: 技术要求 / 背板技术要求 / 结构尺寸的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 结构尺寸
+    - 外形尺寸
+    - 尺寸要求
+    target_heading_keywords:
+    - 结构尺寸
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 背板技术要求
+  interface_definition:
+    label: 接口及键位要求
+    definition: 技术要求 / 背板技术要求 / 接口及键位要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 接口及键位要求
+    - 接口要求
+    - 键位要求
+    - 防误插
+    target_heading_keywords:
+    - 接口及键位要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 背板技术要求
+  signal_definition:
+    label: 信号定义
+    definition: 技术要求 / 背板技术要求 / 信号定义的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 信号定义
+    - 引脚定义
+    - 针脚定义
+    - 信号分配
+    target_heading_keywords:
+    - 信号定义
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 背板技术要求
+  circuit_design:
+    label: XX功能电路设计要求：
+    definition: 技术要求 / 背板技术要求 / XX功能电路设计要求：（包含时）的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - XX功能电路设计要求：（包含时）
+    - 功能电路
+    - 电路设计
+    target_heading_keywords:
+    - XX功能电路设计要求：（包含时）
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 背板技术要求
+  power_supply:
+    label: 供电要求
+    definition: 技术要求 / 背板技术要求 / 电气特性要求 / 供电要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 供电要求
+    - 工作电压
+    - 额定电压
+    - 工作电流
+    - 供电
+    target_heading_keywords:
+    - 供电要求
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 电气特性要求
+  signal_requirement:
+    label: 信号要求
+    definition: 技术要求 / 背板技术要求 / 电气特性要求 / 4.1.5.2信号要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 信号要求
+    - 信号速率
+    - 信号电平
+    target_heading_keywords:
+    - 信号要求
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 电气特性要求
+  power_open_circuit:
+    label: 电源开路
+    definition: 技术要求 / 背板技术要求 / 性能要求 / 电源开路的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 电源开路
+    target_heading_keywords:
+    - 电源开路
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 性能要求
+  signal_continuity:
+    label: 信号导通
+    definition: 技术要求 / 背板技术要求 / 性能要求 / 信号导通的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 信号导通
+    - 导通测试
+    - 信号通断
+    target_heading_keywords:
+    - 信号导通
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 性能要求
+  connector_open_circuit:
+    label: 高密连接器开路
+    definition: 技术要求 / 背板技术要求 / 性能要求 / 高密连接器开路（适用时）的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 高密连接器开路（适用时）
+    - 高密连接器开路
+    target_heading_keywords:
+    - 高密连接器开路（适用时）
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 性能要求
+  transmission_eye:
+    label: 传输眼图
+    definition: 技术要求 / 背板技术要求 / 性能要求 / 传输眼图（适用时）的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 传输眼图（适用时）
+    - 眼图
+    target_heading_keywords:
+    - 传输眼图（适用时）
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 性能要求
+  near_end_crosstalk:
+    label: 近端串扰
+    definition: 技术要求 / 背板技术要求 / 性能要求 / 近端串扰（适用时）的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 近端串扰（适用时）
+    - 近端串扰
+    - NEXT
+    target_heading_keywords:
+    - 近端串扰（适用时）
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 性能要求
+  bit_error_rate:
+    label: 误码率
+    definition: 技术要求 / 背板技术要求 / 性能要求 / 误码率（适用时）的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 误码率（适用时）
+    - 误码率
+    - BER
+    target_heading_keywords:
+    - 误码率（适用时）
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 性能要求
+  insertion_loss:
+    label: 插入损耗
+    definition: 技术要求 / 背板技术要求 / 性能要求 / 插入损耗（适用时）的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 插入损耗（适用时）
+    - 插入损耗
+    - 插损
+    target_heading_keywords:
+    - 插入损耗（适用时）
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 性能要求
+  return_loss:
+    label: 回波损耗
+    definition: 技术要求 / 背板技术要求 / 性能要求 / 回波损耗（适用时）的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 回波损耗（适用时）
+    - 回波损耗
+    - 回损
+    target_heading_keywords:
+    - 回波损耗（适用时）
+    target_heading_level: 4
+    target_integrity: exact
+    target_parent_heading: 性能要求
+  adapter_board:
+    label: 转接板技术要求
+    definition: 技术要求 / 转接板技术要求（包含时）的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 转接板技术要求（包含时）
+    - 转接板
+    target_heading_keywords:
+    - 转接板技术要求（包含时）
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 技术要求
+  supporting_cables:
+    label: 配套线缆技术要求
+    definition: 技术要求 / 配套线缆技术要求（包含时）的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 配套线缆技术要求（包含时）
+    - 配套线缆
+    - 配套电缆
+    target_heading_keywords:
+    - 配套线缆技术要求（包含时）
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 技术要求
+  rf_cables:
+    label: 射频线缆技术要求
+    definition: 技术要求 / 射频线缆技术要求（包含时）的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 射频线缆技术要求（包含时）
+    - 射频线缆
+    - 射频电缆
+    target_heading_keywords:
+    - 射频线缆技术要求（包含时）
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 技术要求
+  optical_fiber:
+    label: 光纤技术要求
+    definition: 技术要求 / 光纤技术要求（包含时）的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 光纤技术要求（包含时）
+    - 光纤要求
+    target_heading_keywords:
+    - 光纤技术要求（包含时）
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 技术要求
+  technical_support:
+    label: 条件保障要求
+    definition: 技术要求 / 条件保障要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 条件保障要求
+    - 条件保障
+    - 技术保障
+    target_heading_keywords:
+    - 条件保障要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 技术要求
+    preserve_child_headings: true
+  user_manual:
+    label: 随产品提供使用说明书
+    definition: 技术要求 / 条件保障要求 / 随产品提供使用说明书的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 随产品提供使用说明书
+    - 使用说明书
+    - 操作手册
+    target_heading_keywords:
+    - 随产品提供使用说明书
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 条件保障要求
+  removal_tools:
+    label: 随产品提供取卸工具
+    definition: 技术要求 / 条件保障要求 / 随产品提供取卸工具的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 随产品提供取卸工具
+    - 取卸工具
+    - 拆卸工具
+    target_heading_keywords:
+    - 随产品提供取卸工具
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 条件保障要求
+  customer_special:
+    label: 顾客的特殊要求
+    definition: 顾客的特殊要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 顾客的特殊要求
+    - 顾客特殊要求
+    target_heading_keywords:
+    - 顾客的特殊要求
+    target_heading_level: 1
+    target_integrity: exact
+    preserve_child_headings: true
+  beyond_technology:
+    label: 超出现有技术的要求
+    definition: 顾客的特殊要求 / 超出现有技术的要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 超出现有技术的要求
+    - 超出现有技术
+    target_heading_keywords:
+    - 超出现有技术的要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 顾客的特殊要求
+  beyond_product:
+    label: 超出同类产品状态的要求
+    definition: 顾客的特殊要求 / 超出同类产品状态的要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 超出同类产品状态的要求
+    - 超出同类产品
+    target_heading_keywords:
+    - 超出同类产品状态的要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 顾客的特殊要求
+    preserve_child_headings: true
+  delivery_documents:
+    label: 需向用户提交的文件
+    definition: 顾客的特殊要求 / 其他要求 / 需向用户提交的文件的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 需向用户提交的文件
+    - 提交文件
+    - 交付文件
+    target_heading_keywords:
+    - 需向用户提交的文件
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 其他要求
+  reliability:
+    label: 可靠性要求
+    definition: 通用质量特性要求 / 可靠性要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 可靠性要求
+    - 可靠性
+    target_heading_keywords:
+    - 可靠性要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+    preserve_child_headings: true
+  reliability_quantitative:
+    label: 可靠性定量要求
+    definition: 通用质量特性要求 / 可靠性要求 / 可靠性定量要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 可靠性定量要求
+    - 可靠性定量
+    - MTBF
+    target_heading_keywords:
+    - 可靠性定量要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 可靠性要求
+  reliability_qualitative:
+    label: 可靠性定性要求
+    definition: 通用质量特性要求 / 可靠性要求 / 可靠性定性要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 可靠性定性要求
+    - 可靠性定性
+    target_heading_keywords:
+    - 可靠性定性要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 可靠性要求
+  reliability_testing:
+    label: 可靠性试验要求
+    definition: 通用质量特性要求 / 可靠性要求 / 可靠性试验要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 可靠性试验要求
+    - 可靠性试验
+    target_heading_keywords:
+    - 可靠性试验要求
+    target_heading_level: 3
+    target_integrity: exact
+    target_parent_heading: 可靠性要求
+  maintainability:
+    label: 维修性要求
+    definition: 通用质量特性要求 / 维修性要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 维修性要求
+    - 维修性
+    target_heading_keywords:
+    - 维修性要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+  testability:
+    label: 测试性要求
+    definition: 通用质量特性要求 / 测试性要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 测试性要求
+    - 测试性
+    target_heading_keywords:
+    - 测试性要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+  supportability:
+    label: 保障性要求
+    definition: 通用质量特性要求 / 保障性要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 保障性要求
+    - 保障性
+    target_heading_keywords:
+    - 保障性要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+  safety:
+    label: 安全性定性要求
+    definition: 通用质量特性要求 / 安全性定性要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 安全性定性要求
+    - 安全性
+    target_heading_keywords:
+    - 安全性定性要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+  environmental_adaptability:
+    label: 环境适应性要求
+    definition: 在通用使用环境基础上，专项细化高低温循环、湿热交变、盐雾腐蚀、霉菌生长、淋雨浸水、沙尘冲击、振动冲击、力学过载、低气压、高原环境、海洋环境、工业干扰环境、老化耐受、长期环境稳定性等环境试验要求、耐受阈值、考核标准及环境适配约束条件；只提取用户需求资料中的相关原文，保留数值、单位和完整条件，以正文段落描述，不列清单、不复制整张指标表，不混入独立的电气或寿命指标，不补造要求
+    source_heading_keywords:
+    - 环境适应性要求
+    - 环境适应性
+    - 高温
+    - 低温
+    - 温度冲击
+    - 振动
+    - 冲击
+    target_heading_keywords:
+    - 环境适应性要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+  process_requirement:
+    label: 工艺要求
+    definition: 工艺、材料选用及加工装配要求；沿用当前材料进入工艺的业务规则
+    source_heading_keywords:
+    - 工艺要求
+    - 工艺
+    - 材料要求
+    target_heading_keywords:
+    - 工艺要求
+    target_heading_level: 1
+    target_integrity: exact
+  previous_design:
+    label: 以前类似设计提供的信息
+    definition: 以前类似设计提供的信息的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 以前类似设计提供的信息
+    - 历史设计
+    - 类似设计信息
+    target_heading_keywords:
+    - 以前类似设计提供的信息
+    target_heading_level: 1
+    target_integrity: exact
+  packaging:
+    label: 包装要求
+    definition: 包装要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 包装要求
+    - 包装
+    target_heading_keywords:
+    - 包装要求
+    target_heading_level: 1
+    target_integrity: exact
+  acceptance:
+    label: 验收要求
+    definition: 验收要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 验收要求
+    - 验收
+    - 检验
+    target_heading_keywords:
+    - 验收要求
+    target_heading_level: 1
+    target_integrity: exact
+  supporting_requirement:
+    label: 配套要求
+    definition: 配套要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 配套要求
+    target_heading_keywords:
+    - 配套要求
+    target_heading_level: 1
+    target_integrity: exact
+  confidentiality:
+    label: 项目是否为涉密科研项目
+    definition: 项目是否为涉密科研项目的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 项目是否为涉密科研项目
+    - 保密要求
+    target_heading_keywords:
+    - 项目是否为涉密科研项目
+    target_heading_level: 1
+    target_integrity: exact
+  schedule:
+    label: 任务进度要求
+    definition: 任务进度要求的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 任务进度要求
+    - 进度
+    - 交付周期
+    - 里程碑
+    target_heading_keywords:
+    - 任务进度要求
+    target_heading_level: 1
+    target_integrity: exact
+  budget:
+    label: 研制经费预算
+    definition: 研制经费预算的原文要求；保留数字、单位、条件、表格和图片，不补造技术内容
+    source_heading_keywords:
+    - 研制经费预算
+    - 经费预算
+    target_heading_keywords:
+    - 研制经费预算
+    target_heading_level: 1
+    target_integrity: exact
+  other:
+    label: 设计开发所需其他要求
+    definition: 经语义确认无法进入已有专用章节的设计开发其他要求，不能吞并已明确的技术性能、接口和信号定义
+    source_heading_keywords:
+    - 设计开发所需其他要求
+    - 其他要求
+    target_heading_keywords:
+    - 设计开发所需其他要求
+    target_heading_level: 1
+    target_integrity: exact
+    preserve_child_headings: true
+  performance_indicator:
+    label: 性能要求
+    definition: 性能要求汇总章节，按原文块语义分配给各具体要求
+    source_heading_keywords:
+    - 性能要求
+    container_only: true
+    block_target_categories:
+    - power_open_circuit
+    - signal_continuity
+    - connector_open_circuit
+    - transmission_eye
+    - near_end_crosstalk
+    - bit_error_rate
+    - insertion_loss
+    - return_loss
+    - other
+    block_fallback_category: other
+  electrical_characteristics:
+    label: 电气特性要求
+    definition: 电气特性要求汇总章节，按原文块语义分配给各具体要求
+    source_heading_keywords:
+    - 电气特性要求
+    container_only: true
+    block_target_categories:
+    - power_supply
+    - signal_requirement
+    - other
+    block_fallback_category: other

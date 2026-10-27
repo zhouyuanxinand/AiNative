@@ -1,0 +1,352 @@
+version: '3.1'
+template_id: liquid_cooling_pipeline
+exact_fragment_routing:
+  enabled: true
+  min_text_length: 24
+  max_fragments_per_block: 12
+  source_categories:
+  - source_and_function
+  - usage_environment
+  - installation_form
+  - product_composition
+  - installation_method
+  - outline_dimension
+  - interface_definition
+  - technical_support
+  - reliability
+  - maintainability
+  - testability
+  - supportability
+  - safety
+  - environmental_adaptability
+  - process_requirement
+  - schedule
+  - appearance_requirement
+  - other
+  target_categories:
+  - source_and_function
+  - usage_environment
+  - installation_form
+  - product_composition
+  - installation_method
+  - outline_dimension
+  - interface_definition
+  - technical_support
+  - reliability
+  - maintainability
+  - testability
+  - supportability
+  - safety
+  - environmental_adaptability
+  - process_requirement
+  - schedule
+  - appearance_requirement
+  - other
+evidence_projections:
+- source_category: performance_indicator
+  target_category: environmental_adaptability
+  match_any:
+  - 工作温度
+  - 使用温度
+  - 环境温度
+  - 温度范围
+  extract_patterns:
+  - '[-－−+]?\d+(?:\.\d+)?\s*(?:℃|°C)\s*[～~—至到]\s*[-－−+]?\d+(?:\.\d+)?\s*(?:℃|°C)'
+semantic_roles:
+  standards_reference:
+    label: 适用的法律法规要求
+    definition: 文档引用、适用标准、法律法规和规范性文件
+    target_heading_keywords:
+    - 适用的法律法规要求
+    write_mode: standards_merge
+    target_heading_level: 1
+  intro_other:
+    label: 产品功能用途中的其他
+    definition: 产品功能用途章节中没有可提取内容时使用的受控空槽，不承载来源正文
+    target_heading_keywords:
+    - 其他
+    target_heading_level: 2
+    target_parent_heading: 产品的功能用途
+categories:
+  source_and_function:
+    label: 来源和功能
+    definition: 产品研制来源、背景、立项依据，以及产品用途、功能和任务能力
+    source_heading_keywords:
+    - 来源和功能
+    - 产品功能
+    - 产品用途
+    - 概述
+    target_heading_keywords:
+    - 来源和功能
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 产品的功能用途
+  usage_environment:
+    label: 使用环境和部位
+    definition: 产品工作的温度、气压、淋雨、电磁、海拔等环境条件，以及装配、搭载、部署和使用部位；不包含具体安装固定操作
+    source_heading_keywords:
+    - 使用环境和部位
+    - 安装使用环境
+    - 使用环境
+    - 使用部位
+    target_heading_keywords:
+    - 使用环境和部位（可附图说明）
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 产品的功能用途
+  installation_form:
+    label: 安装形式和方法
+    definition: 产品总体安装载体、固定端或自由端关系、板前或板后等总体安装形式；不等同于接口章节中的具体安装操作或尺寸
+    source_heading_keywords:
+    - 安装形式和方法
+    - 安装形式
+    - 安装方法
+    source_content_patterns:
+    - (?:安装|装配|固定|搭载|部署)在[^。；;\n]{0,60}(?:印制板|电路板|机架|舱内|设备|平台|载体)(?:上|内|处)?
+    target_heading_keywords:
+    - 安装形式和方法
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 产品的功能用途
+  product_composition:
+    label: 产品组成
+    definition: 产品构成、部件、组件关系和结构组成
+    source_heading_keywords:
+    - 产品组成
+    - 组成结构
+    target_heading_keywords:
+    - 产品组成
+    target_integrity: exact
+    target_heading_level: 1
+  performance_indicator:
+    label: 技术指标
+    definition: 电气、机械、环境等定量或可检验性能要求；不包含已有独立槽位的互换性、安装方式和尺寸要求
+    source_heading_keywords:
+    - 重量
+    - 工作电压
+    - 额定电流
+    - 工作电流
+    - 冲击电流
+    - 接触电阻
+    - 介质耐电压
+    - 绝缘电阻
+    - 插拔力
+    - 总分离力
+    - 机械寿命
+    - 振动
+    - 冲击
+    - 加速度
+    - 工作温度
+    - 高温
+    - 低温
+    - 低气压
+    - 低温低气压
+    target_heading_keywords:
+    - 技术指标
+    write_mode: indicator_table
+    excluded_indicator_names:
+    - 互换性
+    - 互配性
+    target_heading_level: 2
+    target_parent_heading: 技术要求
+  outline_dimension:
+    label: 外形尺寸
+    definition: 产品或核心部件的外观轮廓、长宽高、外形公差、外形图和结构边界尺寸；无法明确区分的尺寸按受控规则可进入本类
+    source_heading_keywords:
+    - 外形尺寸
+    - 外形要求
+    - 外形图
+    target_heading_keywords:
+    - 外形尺寸
+    target_heading_level: 3
+    target_parent_heading: 接口尺寸要求
+    target_integrity: exact
+  installation_method:
+    label: 安装方式
+    definition: 螺钉、导销、卡扣、导轨、焊接、嵌入等具体安装固定方式、操作步骤和流程
+    source_heading_keywords:
+    - 安装方式
+    - 固定方式
+    target_heading_keywords:
+    - 安装方式
+    target_heading_level: 3
+    target_parent_heading: 接口尺寸要求
+    replicate_to_categories:
+    - installation_form
+    target_integrity: exact
+  interface_definition:
+    label: 接口尺寸
+    definition: 接口、节点排列、定位关系、针脚或接点定义，以及对接定位、插合方向和接口几何约束；本类作为尺寸子槽容器时不得直接承载正文
+    source_heading_keywords:
+    - 接口尺寸要求
+    - 接口尺寸
+    - 接口要求
+    - 导向要求
+    - 解锁按钮位置及尺寸
+    container_only: true
+    block_target_categories:
+    - outline_dimension
+    - installation_method
+    - installation_requirements
+    block_fallback_category: outline_dimension
+  technical_support:
+    label: 保障要求
+    definition: 条件保障、验收和交付要求，包括随产品提供的说明书、合格证、工具、备件、维修手册和技术资料等事实
+    source_heading_keywords:
+    - 条件保障要求
+    - 技术保障要求
+    - 保障要求
+    - 验收要求
+    - 检验验收
+    - 交付要求
+    source_parent_heading_keywords:
+    - 验收及交付要求
+    source_content_patterns:
+    - (?:随产品|随机|交付时)[^。；;\n]*(?:提供|配备)[^。；;\n]*(?:使用说明书|技术说明书|维修手册|合格证|工具|备件|技术资料)
+    - (?:提供|配备)[^。；;\n]*(?:使用说明书|技术说明书|维修手册|随机工具|随机备件|接触件备件|合格证)
+    content_priority: 100
+    target_heading_keywords:
+    - 条件保障要求
+    target_heading_level: 2
+    write_mode: dynamic_children
+    target_integrity: exact
+    target_parent_heading: 技术要求
+  reliability:
+    label: 可靠性要求
+    definition: 平均无故障时间、寿命、耐久度、故障率、稳定性、容错和可靠性试验要求
+    source_heading_keywords:
+    - 可靠性要求
+    - 可靠性
+    target_heading_keywords:
+    - 可靠性要求
+    target_integrity: exact
+    target_heading_level: 2
+    target_parent_heading: 通用质量特性要求
+  maintainability:
+    label: 维修性要求
+    definition: 平均修复时间、可达性、可拆卸性、故障隔离、维修操作、维修工具和维修保障要求
+    source_heading_keywords:
+    - 维修性要求
+    - 维修保障要求
+    - 维修性
+    target_heading_keywords:
+    - 维修性要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+  testability:
+    label: 测试性要求
+    definition: 机内测试、故障检测与隔离、虚警率、测试覆盖、测试设备、流程、精度和验收要求
+    source_heading_keywords:
+    - 测试性要求
+    - 测试性
+    target_heading_keywords:
+    - 测试性要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+  supportability:
+    label: 保障性要求
+    definition: 六性中的综合保障设计、保障资源配置、保障分析、保障方案、保障成本和持续保障要求；不是随产品交付清单
+    source_heading_keywords:
+    - 保障性要求
+    - 保障性
+    target_heading_keywords:
+    - 保障性要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+  safety:
+    label: 安全性定性要求
+    definition: 使用、安装、运维、存储和运输过程中的电气、机械、防火防爆、防误操作和人员设备安全要求
+    source_heading_keywords:
+    - 安全性定性要求
+    - 安全性要求
+    - 安全性
+    target_heading_keywords:
+    - 安全性定性要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+  environmental_adaptability:
+    label: 环境适应性要求
+    definition: 在通用使用环境基础上，专项细化高低温循环、湿热交变、盐雾腐蚀、霉菌生长、淋雨浸水、沙尘冲击、振动冲击、力学过载、低气压、高原环境、海洋环境、工业干扰环境、老化耐受、长期环境稳定性等环境试验要求、耐受阈值、考核标准及环境适配约束条件；只提取用户需求资料中的相关原文，保留数值、单位和完整条件，以正文段落描述，不列清单、不复制整张指标表，不混入独立的电气或寿命指标，不补造要求
+    source_heading_keywords:
+    - 环境适应性要求
+    - 环境适应性
+    target_heading_keywords:
+    - 环境适应性要求
+    target_heading_level: 2
+    target_integrity: exact
+    target_parent_heading: 通用质量特性要求
+  process_requirement:
+    label: 工艺要求
+    definition: 研制、生产、装配和调试过程中的加工、焊接、粘接、紧固、表面处理、密封、公差和工艺验收要求
+    source_heading_keywords:
+    - 工艺要求
+    - 制造工艺
+    - 装配工艺
+    target_heading_keywords:
+    - 工艺要求
+    target_heading_level: 1
+    empty_policy: fill_none
+    target_integrity: exact
+  schedule:
+    write_mode: preserve_template
+    label: 进度要求
+    definition: 研制进度、周期、阶段时间、任务节点和交付计划要求
+    source_heading_keywords:
+    - 任务进度要求
+    - 研制进度
+    - 进度要求
+    target_heading_keywords:
+    - 任务进度要求
+    target_heading_level: 1
+    target_integrity: exact
+  appearance_requirement:
+    label: 外观要求
+    definition: 产品外观、外形和可见状态要求；按 7-22 直接复制到“产品的功能用途”下的“其他”槽
+    source_heading_keywords:
+    - 外观要求
+    target_heading_keywords:
+    - 其他
+    target_heading_level: 2
+    target_parent_heading: 产品的功能用途
+    target_integrity: exact
+  other:
+    label: 其他要求
+    definition: 无法归入以上类别、来源明确标为“其他要求”，或按 7-22 指定进入顾客特殊要求的完整设计输入模块
+    source_heading_keywords:
+    - 其他要求
+    - 安装使用注意事项
+    - 元器件和原材料选用要求
+    - 元器件和材料选用要求
+    - 原材料和元器件选用要求
+    - 研制批产品数量要求
+    - 研制批产品数量
+    - 研制批数量要求
+    atomic_source_heading_keywords:
+    - 安装使用注意事项
+    - 元器件和原材料选用要求
+    - 元器件和材料选用要求
+    - 原材料和元器件选用要求
+    - 研制批产品数量要求
+    - 研制批产品数量
+    - 研制批数量要求
+    target_heading_keywords:
+    - 其他要求
+    target_parent_heading: 顾客的特殊要求
+    preserve_child_headings: true
+    insert_position: after_children
+    target_integrity: exact
+    target_heading_level: 2
+  installation_requirements:
+    label: 安装要求
+    definition: 液冷管路的安装约束、安装力矩及连接要求；不含安装操作方式
+    source_heading_keywords:
+    - 安装要求
+    target_heading_keywords:
+    - 安装要求
+    target_heading_level: 3
+    target_parent_heading: 接口尺寸要求
+    target_integrity: exact

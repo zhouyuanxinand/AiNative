@@ -1,0 +1,20 @@
+version: "1.0"
+
+# 滤波、液冷管路及液冷机箱/冷板原模板仅有“研制经费预算”标题。
+# 当前受控接入仅确认非中央研究院用途，未提供中央研究院经济性分析分支。
+fields:
+  organization_scope:
+    label: 产品归属范围
+    required: true
+    values:
+      non_central_research:
+        label: 非中央研究院产品
+
+mutually_exclusive_groups:
+  - id: research_budget_scope
+    selector: organization_scope
+    required: true
+    variants:
+      non_central_research:
+        heading_exact_names:
+          - 研制经费预算

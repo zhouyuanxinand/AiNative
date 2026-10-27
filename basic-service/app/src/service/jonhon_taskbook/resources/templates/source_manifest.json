@@ -1,0 +1,817 @@
+{
+  "schema_version": 1,
+  "intake_date": "2026-09-16",
+  "source_directory": "模板（JONHON受控）",
+  "purpose": "记录受控原模板来源和格式转换证据；不代表产品类型已完成真实样例验收或获准启用。",
+  "conversion": {
+    "application": "Microsoft Word 16.0",
+    "method": "只读打开原DOC，SaveAs2格式16另存DOCX；不修改正文、样式、表格、分页或插图。",
+    "automation_security": "msoAutomationSecurityForceDisable (3)",
+    "originals_modified": false,
+    "rendering": "Word ExportAsFixedFormat PDF + Codex bundled Poppler 96 dpi PNG",
+    "renderer_note": "documents/render_docx.py尝试失败：当前Windows没有soffice.exe；使用已安装Word完成本地渲染，不外发源文件。"
+  },
+  "existing_resources": [
+    {
+      "template": "connector_taskbook.docx",
+      "family": "低频",
+      "product_types": [
+        "low_frequency_rectangular",
+        "low_frequency_circular",
+        "low_frequency_twist_pin",
+        "high_speed_backplane",
+        "high_speed_io",
+        "end_contact_spring_pin",
+        "end_contact_pogo",
+        "end_contact_finger",
+        "separation_connector",
+        "watertight_connector"
+      ],
+      "template_sha256": "9f8f397646a01fb67503e1854855ca6b879af80a43bf389a08bf67cfd3dfe94c",
+      "source": "仓库既有低频模板资源；本次未修改。用户提供目录中未包含另一个低频源文件。"
+    }
+  ],
+  "imports": [
+    {
+      "template": "rf_connector_taskbook.docx",
+      "family": "射频",
+      "product_types": [
+        "rf_contact",
+        "rf_hybrid",
+        "rf_standard_interface"
+      ],
+      "source_file": "0000000442研制任务书(同轴)(JONHON受控).doc",
+      "source_sha256": "4cbd900b24d465caf85b11d687f52518cc7ee76ccb80f8a8066444a8b7495ec5",
+      "template_sha256": "1684cc84c906e14d735d7d26c1f1788d163907538d6ca6f0b054593c302ea7e5",
+      "identification_evidence": [
+        "阻抗",
+        "工作频率",
+        "电压驻波比",
+        "所接同轴电缆型号"
+      ],
+      "structure": {
+        "tables": 12,
+        "shapes": 0,
+        "inline_shapes": 1,
+        "sections": 3,
+        "pages": 20,
+        "paragraphs": 1110
+      },
+      "technical_table_index": 1,
+      "technical_rows": [
+        "项目",
+        "电性能",
+        "阻抗",
+        "工作频率",
+        "耐电压",
+        "绝缘电阻",
+        "电压驻波比",
+        "机械性能",
+        "机械寿命",
+        "振动※",
+        "冲击※",
+        "加速度※",
+        "总分离力或分离扭矩",
+        "",
+        "环境性能",
+        "工作温度※",
+        "低温低气压※",
+        "高温※",
+        "低温※",
+        "温度冲击※",
+        "湿热※",
+        "盐雾※",
+        "阻燃",
+        "霉菌※",
+        "密封性",
+        "防护等级",
+        "注：标※指标为环境适应性指标。"
+      ],
+      "verification": {
+        "source_hash_unchanged": true,
+        "body_text_roundtrip_equal": true,
+        "paragraph_table_section_shape_page_counts_equal": true,
+        "rendered_pages": 20,
+        "pixel_identical_pages": 14,
+        "pages_with_local_raster_differences": [
+          6,
+          10,
+          11,
+          12,
+          14,
+          16
+        ],
+        "visual_review": "所有页缩略图及全部差异区域原尺寸已检查；差异局限于个别字形栅格化和滤波QFD图像，未发现转换新增的分页或表格布局变化。"
+      },
+      "source_layout_notes": [
+        "原模板第3页为空白正文页，保留源文件分页。"
+      ]
+    },
+    {
+      "template": "filter_connector_taskbook.docx",
+      "family": "滤波",
+      "product_types": [
+        "filter_connector"
+      ],
+      "source_file": "0000000443研制任务书(滤波)（JONHON受控）.doc",
+      "source_sha256": "48cc1fa4f7bd1d0e86d9790c3bcd12333c0ac2ba0526a293d25db6d2b199a032",
+      "template_sha256": "5abef25b63e8fe44fc74f65247d09ad34f0f08594b282160e9a373b2dabb44ed",
+      "identification_evidence": [
+        "电路形式",
+        "电容或电感量",
+        "截止频率",
+        "漏电流"
+      ],
+      "structure": {
+        "tables": 7,
+        "shapes": 0,
+        "inline_shapes": 1,
+        "sections": 3,
+        "pages": 18,
+        "paragraphs": 746
+      },
+      "technical_table_index": 1,
+      "technical_rows": [
+        "项目",
+        "电性能",
+        "工作电压",
+        "耐电压",
+        "电路形式",
+        "电容或电感量",
+        "截止频率",
+        "漏电流",
+        "机械性能",
+        "机械寿命",
+        "振动",
+        "冲击",
+        "加速度",
+        "总分离力或分离扭矩",
+        "环境性能",
+        "工作温度",
+        "低温低气压",
+        "高温",
+        "低温",
+        "温度冲击",
+        "湿热",
+        "盐雾",
+        "阻燃",
+        "霉菌",
+        "密封性"
+      ],
+      "verification": {
+        "source_hash_unchanged": true,
+        "body_text_roundtrip_equal": true,
+        "paragraph_table_section_shape_page_counts_equal": true,
+        "rendered_pages": 18,
+        "pixel_identical_pages": 15,
+        "pages_with_local_raster_differences": [
+          3,
+          5,
+          6
+        ],
+        "visual_review": "所有页缩略图及全部差异区域原尺寸已检查；差异局限于个别字形栅格化和滤波QFD图像，未发现转换新增的分页或表格布局变化。"
+      },
+      "source_layout_notes": [
+        "原模板第1至2页的变更记录表跨页；第3页QFD图覆盖部分正文。两项均在原DOC与转换DOCX中出现，按受控模板原样保留。"
+      ]
+    },
+    {
+      "template": "cable_assembly_taskbook.docx",
+      "family": "线缆组件",
+      "product_types": [
+        "cable_assembly"
+      ],
+      "source_file": "0000002022研制任务书(线缆组件)（JONHON受控）.doc",
+      "source_sha256": "281f78144d2406a4dc61b2fbdfeb19d0e1b1c561fc8efe98d6860d76a899c6b9",
+      "template_sha256": "77aa436e2ed05043c4323332942c292950ce1870e2b848cfe69e69d8cb728b40",
+      "identification_evidence": [
+        "（型号名称）线缆组件",
+        "线缆处理要求",
+        "屏蔽要求"
+      ],
+      "structure": {
+        "tables": 14,
+        "shapes": 0,
+        "inline_shapes": 0,
+        "sections": 3,
+        "pages": 20,
+        "paragraphs": 1200
+      },
+      "technical_table_index": 1,
+      "technical_rows": [
+        "项目",
+        "电性能",
+        "耐电压",
+        "绝缘电阻",
+        "屏蔽要求",
+        "机械性能",
+        "振动",
+        "冲击",
+        "加速度",
+        "环境性能",
+        "工作温度",
+        "低温低气压",
+        "高温",
+        "低温",
+        "温度冲击",
+        "湿热",
+        "盐雾",
+        "阻燃",
+        "霉菌",
+        "密封性",
+        ""
+      ],
+      "verification": {
+        "source_hash_unchanged": true,
+        "body_text_roundtrip_equal": true,
+        "paragraph_table_section_shape_page_counts_equal": true,
+        "rendered_pages": 20,
+        "pixel_identical_pages": 16,
+        "pages_with_local_raster_differences": [
+          6,
+          10,
+          11,
+          13
+        ],
+        "visual_review": "所有页缩略图及全部差异区域原尺寸已检查；差异局限于个别字形栅格化和滤波QFD图像，未发现转换新增的分页或表格布局变化。"
+      },
+      "source_layout_notes": [
+        "原模板第2页为空白正文页，保留源文件分页。"
+      ]
+    },
+    {
+      "template": "liquid_cooling_chassis_taskbook.docx",
+      "family": "机箱和冷板",
+      "product_types": [
+        "liquid_cooling_chassis"
+      ],
+      "source_file": "0000727536研制任务书(机箱和冷板)（JONHON受控）.doc",
+      "source_sha256": "0d4a732b79d7aff2ccb301ee83ecbc32a9a8e528e70f323e1a7bf5c607175158",
+      "template_sha256": "36bcc975f61393d3d74ae9ecdf9ecd5b451a81936fe34ff0462bcc0f1a56be70",
+      "identification_evidence": [
+        "工作压力",
+        "安全压力",
+        "散热性能",
+        "流阻",
+        "工作介质"
+      ],
+      "structure": {
+        "tables": 9,
+        "shapes": 0,
+        "inline_shapes": 0,
+        "sections": 3,
+        "pages": 17,
+        "paragraphs": 1020
+      },
+      "technical_table_index": 1,
+      "technical_rows": [
+        "项目",
+        "密封性能",
+        "工作压力",
+        "安全压力",
+        "散热性能",
+        "流阻",
+        "密封检验方式",
+        "工作介质",
+        "机械性能",
+        "振动",
+        "冲击",
+        "加速度",
+        "环境性能",
+        "环境温度",
+        "工作温度",
+        "贮存温度：",
+        "盐雾",
+        "湿热",
+        "霉菌",
+        "温度-高度",
+        "低温",
+        "高温",
+        "温度冲击",
+        "电磁兼容",
+        "三防要求"
+      ],
+      "verification": {
+        "source_hash_unchanged": true,
+        "body_text_roundtrip_equal": true,
+        "paragraph_table_section_shape_page_counts_equal": true,
+        "rendered_pages": 17,
+        "pixel_identical_pages": 13,
+        "pages_with_local_raster_differences": [
+          3,
+          5,
+          7,
+          8
+        ],
+        "visual_review": "所有页缩略图及全部差异区域原尺寸已检查；差异局限于个别字形栅格化和滤波QFD图像，未发现转换新增的分页或表格布局变化。"
+      },
+      "source_layout_notes": [
+        "原模板第7章标题为“可通用质量特性要求”，保留原文；模板不含独立适航要求章，后续章号与其他族不同。"
+      ]
+    },
+    {
+      "template": "liquid_cooling_pipeline_taskbook.docx",
+      "family": "液冷管路",
+      "product_types": [
+        "liquid_cooling_pipeline"
+      ],
+      "source_file": "0000727540研制任务书(液冷管路)（JONHON受控）.doc",
+      "source_sha256": "23518b1d6dd8daf587fc3867118735462aedb6efe91ac836be91ee7bca6857ea",
+      "template_sha256": "b14451385c1a0167ad57a2bb2850a737b2c9d0ee7616adef20dc71bdcfc0742f",
+      "identification_evidence": [
+        "（型号名称）液冷管路",
+        "最大工作压力",
+        "最小弯曲半径",
+        "安装力矩"
+      ],
+      "structure": {
+        "tables": 9,
+        "shapes": 0,
+        "inline_shapes": 0,
+        "sections": 3,
+        "pages": 19,
+        "paragraphs": 1017
+      },
+      "technical_table_index": 1,
+      "technical_rows": [
+        "项目",
+        "密封性能",
+        "最大工作压力",
+        "流阻",
+        "密封检验方式",
+        "工作介质",
+        "机械性能",
+        "最小弯曲半径",
+        "安装力矩",
+        "振动",
+        "冲击",
+        "加速度",
+        "环境性能",
+        "环境温度",
+        "工作介质温度",
+        "贮存温度：",
+        "盐雾",
+        "湿热",
+        "霉菌",
+        "低温",
+        "高温",
+        "温度冲击",
+        "温度高度"
+      ],
+      "verification": {
+        "source_hash_unchanged": true,
+        "body_text_roundtrip_equal": true,
+        "paragraph_table_section_shape_page_counts_equal": true,
+        "rendered_pages": 19,
+        "pixel_identical_pages": 17,
+        "pages_with_local_raster_differences": [
+          5,
+          14
+        ],
+        "visual_review": "所有页缩略图及全部差异区域原尺寸已检查；差异局限于个别字形栅格化和滤波QFD图像，未发现转换新增的分页或表格布局变化。"
+      },
+      "source_layout_notes": []
+    },
+    {
+      "template": "optical_connector_taskbook.docx",
+      "family": "光纤连接器",
+      "product_types": [
+        "optical_connector"
+      ],
+      "intake_date": "2026-09-20",
+      "source_file": "0001352447研制任务书(光纤连接器)（JONHON受控）.doc",
+      "source_sha256": "2b2d7a72870c6c0b3a39896682009814f171c8fc58fdf11ac19c4e6ff929499b",
+      "template_sha256": "6254bdedb553e9bedcbd29a8528f9ae5940a4dacb772c8c776d33476608d4a29",
+      "conversion_method": "Microsoft Word 16.0 read-only open; SaveAs2 format 16",
+      "structure": {
+        "inline_shapes": 0,
+        "sections": 3,
+        "pages": 20,
+        "paragraphs": 1162,
+        "tables": 12,
+        "shapes": 0
+      },
+      "technical_table_index": 1,
+      "technical_rows": [
+        "项目",
+        "光学性能",
+        "传输模式",
+        "工作波长",
+        "插入损耗",
+        "互换性",
+        "重复性",
+        "回波损耗",
+        "光不连续性",
+        "负载传输",
+        "3D面型",
+        "端面检查",
+        "环境性能指标",
+        "工作温度",
+        "高温寿命",
+        "温度循环",
+        "温度冲击",
+        "低气压(高度)",
+        "浸渍",
+        "低气压浸渍",
+        "水压和冰冻",
+        "湿热",
+        "盐雾",
+        "砂尘",
+        "易燃性",
+        "霉菌",
+        "机械性能指标",
+        "机械耐久性",
+        "啮合和分离力",
+        "啮合和分离力矩",
+        "光缆保持力",
+        "扭转",
+        "光缆尾部弯曲",
+        "振动",
+        "冲击",
+        "加速度",
+        "撞击",
+        "抗挤压",
+        "耐水压"
+      ],
+      "verification": {
+        "source_hash_unchanged": true,
+        "body_text_roundtrip_equal": true,
+        "paragraph_table_section_shape_page_counts_equal": true,
+        "rendered_pages": 20,
+        "pixel_identical_pages": 12,
+        "pages_with_local_raster_differences": [
+          4,
+          5,
+          6,
+          8,
+          9,
+          11,
+          13,
+          17
+        ],
+        "visual_review": "全部页面缩略图及全部差异区域原尺寸已检查；仅局部字形和图片栅格化差异，无转换新增分页、表格布局或正文变化。"
+      },
+      "source_layout_notes": [
+        "原模板第3页为空白正文页，按受控模板保留。"
+      ],
+      "rendering": "Microsoft Word ExportAsFixedFormat PDF + Codex bundled Poppler 96 dpi PNG; packaged render_docx.py unavailable because Windows runtime has no soffice.exe."
+    },
+    {
+      "template": "printed_board_assembly_taskbook.docx",
+      "family": "背板",
+      "product_types": [
+        "printed_board_assembly"
+      ],
+      "intake_date": "2026-09-20",
+      "source_file": "0001782414研制任务书(背板) （JONHON受控）.doc",
+      "source_sha256": "87c4a9057b11ee303a4042545a77804c11b9a7be260b227eb9766eaf649fc063",
+      "template_sha256": "af49810d7ffcb6517f2de64f7f231133ff57f4f9c3d5d8944493d29161da9e98",
+      "conversion_method": "Microsoft Word 16.0 read-only open; SaveAs2 format 16",
+      "structure": {
+        "inline_shapes": 5,
+        "sections": 4,
+        "pages": 21,
+        "paragraphs": 971,
+        "tables": 8,
+        "shapes": 0
+      },
+      "technical_table_index": null,
+      "technical_rows": [],
+      "verification": {
+        "source_hash_unchanged": true,
+        "body_text_roundtrip_equal": true,
+        "paragraph_table_section_shape_page_counts_equal": true,
+        "rendered_pages": 21,
+        "pixel_identical_pages": 16,
+        "pages_with_local_raster_differences": [
+          5,
+          6,
+          8,
+          13,
+          14
+        ],
+        "visual_review": "全部页面缩略图及全部差异区域原尺寸已检查；仅局部字形和图片栅格化差异，无转换新增分页、表格布局或正文变化。"
+      },
+      "source_layout_notes": [],
+      "rendering": "Microsoft Word ExportAsFixedFormat PDF + Codex bundled Poppler 96 dpi PNG; packaged render_docx.py unavailable because Windows runtime has no soffice.exe."
+    },
+    {
+      "template": "chassis_taskbook.docx",
+      "family": "机箱",
+      "product_types": [
+        "chassis",
+        "mounting_plate",
+        "optical_distribution_box"
+      ],
+      "intake_date": "2026-09-20",
+      "source_file": "0000902492研制任务书(机箱) (JONHON受控).doc",
+      "source_sha256": "cca5c346fe629c334bf4d8d7c577aa73415e5dc88eb5aaf4649c3366a557b9dc",
+      "template_sha256": "74a3622b71f48bdfe89fad77001cc4c866834b284102533f89b3fbb3788d6dbf",
+      "conversion_method": "Microsoft Word 16.0 read-only open; SaveAs2 format 16",
+      "structure": {
+        "inline_shapes": 1,
+        "sections": 4,
+        "pages": 18,
+        "paragraphs": 1003,
+        "tables": 9,
+        "shapes": 0
+      },
+      "technical_table_index": 1,
+      "technical_rows": [
+        "项目",
+        "密封性能",
+        "工作压力",
+        "安全压力",
+        "散热性能    ",
+        "流阻",
+        "密封检验方式",
+        "工作介质",
+        "机械性能",
+        "振动",
+        "冲击",
+        "加速度",
+        "环境性能",
+        "环境温度",
+        "工作温度",
+        "贮存温度：",
+        "盐雾",
+        "湿热",
+        "霉菌",
+        "温度-高度",
+        "低温",
+        "高温",
+        "温度冲击",
+        "电磁兼容",
+        "三防要求"
+      ],
+      "verification": {
+        "source_hash_unchanged": true,
+        "body_text_roundtrip_equal": true,
+        "paragraph_table_section_shape_page_counts_equal": true,
+        "rendered_pages": 18,
+        "pixel_identical_pages": 15,
+        "pages_with_local_raster_differences": [
+          5,
+          10,
+          12
+        ],
+        "visual_review": "全部页面缩略图及全部差异区域原尺寸已检查；仅局部字形和图片栅格化差异，无转换新增分页、表格布局或正文变化。"
+      },
+      "source_layout_notes": [],
+      "rendering": "Microsoft Word ExportAsFixedFormat PDF + Codex bundled Poppler 96 dpi PNG; packaged render_docx.py unavailable because Windows runtime has no soffice.exe."
+    },
+    {
+      "template": "system_integration_taskbook.docx",
+      "family": "系统集成+整机布线+座舱",
+      "product_types": [
+        "mounting_frame",
+        "equipment_cabinet",
+        "display_console"
+      ],
+      "intake_date": "2026-09-20",
+      "source_file": "0002311157(研制任务书（系统集成+整机布线+座舱）（JONHON受控）.docx",
+      "source_sha256": "2fa65c7dfe0322598a55812d46a7d06cfdbf77e0b66a611f01a139111ee55a90",
+      "template_sha256": "2fa65c7dfe0322598a55812d46a7d06cfdbf77e0b66a611f01a139111ee55a90",
+      "conversion_method": "byte-identical DOCX copy",
+      "structure": {
+        "inline_shapes": 4,
+        "sections": 3,
+        "pages": 24,
+        "paragraphs": 819,
+        "tables": 6,
+        "shapes": 1
+      },
+      "technical_table_index": null,
+      "technical_rows": [],
+      "verification": {
+        "source_hash_unchanged": true,
+        "body_text_roundtrip_equal": true,
+        "paragraph_table_section_shape_page_counts_equal": true,
+        "rendered_pages": 24,
+        "pixel_identical_pages": 24,
+        "pages_with_local_raster_differences": [],
+        "visual_review": "全部页面缩略图及全部差异区域原尺寸已检查；仅局部字形和图片栅格化差异，无转换新增分页、表格布局或正文变化。"
+      },
+      "source_layout_notes": [],
+      "rendering": "Microsoft Word ExportAsFixedFormat PDF + Codex bundled Poppler 96 dpi PNG; packaged render_docx.py unavailable because Windows runtime has no soffice.exe."
+    },
+    {
+      "template": "optical_cable_assembly_taskbook.docx",
+      "family": "光缆组件",
+      "product_types": [
+        "optical_cable_assembly"
+      ],
+      "intake_date": "2026-09-21",
+      "source_directory": "案例2",
+      "source_file": "0001352445研制任务书(光缆组件)20260605（JONHON受控）.doc",
+      "source_sha256": "12adc25b742ac203c2834e41606a98c5b6201d8420c822a579ab387d31e0ba40",
+      "template_sha256": "3277d58a5f96ce437cdc195d5dc0b504bce80df018c8065fc66e7849606def7d",
+      "conversion_method": "Microsoft Word 16.0 read-only open; SaveAs2 format 16",
+      "structure": {
+        "shapes": 0,
+        "tables": 13,
+        "paragraphs": 1239,
+        "pages": 22,
+        "sections": 3,
+        "inline_shapes": 1
+      },
+      "technical_table_index": 2,
+      "technical_rows": [
+        "项目",
+        "光学性能",
+        "传输模式",
+        "工作波长",
+        "带宽",
+        "插入损耗",
+        "互换性",
+        "重复性",
+        "回波损耗",
+        "环境性能指标",
+        "工作温度",
+        "高温寿命",
+        "高温工作",
+        "低温工作",
+        "低气压(高度)",
+        "温度高度",
+        "温度循环",
+        "温度冲击",
+        "浸渍",
+        "湿热",
+        "盐雾",
+        "砂尘",
+        "阻燃",
+        "霉菌",
+        "机械性能指标",
+        "机械耐久性",
+        "光缆保持力（光缆互连抗拉）",
+        "光缆互连抗扭",
+        "光缆尾部弯曲",
+        "耐水压",
+        "振动",
+        "冲击",
+        "加速度",
+        "电气指标",
+        "额定工作电流",
+        "接触电阻",
+        "耐电压",
+        "连接器性能要求",
+        "所使用MT连接器要求符合YD/Txxxx要求。",
+        "光缆性能要求",
+        "带状光缆最小弯曲半径（静态）",
+        "带状光缆最小弯曲半径（动态）",
+        "带状光缆抗拉力",
+        "单芯光缆要求符合GJB1428B。"
+      ],
+      "verification": {
+        "source_hash_unchanged": true,
+        "body_text_roundtrip_equal": true,
+        "paragraph_table_section_shape_page_counts_equal": true,
+        "rendered_pages": 22,
+        "pixel_identical_pages": 14,
+        "pages_with_local_raster_differences": [
+          3,
+          5,
+          10,
+          11,
+          12,
+          13,
+          15,
+          21
+        ],
+        "visual_review": "全部页面已按原尺寸检查，全部差异区域已与源DOC并排对照。仅个别字形栅格化差异；无转换新增分页、表格布局或正文变化。源模板既有版式问题见source_layout_notes。"
+      },
+      "source_layout_notes": [
+        "原模板第3页的光缆组件示意图遮挡“产品组成”“主要组成部分”“外形图”附近部分标题和正文。源DOC与转换DOCX均存在，按受控原件保留。",
+        "原模板未设置产品需求分解（QFD质量功能分解）章节；保留实际章节结构。"
+      ],
+      "rendering": "Microsoft Word ExportAsFixedFormat PDF + Codex bundled Poppler 96 dpi PNG; packaged render_docx.py was attempted and failed because Windows runtime has no soffice.exe."
+    },
+    {
+      "template": "liquid_cooling_connector_taskbook.docx",
+      "family": "流体",
+      "product_types": [
+        "liquid_cooling_connector"
+      ],
+      "intake_date": "2026-09-21",
+      "source_directory": "案例2",
+      "source_file": "0000727539研制任务书(流体连接器)(JONHON受控).doc",
+      "source_sha256": "d62395ae1cc9a0da41fb6206808f467d5318a2aa797346fdecd8eb34a143d752",
+      "template_sha256": "a52b7510eb9e157f02d1208ecfe59b796952106f140fad371392fddade3fad64",
+      "conversion_method": "Microsoft Word 16.0 read-only open; SaveAs2 format 16",
+      "structure": {
+        "shapes": 0,
+        "tables": 9,
+        "paragraphs": 1060,
+        "pages": 20,
+        "sections": 3,
+        "inline_shapes": 0
+      },
+      "technical_table_index": 1,
+      "technical_rows": [
+        "项目",
+        "密封性能",
+        "工作压力",
+        "工作流量",
+        "流阻",
+        "泄漏量",
+        "密封检验方式",
+        "工作介质",
+        "机械性能",
+        "机械寿命",
+        "振动",
+        "冲击",
+        "加速度",
+        "插合和\n分离力或扭矩",
+        "压力脉冲",
+        "流量脉冲",
+        "环境性能",
+        "环境温度",
+        "工作介质温度",
+        "贮存温度：",
+        "盐雾",
+        "湿热",
+        "霉菌",
+        "温度-高度",
+        "低温",
+        "高温",
+        "温度冲击",
+        "低气压",
+        "砂尘",
+        "其他",
+        "使用寿命",
+        "重量",
+        "泄压压力"
+      ],
+      "verification": {
+        "source_hash_unchanged": true,
+        "body_text_roundtrip_equal": true,
+        "paragraph_table_section_shape_page_counts_equal": true,
+        "rendered_pages": 20,
+        "pixel_identical_pages": 18,
+        "pages_with_local_raster_differences": [
+          5,
+          15
+        ],
+        "visual_review": "全部页面已按原尺寸检查，全部差异区域已与源DOC并排对照。仅个别字形栅格化差异；无转换新增分页、表格布局或正文变化。源模板既有版式问题见source_layout_notes。"
+      },
+      "source_layout_notes": [
+        "原模板附录A第19至20页的首列“序号”及部分序号存在窄列裁切。两页源DOC与转换DOCX逐像素一致，按受控原件保留。",
+        "原模板未设置产品需求分解（QFD质量功能分解）章节；研制经费预算只有单一章节，保留实际章节结构。"
+      ],
+      "rendering": "Microsoft Word ExportAsFixedFormat PDF + Codex bundled Poppler 96 dpi PNG; packaged render_docx.py was attempted and failed because Windows runtime has no soffice.exe."
+    }
+  ],
+  "missing_required_templates": [],
+  "not_imported_source_files": [
+    {
+      "file": "0000222197研制任务书(光电产品)（JONHON受控）.doc",
+      "sha256": "ac6ef315dbafc7b0071df0dc873fe002a0e6179d0f65f65fd7734cf07364a6ef",
+      "reason": "不属于本次用户指定模板族映射，保留原文件。"
+    },
+    {
+      "file": "0000902492研制任务书(机箱) (JONHON受控).doc",
+      "sha256": "cca5c346fe629c334bf4d8d7c577aa73415e5dc88eb5aaf4649c3366a557b9dc",
+      "reason": "不属于本次用户指定模板族映射，保留原文件。",
+      "resolved_import": {
+        "date": "2026-09-20",
+        "template": "chassis_taskbook.docx",
+        "reason": "用户本次提供产品映射后正式导入；原条目保留为2026-09-16审计历史。"
+      }
+    },
+    {
+      "file": "0001352447研制任务书(光纤连接器)（JONHON受控）.doc",
+      "sha256": "2b2d7a72870c6c0b3a39896682009814f171c8fc58fdf11ac19c4e6ff929499b",
+      "reason": "不属于本次用户指定模板族映射，保留原文件。",
+      "resolved_import": {
+        "date": "2026-09-20",
+        "template": "optical_connector_taskbook.docx",
+        "reason": "用户本次提供产品映射后正式导入；原条目保留为2026-09-16审计历史。"
+      }
+    },
+    {
+      "file": "0001782414研制任务书(背板) （JONHON受控）.doc",
+      "sha256": "87c4a9057b11ee303a4042545a77804c11b9a7be260b227eb9766eaf649fc063",
+      "reason": "不属于本次用户指定模板族映射，保留原文件。",
+      "resolved_import": {
+        "date": "2026-09-20",
+        "template": "printed_board_assembly_taskbook.docx",
+        "reason": "用户本次提供产品映射后正式导入；原条目保留为2026-09-16审计历史。"
+      }
+    },
+    {
+      "file": "0002311157(研制任务书（系统集成+整机布线+座舱）（JONHON受控）.docx",
+      "sha256": "2fa65c7dfe0322598a55812d46a7d06cfdbf77e0b66a611f01a139111ee55a90",
+      "reason": "不属于本次用户指定模板族映射，保留原文件。",
+      "resolved_import": {
+        "date": "2026-09-20",
+        "template": "system_integration_taskbook.docx",
+        "reason": "用户本次提供产品映射后正式导入；原条目保留为2026-09-16审计历史。"
+      }
+    },
+    {
+      "file": "0002365646研制任务书(民机连接器）-国际标准（JONHON受控）.doc",
+      "sha256": "f4e08913d26787d77b2bfea0c3ad9b8601fc7c513b8ebc0e0e9a15c5f3022797",
+      "reason": "不属于本次用户指定模板族映射，保留原文件。"
+    }
+  ]
+}

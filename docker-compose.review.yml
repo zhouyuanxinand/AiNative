@@ -1,0 +1,35 @@
+# Optional full document layout editor. Body editing works without this service.
+# docker compose -f docker-compose.yml -f docker-compose.review.yml up -d
+services:
+  agent-develop-task-doc:
+    environment:
+      # Browser-accessible URL; use the deployment hostname for remote users.
+      JTB_REVIEW_EDITOR_URL: ${JTB_REVIEW_EDITOR_URL:-http://127.0.0.1:18160}
+      JTB_REVIEW_EDITOR_INTERNAL_URL: http://taskbook-editor
+      JTB_REVIEW_PUBLIC_URL: http://agent-develop-task-doc
+      JTB_REVIEW_EDITOR_SECRET: ${JTB_REVIEW_EDITOR_SECRET:?Set a random shared secret of at least 32 characters}
+
+  taskbook-editor:
+    image: onlyoffice/documentserver:9.3.1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18160:80"
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${JTB_REVIEW_EDITOR_SECRET:?Set a random shared secret of at least 32 characters}
+      JWT_HEADER: Authorization
+      JWT_IN_BODY: "true"
+      ALLOW_PRIVATE_IP_ADDRESS: "true"
+    volumes:
+      - taskbook-editor-data:/var/www/onlyoffice/Data
+      - taskbook-editor-logs:/var/log/onlyoffice
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/healthcheck"]
+      interval: 20s
+      timeout: 5s
+      retries: 6
+      start_period: 120s
+
+volumes:
+  taskbook-editor-data:
+  taskbook-editor-logs:

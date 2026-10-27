@@ -1,0 +1,627 @@
+{
+  "provenance": "Captured from actual 研制任务书_20260917_193016 DOCX and sidecars; development rules C49/C51 separate source input from adoption confirmation.",
+  "audit": {
+    "passed": false,
+    "input_indicator_facts": [
+      {
+        "fact_id": "indicator-d4eac170550921d1",
+        "indicator_name": "基础规格",
+        "source_label": "基础规格",
+        "category": "其他",
+        "source_value": "3.3 基础规格：特性阻抗50Ω，螺纹规格1/4-36UNS，外导体内径4.13mm，完全匹配国标SMA界面尺寸。",
+        "source_heading": "基础规格",
+        "source_ids": [
+          "tech-p-b92b25284cd1"
+        ],
+        "source_coordinates": {
+          "body_index": 17,
+          "start": 0,
+          "end": 57
+        },
+        "is_table": false,
+        "governed_name": false
+      },
+      {
+        "fact_id": "indicator-b80e65d4035c9ed1",
+        "indicator_name": "特性阻抗",
+        "source_label": "特性阻抗",
+        "category": "电性能",
+        "source_value": "（1）特性阻抗：50Ω±1Ω，通带内阻抗均匀无突变；",
+        "source_heading": "通用射频电气指标（通带性能）",
+        "source_ids": [
+          "tech-p-6a1676c675b0"
+        ],
+        "source_coordinates": {
+          "body_index": 31,
+          "start": 0,
+          "end": 26
+        },
+        "is_table": false,
+        "governed_name": false
+      },
+      {
+        "fact_id": "indicator-cec5dd76843e2b05",
+        "indicator_name": "阻带衰减性能",
+        "source_label": "阻带衰减性能",
+        "category": "电性能",
+        "source_value": "（2）阻带衰减性能：2GHz≥20dB、3GHz≥30dB、6GHz≥40dB、10GHz≥50dB，高频干扰大幅抑制；",
+        "source_heading": "通用射频电气指标（通带性能）",
+        "source_ids": [
+          "tech-p-456c253c5e2d"
+        ],
+        "source_coordinates": {
+          "body_index": 32,
+          "start": 0,
+          "end": 60
+        },
+        "is_table": false,
+        "governed_name": false
+      },
+      {
+        "fact_id": "indicator-89958a435aad2283",
+        "indicator_name": "电磁屏蔽效能",
+        "source_label": "电磁屏蔽效能",
+        "category": "电性能",
+        "source_value": "（4）电磁屏蔽效能：≥60dB@1GHz，有效抑制射频信号泄露与外界电磁串扰；",
+        "source_heading": "通用射频电气指标（通带性能）",
+        "source_ids": [
+          "tech-p-2989e3b5fe8f"
+        ],
+        "source_coordinates": {
+          "body_index": 34,
+          "start": 0,
+          "end": 39
+        },
+        "is_table": false,
+        "governed_name": false
+      },
+      {
+        "fact_id": "indicator-1329471f0fe8e8ca",
+        "indicator_name": "锁紧力矩",
+        "source_label": "锁紧力矩",
+        "category": "其他",
+        "source_value": "6.1 锁紧力矩：标准螺纹锁紧力矩0.8～1.15N·m，锁紧牢固、拆卸顺畅，无滑丝、脱扣现象；",
+        "source_heading": "锁紧力矩",
+        "source_ids": [
+          "tech-p-8d5ecc680847"
+        ],
+        "source_coordinates": {
+          "body_index": 37,
+          "start": 0,
+          "end": 48
+        },
+        "is_table": false,
+        "governed_name": false
+      },
+      {
+        "fact_id": "indicator-4a085ce8236e688e",
+        "indicator_name": "插拔寿命",
+        "source_label": "插拔寿命",
+        "category": "其他",
+        "source_value": "6.2 插拔寿命：标准插拔≥1000次，插拔后射频电气指标、滤波性能无衰减、结构无松动；",
+        "source_heading": "插拔寿命",
+        "source_ids": [
+          "tech-p-41e2a79ccbef"
+        ],
+        "source_coordinates": {
+          "body_index": 38,
+          "start": 0,
+          "end": 44
+        },
+        "is_table": false,
+        "governed_name": false
+      },
+      {
+        "fact_id": "indicator-53059bae1aaedaa2",
+        "indicator_name": "线缆保持力",
+        "source_label": "线缆保持力",
+        "category": "其他",
+        "source_value": "6.3 线缆保持力：轴向拉力≥50N，连接器与线缆、板端连接牢固，无脱落、移位；",
+        "source_heading": "线缆保持力",
+        "source_ids": [
+          "tech-p-4c4709eea4c4"
+        ],
+        "source_coordinates": {
+          "body_index": 39,
+          "start": 0,
+          "end": 40
+        },
+        "is_table": false,
+        "governed_name": false
+      }
+    ],
+    "comparison_decisions": [
+      {
+        "indicator_name": "机械寿命",
+        "user_requirement": "6.2 插拔寿命：标准插拔≥1000次，插拔后射频电气指标、滤波性能无衰减、结构无松动；",
+        "user_source_ids": [
+          "tech-p-41e2a79ccbef"
+        ],
+        "user_fact_ids": [
+          "indicator-4a085ce8236e688e"
+        ],
+        "manual_review_required": false,
+        "adopted_requirement": "6.2 插拔寿命：标准插拔≥1000次，插拔后射频电气指标、滤波性能无衰减、结构无松动；"
+      },
+      {
+        "indicator_name": "基础规格",
+        "user_requirement": "3.3 基础规格：特性阻抗50Ω，螺纹规格1/4-36UNS，外导体内径4.13mm，完全匹配国标SMA界面尺寸。",
+        "user_source_ids": [
+          "tech-p-b92b25284cd1"
+        ],
+        "user_fact_ids": [
+          "indicator-d4eac170550921d1"
+        ],
+        "manual_review_required": true,
+        "adopted_requirement": "【人工填写】"
+      },
+      {
+        "indicator_name": "特性阻抗",
+        "user_requirement": "（1）特性阻抗：50Ω±1Ω，通带内阻抗均匀无突变；",
+        "user_source_ids": [
+          "tech-p-6a1676c675b0"
+        ],
+        "user_fact_ids": [
+          "indicator-b80e65d4035c9ed1"
+        ],
+        "manual_review_required": true,
+        "adopted_requirement": "【人工填写】"
+      },
+      {
+        "indicator_name": "阻带衰减性能",
+        "user_requirement": "（2）阻带衰减性能：2GHz≥20dB、3GHz≥30dB、6GHz≥40dB、10GHz≥50dB，高频干扰大幅抑制；",
+        "user_source_ids": [
+          "tech-p-456c253c5e2d"
+        ],
+        "user_fact_ids": [
+          "indicator-cec5dd76843e2b05"
+        ],
+        "manual_review_required": true,
+        "adopted_requirement": "【人工填写】"
+      },
+      {
+        "indicator_name": "电磁屏蔽效能",
+        "user_requirement": "（4）电磁屏蔽效能：≥60dB@1GHz，有效抑制射频信号泄露与外界电磁串扰；",
+        "user_source_ids": [
+          "tech-p-2989e3b5fe8f"
+        ],
+        "user_fact_ids": [
+          "indicator-89958a435aad2283"
+        ],
+        "manual_review_required": true,
+        "adopted_requirement": "【人工填写】"
+      },
+      {
+        "indicator_name": "锁紧力矩",
+        "user_requirement": "6.1 锁紧力矩：标准螺纹锁紧力矩0.8～1.15N·m，锁紧牢固、拆卸顺畅，无滑丝、脱扣现象；",
+        "user_source_ids": [
+          "tech-p-8d5ecc680847"
+        ],
+        "user_fact_ids": [
+          "indicator-1329471f0fe8e8ca"
+        ],
+        "manual_review_required": true,
+        "adopted_requirement": "【人工填写】"
+      },
+      {
+        "indicator_name": "线缆保持力",
+        "user_requirement": "6.3 线缆保持力：轴向拉力≥50N，连接器与线缆、板端连接牢固，无脱落、移位；",
+        "user_source_ids": [
+          "tech-p-4c4709eea4c4"
+        ],
+        "user_fact_ids": [
+          "indicator-53059bae1aaedaa2"
+        ],
+        "manual_review_required": true,
+        "adopted_requirement": "【人工填写】"
+      }
+    ]
+  },
+  "source_blocks": [
+    {
+      "id": "tech-p-b92b25284cd1",
+      "body_index": 17,
+      "text": "3.3 基础规格：特性阻抗50Ω，螺纹规格1/4-36UNS，外导体内径4.13mm，完全匹配国标SMA界面尺寸。"
+    },
+    {
+      "id": "tech-p-6a1676c675b0",
+      "body_index": 31,
+      "text": "（1）特性阻抗：50Ω±1Ω，通带内阻抗均匀无突变；"
+    },
+    {
+      "id": "tech-p-456c253c5e2d",
+      "body_index": 32,
+      "text": "（2）阻带衰减性能：2GHz≥20dB、3GHz≥30dB、6GHz≥40dB、10GHz≥50dB，高频干扰大幅抑制；"
+    },
+    {
+      "id": "tech-p-2989e3b5fe8f",
+      "body_index": 34,
+      "text": "（4）电磁屏蔽效能：≥60dB@1GHz，有效抑制射频信号泄露与外界电磁串扰；"
+    },
+    {
+      "id": "tech-p-8d5ecc680847",
+      "body_index": 37,
+      "text": "6.1 锁紧力矩：标准螺纹锁紧力矩0.8～1.15N·m，锁紧牢固、拆卸顺畅，无滑丝、脱扣现象；"
+    },
+    {
+      "id": "tech-p-41e2a79ccbef",
+      "body_index": 38,
+      "text": "6.2 插拔寿命：标准插拔≥1000次，插拔后射频电气指标、滤波性能无衰减、结构无松动；"
+    },
+    {
+      "id": "tech-p-4c4709eea4c4",
+      "body_index": 39,
+      "text": "6.3 线缆保持力：轴向拉力≥50N，连接器与线缆、板端连接牢固，无脱落、移位；"
+    }
+  ],
+  "ledger_blocks": [
+    {
+      "block_id": "TR-IND-003",
+      "block_type": "indicator",
+      "source_section": "3.3 基础规格",
+      "summary": "3.3 基础规格：特性阻抗50Ω，螺纹规格1/4-36UNS，外导体内径4.13mm，完全匹配国标SMA界面尺寸。",
+      "raw_text": "3.3 基础规格：特性阻抗50Ω，螺纹规格1/4-36UNS，外导体内径4.13mm，完全匹配国标SMA界面尺寸。",
+      "artifact_hash": "",
+      "image_caption": "",
+      "is_indicator": true,
+      "assigned_section": "",
+      "confidence": 0.0,
+      "action": "",
+      "covered": false,
+      "output_slot": "",
+      "output_body_indices": [],
+      "output_relationship_id": "",
+      "output_artifact_hash": "",
+      "output_caption": "",
+      "output_caption_body_index": -1,
+      "output_caption_order": "",
+      "output_evidence_hash": "",
+      "image_caption_order": "",
+      "source_body_index": 17
+    },
+    {
+      "block_id": "TR-IND-005",
+      "block_type": "indicator",
+      "source_section": "5.1 通用射频电气指标（通带性能）",
+      "summary": "（1）特性阻抗：50Ω±1Ω，通带内阻抗均匀无突变；",
+      "raw_text": "（1）特性阻抗：50Ω±1Ω，通带内阻抗均匀无突变；",
+      "artifact_hash": "",
+      "image_caption": "",
+      "is_indicator": true,
+      "assigned_section": "",
+      "confidence": 0.0,
+      "action": "",
+      "covered": false,
+      "output_slot": "",
+      "output_body_indices": [],
+      "output_relationship_id": "",
+      "output_artifact_hash": "",
+      "output_caption": "",
+      "output_caption_body_index": -1,
+      "output_caption_order": "",
+      "output_evidence_hash": "",
+      "image_caption_order": "",
+      "source_body_index": 31
+    },
+    {
+      "block_id": "TR-PARA-017",
+      "block_type": "paragraph",
+      "source_section": "5.1 通用射频电气指标（通带性能）",
+      "summary": "（2）阻带衰减性能：2GHz≥20dB、3GHz≥30dB、6GHz≥40dB、10GHz≥50dB，高频干扰大幅抑制；",
+      "raw_text": "（2）阻带衰减性能：2GHz≥20dB、3GHz≥30dB、6GHz≥40dB、10GHz≥50dB，高频干扰大幅抑制；",
+      "artifact_hash": "",
+      "image_caption": "",
+      "is_indicator": false,
+      "assigned_section": "",
+      "confidence": 0.0,
+      "action": "",
+      "covered": false,
+      "output_slot": "",
+      "output_body_indices": [],
+      "output_relationship_id": "",
+      "output_artifact_hash": "",
+      "output_caption": "",
+      "output_caption_body_index": -1,
+      "output_caption_order": "",
+      "output_evidence_hash": "",
+      "image_caption_order": "",
+      "source_body_index": 32
+    },
+    {
+      "block_id": "TR-IND-006",
+      "block_type": "indicator",
+      "source_section": "5.1 通用射频电气指标（通带性能）",
+      "summary": "（4）电磁屏蔽效能：≥60dB@1GHz，有效抑制射频信号泄露与外界电磁串扰；",
+      "raw_text": "（4）电磁屏蔽效能：≥60dB@1GHz，有效抑制射频信号泄露与外界电磁串扰；",
+      "artifact_hash": "",
+      "image_caption": "",
+      "is_indicator": true,
+      "assigned_section": "",
+      "confidence": 0.0,
+      "action": "",
+      "covered": false,
+      "output_slot": "",
+      "output_body_indices": [],
+      "output_relationship_id": "",
+      "output_artifact_hash": "",
+      "output_caption": "",
+      "output_caption_body_index": -1,
+      "output_caption_order": "",
+      "output_evidence_hash": "",
+      "image_caption_order": "",
+      "source_body_index": 34
+    },
+    {
+      "block_id": "TR-PARA-019",
+      "block_type": "paragraph",
+      "source_section": "6.1 锁紧力矩",
+      "summary": "6.1 锁紧力矩：标准螺纹锁紧力矩0.8～1.15N·m，锁紧牢固、拆卸顺畅，无滑丝、脱扣现象；",
+      "raw_text": "6.1 锁紧力矩：标准螺纹锁紧力矩0.8～1.15N·m，锁紧牢固、拆卸顺畅，无滑丝、脱扣现象；",
+      "artifact_hash": "",
+      "image_caption": "",
+      "is_indicator": false,
+      "assigned_section": "",
+      "confidence": 0.0,
+      "action": "",
+      "covered": false,
+      "output_slot": "",
+      "output_body_indices": [],
+      "output_relationship_id": "",
+      "output_artifact_hash": "",
+      "output_caption": "",
+      "output_caption_body_index": -1,
+      "output_caption_order": "",
+      "output_evidence_hash": "",
+      "image_caption_order": "",
+      "source_body_index": 37
+    },
+    {
+      "block_id": "TR-PARA-020",
+      "block_type": "paragraph",
+      "source_section": "6.2 插拔寿命",
+      "summary": "6.2 插拔寿命：标准插拔≥1000次，插拔后射频电气指标、滤波性能无衰减、结构无松动；",
+      "raw_text": "6.2 插拔寿命：标准插拔≥1000次，插拔后射频电气指标、滤波性能无衰减、结构无松动；",
+      "artifact_hash": "",
+      "image_caption": "",
+      "is_indicator": false,
+      "assigned_section": "",
+      "confidence": 0.0,
+      "action": "",
+      "covered": false,
+      "output_slot": "",
+      "output_body_indices": [],
+      "output_relationship_id": "",
+      "output_artifact_hash": "",
+      "output_caption": "",
+      "output_caption_body_index": -1,
+      "output_caption_order": "",
+      "output_evidence_hash": "",
+      "image_caption_order": "",
+      "source_body_index": 38
+    },
+    {
+      "block_id": "TR-PARA-021",
+      "block_type": "paragraph",
+      "source_section": "6.3 线缆保持力",
+      "summary": "6.3 线缆保持力：轴向拉力≥50N，连接器与线缆、板端连接牢固，无脱落、移位；",
+      "raw_text": "6.3 线缆保持力：轴向拉力≥50N，连接器与线缆、板端连接牢固，无脱落、移位；",
+      "artifact_hash": "",
+      "image_caption": "",
+      "is_indicator": false,
+      "assigned_section": "",
+      "confidence": 0.0,
+      "action": "",
+      "covered": false,
+      "output_slot": "",
+      "output_body_indices": [],
+      "output_relationship_id": "",
+      "output_artifact_hash": "",
+      "output_caption": "",
+      "output_caption_body_index": -1,
+      "output_caption_order": "",
+      "output_evidence_hash": "",
+      "image_caption_order": "",
+      "source_body_index": 39
+    }
+  ],
+  "output_rows": [
+    [
+      "项目",
+      "用户要求指标",
+      "拟采用指标",
+      "拟采用指标和试验的依据"
+    ],
+    [
+      "电性能",
+      "电性能",
+      "电性能",
+      "电性能"
+    ],
+    [
+      "工作电压",
+      "\\",
+      "",
+      ""
+    ],
+    [
+      "耐电压",
+      "\\",
+      "",
+      ""
+    ],
+    [
+      "电路形式",
+      "\\",
+      "",
+      ""
+    ],
+    [
+      "电容或电感量",
+      "\\",
+      "",
+      ""
+    ],
+    [
+      "截止频率",
+      "\\",
+      "",
+      ""
+    ],
+    [
+      "漏电流",
+      "\\",
+      "",
+      ""
+    ],
+    [
+      "特性阻抗",
+      "（1）特性阻抗：50Ω±1Ω，通带内阻抗均匀无突变；",
+      "【人工填写】",
+      "原文已明确指标名称，新增指标行；指标身份及性能分类需设计确认。"
+    ],
+    [
+      "阻带衰减性能",
+      "（2）阻带衰减性能：2GHz≥20dB、3GHz≥30dB、6GHz≥40dB、10GHz≥50dB，高频干扰大幅抑制；",
+      "【人工填写】",
+      "原文已明确指标名称，新增指标行；指标身份及性能分类需设计确认。"
+    ],
+    [
+      "电磁屏蔽效能",
+      "（4）电磁屏蔽效能：≥60dB@1GHz，有效抑制射频信号泄露与外界电磁串扰；",
+      "【人工填写】",
+      "原文已明确指标名称，新增指标行；指标身份及性能分类需设计确认。"
+    ],
+    [
+      "滤波稳定性",
+      "（5）滤波稳定性：高低温、湿热、振动试验后，滤波衰减指标偏移≤3dB，无滤波失效、容值漂移问题。",
+      "【人工填写】",
+      "原文已明确指标名称，新增指标行；指标身份及性能分类需设计确认。"
+    ],
+    [
+      "机械性能",
+      "机械性能",
+      "机械性能",
+      "机械性能"
+    ],
+    [
+      "机械寿命",
+      "6.2 插拔寿命：标准插拔≥1000次，插拔后射频电气指标、滤波性能无衰减、结构无松动；",
+      "6.2 插拔寿命：标准插拔≥1000次，插拔后射频电气指标、滤波性能无衰减、结构无松动；",
+      "用户要求"
+    ],
+    [
+      "振动",
+      "\\",
+      "",
+      ""
+    ],
+    [
+      "冲击",
+      "\\",
+      "",
+      ""
+    ],
+    [
+      "加速度",
+      "\\",
+      "",
+      ""
+    ],
+    [
+      "总分离力或分离扭矩",
+      "\\",
+      "",
+      ""
+    ],
+    [
+      "环境性能",
+      "环境性能",
+      "环境性能",
+      "环境性能"
+    ],
+    [
+      "工作温度",
+      "（1）工作温度：-40℃～+85℃；存储温度：-55℃～+100℃；工作湿度：5%～95%RH（无凝露）；防护等级：IP65，防尘、防水、防油污侵入。",
+      "（1）工作温度：-40℃～+85℃；存储温度：-55℃～+100℃；工作湿度：5%～95%RH（无凝露）；防护等级：IP65，防尘、防水、防油污侵入。",
+      "用户要求"
+    ],
+    [
+      "低温低气压",
+      "\\",
+      "",
+      ""
+    ],
+    [
+      "高温",
+      "\\",
+      "",
+      ""
+    ],
+    [
+      "低温",
+      "\\",
+      "",
+      ""
+    ],
+    [
+      "温度冲击",
+      "\\",
+      "",
+      ""
+    ],
+    [
+      "湿热",
+      "\\",
+      "",
+      ""
+    ],
+    [
+      "盐雾",
+      "\\",
+      "",
+      ""
+    ],
+    [
+      "阻燃",
+      "\\",
+      "",
+      ""
+    ],
+    [
+      "霉菌",
+      "\\",
+      "",
+      ""
+    ],
+    [
+      "密封性",
+      "\\",
+      "",
+      ""
+    ],
+    [
+      "其他",
+      "其他",
+      "其他",
+      "其他"
+    ],
+    [
+      "基础规格",
+      "3.3 基础规格：特性阻抗50Ω，螺纹规格1/4-36UNS，外导体内径4.13mm，完全匹配国标SMA界面尺寸。",
+      "【人工填写】",
+      "原文已明确指标名称，新增指标行；指标身份及性能分类需设计确认。"
+    ],
+    [
+      "锁紧力矩",
+      "6.1 锁紧力矩：标准螺纹锁紧力矩0.8～1.15N·m，锁紧牢固、拆卸顺畅，无滑丝、脱扣现象；",
+      "【人工填写】",
+      "原文已明确指标名称，新增指标行；指标身份及性能分类需设计确认。"
+    ],
+    [
+      "线缆保持力",
+      "6.3 线缆保持力：轴向拉力≥50N，连接器与线缆、板端连接牢固，无脱落、移位；",
+      "【人工填写】",
+      "原文已明确指标名称，新增指标行；指标身份及性能分类需设计确认。"
+    ]
+  ]
+}

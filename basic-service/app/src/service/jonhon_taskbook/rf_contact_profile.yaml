@@ -1,0 +1,189 @@
+schema_version: '3.1'
+profile_id: rf_contact
+product_type: 射频连接器-射频接触件
+integration_status: available
+template_source:
+  file: rf_connector_taskbook.docx
+  sha256: 1684cc84c906e14d735d7d26c1f1788d163907538d6ca6f0b054593c302ea7e5
+  indicator_policy: 原模板指标名称；数值仅来自本次需求和产品规范
+semantic_routing:
+  category_mapping: rf_connector_requirement_categories.yaml
+  chapter_numbers_are_identity: false
+  source_order_is_identity: false
+  copy_source_text_only: true
+semantic_structures:
+  performance_indicator:
+    mode: indicator_table
+indicator_sources:
+  workbook: false
+  reference_families: []
+standards_policy: merge_template
+spec_model_filter:
+  enabled: true
+delivery_gate:
+  min_indicator_rows: 0
+  min_interface_fills: 0
+  required_headings:
+  - 产品组成
+  - 适用的法律法规要求
+  - 通用质量特性要求
+  - 任务进度要求
+  - 任务书编制依据
+  - 来源和功能
+  - 技术指标
+indicator_map:
+  电性能:
+  - name: 阻抗
+    tech_kws:
+    - 阻抗
+    - 特性阻抗
+    std_kws:
+    - 阻抗
+  - name: 工作频率
+    tech_kws:
+    - 工作频率
+    std_kws:
+    - 工作频率
+  - name: 耐电压
+    tech_kws:
+    - 耐电压
+    std_kws:
+    - 耐电压
+  - name: 绝缘电阻
+    tech_kws:
+    - 绝缘电阻
+    std_kws:
+    - 绝缘电阻
+  - name: 电压驻波比
+    tech_kws:
+    - 电压驻波比
+    std_kws:
+    - 电压驻波比
+  - name: 插入损耗
+    tech_kws: [插入损耗]
+    std_kws: [插入损耗]
+  - name: 回波损耗
+    tech_kws: [回波损耗]
+    std_kws: [回波损耗]
+  - name: 接触电阻
+    tech_kws: [接触电阻]
+    std_kws: [接触电阻]
+  机械性能:
+  - name: 机械寿命
+    tech_kws:
+    - 机械寿命
+    - 插拔寿命
+    std_kws:
+    - 机械寿命
+    - 插拔寿命
+  - name: 锁紧力矩
+    tech_kws: [锁紧力矩]
+    std_kws: [锁紧力矩]
+  - name: 保持力
+    tech_kws: [保持力]
+    std_kws: [保持力]
+  - name: 同轴度
+    tech_kws: [同轴度]
+    std_kws: [同轴度]
+  - name: 振动
+    tech_kws:
+    - 振动
+    - 振动测试
+    - 振动试验
+    std_kws:
+    - 振动
+  - name: 冲击
+    tech_kws:
+    - 冲击
+    std_kws:
+    - 冲击
+  - name: 加速度
+    tech_kws:
+    - 加速度
+    std_kws:
+    - 加速度
+  - name: 总分离力或分离扭矩
+    tech_kws:
+    - 总分离力或分离扭矩
+    std_kws:
+    - 总分离力或分离扭矩
+  环境性能:
+  - name: 电磁兼容
+    tech_kws: [电磁兼容, 电磁兼容要求, 电磁屏蔽性能, EMC电磁兼容]
+    std_kws: [电磁兼容, 电磁屏蔽性能, EMC电磁兼容]
+  - name: 存储温度
+    tech_kws: [存储温度, 贮存温度]
+    std_kws: [存储温度, 贮存温度]
+  - name: 工作湿度
+    tech_kws: [工作湿度, 相对湿度]
+    std_kws: [工作湿度, 相对湿度]
+  - name: 高低温循环
+    tech_kws: [高低温循环, 高低温循环测试, 高低温循环试验]
+    std_kws: [高低温循环, 温度循环]
+  - name: 工作温度
+    tech_kws:
+    - 工作温度
+    std_kws:
+    - 工作温度
+  - name: 低温低气压
+    tech_kws:
+    - 低温低气压
+    std_kws:
+    - 低温低气压
+  - name: 高温
+    tech_kws:
+    - 高温
+    std_kws:
+    - 高温
+  - name: 低温
+    tech_kws:
+    - 低温
+    std_kws:
+    - 低温
+  - name: 温度冲击
+    tech_kws:
+    - 温度冲击
+    std_kws:
+    - 温度冲击
+  - name: 湿热
+    tech_kws:
+    - 湿热
+    - 湿热老化测试
+    std_kws:
+    - 湿热
+  - name: 盐雾
+    tech_kws:
+    - 盐雾
+    - 盐雾测试
+    - 盐雾试验
+    std_kws:
+    - 盐雾
+  - name: 阻燃
+    tech_kws:
+    - 阻燃
+    std_kws:
+    - 阻燃
+  - name: 霉菌
+    tech_kws:
+    - 霉菌
+    std_kws:
+    - 霉菌
+  - name: 密封性
+    tech_kws:
+    - 密封性
+    std_kws:
+    - 密封性
+  - name: 防护等级
+    tech_kws:
+    - 防护等级
+    std_kws:
+    - 防护等级
+  可靠性:
+  - name: 长期工作可靠性
+    tech_kws: [长期工作可靠性]
+    std_kws: [长期工作可靠性]
+qa_profile:
+  required_headings:
+  - 技术指标
+  - 其他要求
+  forbidden_phrases: []

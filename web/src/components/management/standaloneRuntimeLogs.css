@@ -1,0 +1,24 @@
+.runtime-logs-page{min-width:320px;background:var(--color-bg-subtle)}
+.runtime-logs-standalone{min-height:100vh;background:var(--color-bg-subtle);color:var(--color-text-primary)}
+.runtime-logs-page-header{min-height:76px;display:flex;align-items:center;justify-content:space-between;gap:24px;padding:14px clamp(20px,4vw,56px);border-bottom:1px solid var(--color-border);background:var(--color-bg-surface)}
+.runtime-logs-page-brand{min-width:0;display:flex;align-items:center;gap:12px}
+.runtime-logs-page-mark{width:42px;height:42px;display:grid;place-items:center;flex:0 0 42px;border-radius:12px;background:var(--color-action-subtle);color:var(--color-action)}
+.runtime-logs-page-mark svg{width:23px;height:23px}
+.runtime-logs-page-brand h1{margin:0;font-size:20px;line-height:28px;font-weight:700;letter-spacing:-.01em}
+.runtime-logs-page-brand p{margin:2px 0 0;color:var(--color-text-secondary);font-size:12px;line-height:18px}
+.runtime-logs-home-link{min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:7px;flex:0 0 auto;padding:8px 14px;border:1px solid var(--color-border-strong);border-radius:var(--radius-control);background:var(--color-bg-surface);color:var(--color-text-primary);font-size:13px;font-weight:600;text-decoration:none;transition:background var(--motion-duration-fast),border-color var(--motion-duration-fast),color var(--motion-duration-fast)}
+.runtime-logs-home-link:hover{border-color:var(--color-border-hover);background:var(--color-bg-hover);color:var(--color-action)}
+.runtime-logs-home-link:focus-visible{outline:2px solid var(--color-border-focus);outline-offset:3px}
+.runtime-logs-home-link svg{width:16px;height:16px}
+.runtime-logs-page-main{max-width:1600px;margin:0 auto;padding:24px clamp(20px,4vw,56px) 32px}
+.runtime-logs-standalone .runtime-logs-view{padding:0}
+.runtime-logs-standalone .runtime-log-stream,.runtime-logs-standalone .runtime-log-skeleton{height:calc(100vh - 236px);max-height:none;min-height:420px}
+@media(max-width:760px){
+  .runtime-logs-page-header{align-items:flex-start;padding:14px 16px}
+  .runtime-logs-page-mark{width:38px;height:38px;flex-basis:38px}
+  .runtime-logs-page-brand p{max-width:32ch}
+  .runtime-logs-home-link{width:40px;padding:0;font-size:0}
+  .runtime-logs-home-link svg{width:18px;height:18px}
+  .runtime-logs-page-main{padding:18px 14px 24px}
+  .runtime-logs-standalone .runtime-log-stream,.runtime-logs-standalone .runtime-log-skeleton{height:calc(100vh - 250px);min-height:360px}
+}

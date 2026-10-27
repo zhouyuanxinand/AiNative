@@ -1,0 +1,159 @@
+schema_version: "2.0"
+status: reference_catalog
+
+# 这份目录只定义跨产品可复用的“规范化指标词表”。生产流水线只会在
+# 当前设计输入已有指标证据时激活对应名称；产品专属拆分/裁决仍由
+# jonhon_taskbook/*_profile.yaml 控制。这里禁止保存：
+# 1) 模板章节号；2) 产品数值；3) 全局必填；4) 来源章节号或来源顺序。
+policy:
+  presence: source_evidence_only
+  destination: live_template_semantic_role
+  related_terms_are_exact_aliases: false
+
+common:
+  electrical:
+    - name: 工作电压
+      exact_aliases: [额定工作电压, 工作电压范围]
+      related_terms: [额定电压, 电压范围]
+      target_role: performance_indicator.electrical
+    - name: 额定电流
+      exact_aliases: [额定载流量]
+      related_terms: [载流量]
+      target_role: performance_indicator.electrical
+    - name: 工作电流
+      exact_aliases: [工作载流]
+      related_terms: [额定电流, 载流量]
+      target_role: performance_indicator.electrical
+    - name: 冲击电流
+      exact_aliases: [脉冲电流, 浪涌电流]
+      target_role: performance_indicator.electrical
+    - name: 绝缘电阻
+      exact_aliases: [绝缘阻抗]
+      target_role: performance_indicator.electrical
+    - name: 介质耐电压
+      exact_aliases: [耐电压, 耐压]
+      target_role: performance_indicator.electrical
+    - name: 接触电阻
+      exact_aliases: [低电平接触电阻, 导通电阻]
+      related_terms: [接触阻抗]
+      target_role: performance_indicator.electrical
+  mechanical:
+    - name: 插拔力
+      exact_aliases: [总插拔力, 插合分离力]
+      related_terms: [插入力, 插合力, 分离力, 拔出力, 分离扭矩]
+      target_role: performance_indicator.mechanical
+    - name: 机械寿命
+      exact_aliases: [插拔寿命, 插拔次数]
+      target_role: performance_indicator.mechanical
+    - name: 锁紧力
+      exact_aliases: [锁紧按压力]
+      related_terms: [分离按压力, 按钮力]
+      target_role: performance_indicator.mechanical
+  environmental:
+    - name: 工作温度
+      exact_aliases: [使用温度, 环境温度, 工作温度范围]
+      related_terms: [温度范围]
+      target_role: performance_indicator.environmental
+    - name: 温度冲击
+      exact_aliases: [热冲击, 冷热冲击]
+      related_terms: [温度循环]
+      target_role: performance_indicator.environmental
+    - name: 振动
+      exact_aliases: [振动试验, 随机振动]
+      target_role: performance_indicator.mechanical
+    - name: 冲击
+      exact_aliases: [机械冲击, 冲击试验]
+      target_role: performance_indicator.mechanical
+    - name: 盐雾
+      exact_aliases: [盐雾腐蚀]
+      target_role: performance_indicator.environmental
+    - name: 湿热
+      exact_aliases: [恒定湿热, 交变湿热]
+      related_terms: [潮湿]
+      target_role: performance_indicator.environmental
+    - name: 霉菌
+      exact_aliases: [防霉]
+      target_role: performance_indicator.environmental
+  other:
+    # 7-22 明确要求“重量”写入 4.1 技术指标的“其他”子表，不能按
+    # 物理量直觉并入机械性能。
+    - name: 重量
+      exact_aliases: [产品重量, 整机重量, 总重量]
+      related_terms: [质量]
+      target_role: performance_indicator.other
+  quality_traits:
+    - name: MTBF
+      exact_aliases: [平均故障间隔时间]
+      target_role: reliability
+    - name: 可靠性
+      exact_aliases: [可靠度]
+      target_role: reliability
+    - name: 维修性
+      exact_aliases: [可维修性]
+      target_role: maintainability
+    - name: 环境适应性
+      exact_aliases: []
+      target_role: environmental_adaptability
+
+high_frequency:
+  rf:
+    - name: 频率范围
+      exact_aliases: [工作频率]
+      target_role: performance_indicator.high_frequency
+    - name: 特性阻抗
+      exact_aliases: [传输线特性阻抗]
+      related_terms: [阻抗]
+      target_role: performance_indicator.high_frequency
+    - name: 驻波比
+      exact_aliases: [VSWR]
+      target_role: performance_indicator.high_frequency
+    - name: 插入损耗
+      exact_aliases: [传输损耗]
+      target_role: performance_indicator.high_frequency
+    - name: 回波损耗
+      exact_aliases: [反射损耗]
+      target_role: performance_indicator.high_frequency
+    - name: 屏蔽效能
+      exact_aliases: [电磁屏蔽效能]
+      target_role: performance_indicator.high_frequency
+
+optical:
+  optical:
+    - name: 插入损耗
+      exact_aliases: [光插损]
+      target_role: performance_indicator.optical
+    - name: 回波损耗
+      exact_aliases: [光回损]
+      target_role: performance_indicator.optical
+    - name: 重复性
+      exact_aliases: [重复插拔损耗变化]
+      target_role: performance_indicator.optical
+    - name: 端面质量
+      exact_aliases: [端面划伤]
+      target_role: performance_indicator.optical
+
+semantic_routing:
+  - role: source_and_function
+    signals: [概述, 来源, 背景, 功能, 用途]
+  - role: usage_environment
+    signals: [使用环境, 安装部位, 地面验证]
+  - role: installation_form
+    signals: [安装形式, 安装方法, 法兰, 螺纹]
+  - role: product_composition
+    signals: [产品组成, 型号清单, 插头, 插座]
+  - role: standards_reference
+    signals: [法规, 标准, 规范]
+  - role: performance_indicator
+    signals: [技术指标, 电气性能, 机械性能, 环境性能]
+  - role: interface_definition
+    signals: [外形尺寸, 安装尺寸, 接口, 节点]
+  - role: technical_support
+    signals: [合格证, 说明书, 工具, 备件]
+  - role: acceptance_requirement
+    signals: [验收, 检验]
+  - role: delivery_requirement
+    signals: [交付]
+  - role: schedule
+    signals: [任务进度, 里程碑, 阶段计划]
+  - role: compilation_basis
+    signals: [编制依据, 参考文件]

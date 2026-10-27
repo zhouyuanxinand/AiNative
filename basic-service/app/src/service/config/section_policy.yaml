@@ -1,0 +1,169 @@
+# 章节策略表 — 每个模板章节的处理规则
+# action 说明：
+#   copy_semantic       从来源文件语义匹配后复制正文
+#   copy_with_images    复制正文 + 原图（按图题归属）
+#   build_table         按指标账本渲染表格
+#   replace_with_source_table  用来源文件的进度表替换模板三套表
+#   merge_sort          合并多来源 + 排序（法规章节专用）
+#   fixed_rule          固定规则处理（变更记录、封面）
+#   keep_note_only      只保留章节标题 + 一行说明文字，删除所有表格和内容段
+#   keep_empty          保留标题，正文清空（等待人工填写）
+#   delete_if           按 flags 条件整节删除
+#   skip                不处理（保持模板原样，慎用）
+# ============================================================
+
+sections:
+
+  封面:
+    action: fixed_rule
+    rule: fill_cover
+    source: [tech_requirement]
+    on_missing: leave_blank
+
+  变更记录:
+    action: fixed_rule
+    rule: new_release_only       # 只保留 A 版新发，清空其余行，日期列留空
+    on_missing: new_release_only
+
+  "1 产品的功能用途":
+    action: skip
+
+  "1.1 来源和功能":
+    action: copy_semantic
+    source: [tech_requirement]
+    source_hint: "概述 产品功能 来源 2.1产品功能 1概述"
+    on_missing: leave_blank
+
+  "1.2 使用环境和部位":
+    action: copy_semantic
+    source: [tech_requirement]
+    source_hint: "使用环境 安装部位 工作环境 2.2安装使用环境"
+    on_missing: leave_blank
+
+  "1.3 安装形式和方法":
+    action: copy_semantic
+    source: [tech_requirement]
+    source_hint: "安装形式 安装方法 板前安装 法兰安装 2.2安装使用环境 安装方式"
+    on_missing: leave_blank
+
+  "1.4 产品运行场景识别":
+    action: keep_note_only
+    note: "本阶段不填写。"
+    remove_tables: true
+
+  "1.6 其他":
+    action: copy_semantic
+    source: [tech_requirement]
+    source_hint: "外观要求 5.2外观要求 颜色 镀层 漆膜"
+    on_missing: leave_blank
+
+  "2 产品组成":
+    action: copy_with_images
+    source: [tech_requirement]
+    source_hint: "产品组成 3产品组成 组成说明 型号清单"
+    image_caption_keywords: ["结构示意图", "组成示意", "插头", "插座"]
+    on_missing: leave_blank
+
+  "3 适用的法律法规要求":
+    action: merge_sort
+    source: [tech_requirement, product_spec, template]
+    sort_rules: standard_sort_rules.yaml
+    on_missing: keep_template_fixed_items
+
+  "4 技术要求":
+    action: skip
+
+  "4.1 技术指标":
+    action: build_table
+    source: [tech_requirement, product_spec]
+    ledger: "indicators.json"
+    on_missing: leave_blank
+
+  "4.2 接口尺寸要求":
+    action: copy_with_images
+    source: [tech_requirement]
+    source_hint: "接口尺寸 外形尺寸 安装尺寸 5.1接口尺寸 端接形式 互换性 节点定义"
+    image_caption_keywords: ["外形", "尺寸", "装配", "节点", "定位销", "安装", "插合"]
+    on_missing: leave_blank
+
+  "4.3 条件保障要求":
+    action: copy_semantic
+    source: [tech_requirement, product_spec]
+    source_hint: "验收 交付 合格证 使用说明书 保障"
+    on_missing: leave_blank
+
+  "5 初步的失效模式分析":
+    action: keep_empty
+    note: "待失效模式库接入后补充。"
+
+  "6 顾客的特殊要求":
+    action: copy_semantic
+    source: [tech_requirement]
+    source_hint: "特殊要求 顾客要求"
+    on_missing: leave_blank
+
+  "7 通用质量特性要求":
+    action: copy_semantic
+    source: [tech_requirement, product_spec]
+    source_hint: "可靠性 维修性 保障性 安全性 环境适应性 MTBF"
+    on_missing: leave_blank
+
+  "8 工艺要求":
+    action: copy_semantic
+    source: [tech_requirement, product_spec]
+    source_hint: "工艺 材料 表面处理 焊接"
+    on_missing: leave_blank
+
+  "8.1 工艺技术要求":
+    action: copy_semantic
+    source: [tech_requirement, product_spec]
+    source_hint: "工艺技术"
+    on_missing: leave_blank
+
+  "8.2 原材料/元器件过时淘汰风险":
+    action: delete_if
+    condition: "flags.is_as9100 == false"
+    on_applicable: keep_empty   # 如果 is_as9100=true，则保留但清空模板说明
+
+  "9 以前类似设计提供的信息":
+    action: keep_empty           # 会议要求本阶段不填，保留标题即可
+
+  "10 设计开发所需其他要求":
+    action: keep_empty
+
+  "11 项目是否为涉密科研项目":
+    action: keep_empty
+
+  "12 任务进度要求":
+    action: replace_with_source_table
+    source: [tech_requirement]
+    source_hint: "任务进度 里程碑 阶段节点"
+    delete_template_variants:   # 删除不适用的模板分支
+      - condition: "flags.is_military_regulated == false"
+        delete_marker: "全新产品"
+      - condition: "always"
+        delete_marker: "非军方监管"
+      - condition: "flags.is_civil_aircraft == false"
+        delete_marker: "民机产品"
+    on_missing: leave_blank
+
+  "13 研制经费预算":
+    action: delete_if
+    condition: "flags.is_central_research == false"
+    on_applicable: keep_empty
+
+  "14 研制经费预算":            # 有些版本模板编号是14
+    action: delete_if
+    condition: "flags.is_central_research == false"
+    on_applicable: keep_empty
+
+  "15 任务书编制依据":
+    action: fixed_rule
+    rule: fill_basis
+    source: [tech_requirement, product_spec]
+
+  "附录A":
+    action: keep_note_only
+    note: "本阶段不填写。"
+    remove_tables: true
+    condition: "flags.need_running_scene == false"

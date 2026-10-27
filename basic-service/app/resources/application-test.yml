@@ -1,0 +1,14 @@
+server:
+  host: 127.0.0.1
+  port: 18131
+
+storage:
+  upload_dir: .test_tmp/uploads
+  output_dir: .test_tmp/outputs
+
+semantic:
+  retrieval: false
+  rerank: false
+
+logging:
+  level: WARNING

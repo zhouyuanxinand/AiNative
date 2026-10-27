@@ -1,0 +1,82 @@
+# 模板残留清理规则
+# ============================================================
+
+# 1. 整段删除：满足任一条件则删除整个段落
+delete_paragraph_if:
+
+  # 按颜色/高亮（最高优先级，无视文字内容）
+  all_runs_red: true            # 所有非空 run 均为红色 → 删除
+  all_runs_highlighted: true    # 所有非空 run 均有高亮 → 删除
+  any_run_red_and_only_instruction: true  # 有红字且段落只有说明词 → 删除
+
+  # 按文字内容（精确匹配或包含）
+  contains_any:
+    - "F/C/S/D"
+    - "20xx年"
+    - "20XX年"
+    - "xx年x月"
+    - "（与产品研制阶段同步转阶段）"
+    - "适用时保留"
+    - "不适用时删除"
+    - "不适用请删除"
+    - "适用于符合AS9100"
+    - "AS9100产品适用"
+    - "根据具体情况增减"
+    - "可附图说明"
+    - "利用Edraw"
+    - "设计员填写"
+    - "需设计员确认"
+    - "待填写"
+    - "XXX产品"
+    - "（型号名称）"
+    - "（内容要求"
+    - "（改型、派生产品可删除"
+    - "（此条要求对用户的特殊要求"
+    - "对于民机产品"
+    - "非军方监管"
+    - "全新产品/军方监管"
+    - "中央研究院产品"
+    - "适航要求（适用时保留"
+
+  # 纯括号说明段（以（开头、以）结尾、长度>10）
+  pure_parenthetical_instruction: true
+
+# 2. 整表删除：表格前一段包含以下标记且对应 flag=false
+delete_table_if_preceding_text_contains:
+  - marker: "AS9100"
+    flag: "is_as9100"
+  - marker: "民机产品"
+    flag: "is_civil_aircraft"
+  - marker: "非军方监管"
+    flag_value: false           # 始终删除（本项目不适用）
+  - marker: "全新产品/军方监管"
+    flag: "is_military_regulated"
+  - marker: "中央研究院"
+    flag: "is_central_research"
+  - marker: "适航"
+    flag: "is_airworthiness"
+
+# 3. run 级清理：不删整段，只清除格式属性
+strip_run_formatting:
+  red_color: true               # 去掉红色字体（保留文字）
+  highlight: true               # 去掉高亮（保留文字）
+  # 注意：整段是模板说明时用 delete_paragraph_if，
+  #       正文里偶尔夹着红字时用 strip_run_formatting
+
+# 4. 文字替换规则（精确替换，保留其余格式）
+text_replacements:
+  - find: "（型号名称）"
+    replace_with: "{product.name}"
+  - find: "(型号名称)"
+    replace_with: "{product.name}"
+  - find: "XXX"
+    replace_with: "{product.name}"
+  - find: "20xx年x月"
+    replace_with: ""
+  - find: "20XX年XX月"
+    replace_with: ""
+
+# 5. 封面特殊清理
+cover_cleanup:
+  delete_phase_placeholder: true   # 删除 "F/C/S/D（与产品研制阶段同步转阶段）"
+  fill_phase_from_profile: true    # 用 project_profile.yaml 的 phase 字段填入

@@ -1,0 +1,46 @@
+services:
+  agent-develop-task-doc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agent-develop-task-doc-service:latest
+    container_name: agent-develop-task-doc
+    restart: unless-stopped
+    ports:
+      # 仅绑定 loopback；远程暴露请同时评估 TLS、CORS 与认证。
+      # 主站与 /admin 共用此映射，不需要发布容器 81。
+      - "127.0.0.1:18130:80"
+    env_file:
+      # 从服务根 .env 注入 LLM 凭据与非密钥运行配置（.env 已被 .gitignore 忽略）。
+      - .env
+    environment:
+      APP_ENV: ${APP_ENV:-prod}
+      API_HOST: 127.0.0.1
+      API_PORT: 18130
+      JTB_HOST: 127.0.0.1
+      JTB_PORT: 18130
+      JTB_FEEDBACK_HOST: 127.0.0.1
+      JTB_FEEDBACK_PORT: 18131
+      JTB_MAX_UPLOAD_MB: "100"
+      JTB_MAX_CONCURRENT_JOBS: "1"
+      # Compose 从 .env 注入凭据；当前 Dockerfile 也包含该私有文件以支持离线部署。
+      MODEL_GENERATE_PATH: opi-maas/v1/chat/completions
+      MODEL_APP_ID_HEADER: App-Id
+      MODEL_API_KEY_HEADER: Api-Key
+      MODEL_TENANT_ID_HEADER: Tenant-Id
+    volumes:
+      - taskbook-data:/opt/local/agent-develop-task-doc/basic-service/app/data
+      - taskbook-logs:/opt/local/agent-develop-task-doc/basic-service/app/logs
+      - taskbook-runtime:/opt/local/agent-develop-task-doc/basic-service/app/runtime
+    healthcheck:
+      # 81 只在容器内部探测管理员服务，不依赖宿主机端口映射。
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:80/api/health && curl -fsS http://127.0.0.1:81/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  taskbook-data:
+  taskbook-logs:
+  taskbook-runtime:

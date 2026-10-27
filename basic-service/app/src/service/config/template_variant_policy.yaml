@@ -1,0 +1,27 @@
+version: "1.0"
+
+# 模板互斥分支只按受控业务字段和标题语义选择。
+# 不得使用章节号、产品名称、文件名或段落顺序作为身份。
+fields:
+  organization_scope:
+    label: 产品归属范围
+    required: true
+    values:
+      non_central_research:
+        label: 非中央研究院产品
+      central_research:
+        label: 中央研究院产品
+
+mutually_exclusive_groups:
+  - id: research_budget_scope
+    selector: organization_scope
+    required: true
+    variants:
+      non_central_research:
+        heading_markers:
+          - 研制经费预算
+          - 适用于非中央研究院产品
+      central_research:
+        heading_markers:
+          - 研制经费预算及经济性分析
+          - 适用于中央研究院产品

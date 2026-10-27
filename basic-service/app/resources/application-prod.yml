@@ -1,0 +1,22 @@
+server:
+  host: 127.0.0.1
+  port: 18130
+
+jobs:
+  max_concurrent: 1
+  max_records: 50
+
+storage:
+  upload_dir: /opt/local/agent-develop-task-doc/basic-service/app/data/uploads
+  output_dir: /opt/local/agent-develop-task-doc/basic-service/app/data/outputs
+
+security:
+  allow_local_paths: false
+  allow_remote_llm_config: false
+
+semantic:
+  retrieval: true
+  rerank: true
+
+logging:
+  level: INFO

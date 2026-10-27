@@ -23,12 +23,11 @@ import yaml
 from .figure_pairing import pair_figure_captions
 from .source_scope import (
     has_substantive_heading_content,
-    is_unvalued_historical_result_caption,
     is_source_heading,
     source_exclusion_reasons,
     source_heading_label,
     normalize_source_display_text,
-    review_reference_source_ids,
+    review_reference_source_details,
 )
 from .standard_references import extract_standard_references, is_reference_heading
 from .indicator_identity import canonical_indicator_name
@@ -1026,7 +1025,8 @@ def exclude_review_reference_sources(
     """
     if not isinstance(classification, dict):
         return []
-    review_ids = review_reference_source_ids(classification)
+    review_details = review_reference_source_details(classification)
+    review_ids = set(review_details)
     source_path = Path(ledger.source_file).resolve()
     sources_by_position: dict[int, list[dict]] = {}
     for source in classification.get("source_blocks", []) or []:
@@ -1044,16 +1044,7 @@ def exclude_review_reference_sources(
         all_review_ids = bool(sources) and all(
             str(source.get("id")) in review_ids for source in sources
         )
-        qualifies = all_review_ids and block.block_type in {"table", "image"}
-        if all_review_ids and block.block_type == "paragraph":
-            qualifies = all(is_unvalued_historical_result_caption(
-                block.raw_text,
-                " / ".join([
-                    *(str(heading) for heading in source.get("parent_headings", [])),
-                    str(source.get("heading_text") or ""),
-                    str(source.get("section") or block.source_section),
-                ]),
-            ) for source in sources)
+        qualifies = all_review_ids and block.block_type in {"table", "image", "paragraph"}
         if not qualifies:
             kept.append(block)
             continue
@@ -1064,12 +1055,13 @@ def exclude_review_reference_sources(
             "rule_ref": "historical_test_artifacts_review_only",
             "source_file": str(source_path),
             "semantic_source_ids": [str(source["id"]) for source in sources],
+            "scope_decisions": [review_details[str(source["id"])] for source in sources],
             "source_section": " / ".join(dict.fromkeys([
                 *(str(h) for h in sources[0].get("parent_headings", [])),
                 str(sources[0].get("section") or block.source_section),
             ])),
             "reason": (
-                "历史测试结果无数值引导段仅供审阅；质量报告保留来源引用，不作为任务书正文缺失"
+                "历史测试资料引导段仅供审阅；质量报告保留来源引用，不作为任务书正文缺失"
                 if block.block_type == "paragraph" else
                 "历史测试图片及原始数据表仅供审阅；质量报告保留来源引用，不作为任务书正文缺失"
             ),
@@ -1277,12 +1269,18 @@ def _table_requirement_cells(rows: list[list[str]]) -> set[tuple[int, int]]:
     required: set[tuple[int, int]] = set()
     for row_index, row in enumerate(rows):
         values = [_coverage_text(str(cell)) for cell in row]
-        if any(cell in label_headings for cell in values):
+        # The indicator extractor already recognizes this exact descriptive
+        # header pair. It carries column roles, not an additional requirement.
+        # Other headings (acceptance criteria, constraints, etc.) remain cells
+        # that need their own evidence even when adjacent to this pair.
+        descriptive_pair = "技术特性类型" in values and "特性描述" in values
+        presentation_headings = headings | ({"技术特性类型", "特性描述"} if descriptive_pair else set())
+        if descriptive_pair or any(cell in label_headings for cell in values):
             serial_columns.update(i for i, cell in enumerate(values) if cell == "序号")
             # Thresholds, assessment criteria and adaptation constraints carry
             # meaning. Their headings need visible evidence alongside values.
             required.update((row_index, column) for column, cell in enumerate(values)
-                            if cell and cell not in headings)
+                            if cell and cell not in presentation_headings)
             continue
         required.update((row_index, column) for column, cell in enumerate(values)
                         if cell and not (column in serial_columns and re.fullmatch(r"\d+[)）.]?", cell)))
@@ -1344,8 +1342,17 @@ def _table_fact_cells(rows: list[list[str]], fact: dict) -> set[tuple[int, int]]
                    or column == label_column for column in value_columns)
             or len(set(value_columns)) != len(value_columns)):
         return set()
-    if canonical_indicator_name(rows[row_index][label_column]) != canonical_indicator_name(str(fact.get("indicator_name", ""))):
-        return set()
+    source_label = str(fact.get("source_label", ""))
+    source_identity = canonical_indicator_name(rows[row_index][label_column])
+    fact_identity = canonical_indicator_name(str(fact.get("indicator_name", "")))
+    if source_identity != fact_identity:
+        # Controlled profiles can rename an exact source label, e.g. 组件流阻
+        # -> 流阻. Verify its preserved source_label rather than interpreting
+        # the profile's display name as the original table cell. Uncontrolled
+        # facts still require the same indicator identity.
+        if (fact.get("governed_name") is not True or not source_label
+                or _coverage_text(source_label) != _coverage_text(rows[row_index][label_column])):
+            return set()
     value = "；".join(rows[row_index][column] for column in value_columns if rows[row_index][column].strip())
     if _coverage_text(value) != _coverage_text(str(fact.get("source_value", ""))):
         return set()

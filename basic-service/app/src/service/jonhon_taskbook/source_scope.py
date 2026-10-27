@@ -21,6 +21,12 @@ _HISTORICAL_RESULTS_CONTEXT = re.compile(
 _UNVALUED_RESULT_CAPTION = re.compile(
     r"^.{0,120}(?:(?:测试|试验|检测|测量))?(?:数据|结果)[：:]$"
 )
+_APPENDIX_TITLE = re.compile(r"^附录\s*[一二三四五六七八九十百零〇\dA-Za-z]+\s*[：:、.．]?\s*\S+")
+_HISTORICAL_REPORT = re.compile(r"(?:测试|试验|检测|检验|出货|SGS)[^。；;]{0,16}报告", re.I)
+_REQUIREMENT_MEDIA_LABEL = re.compile(r"(?:测试|试验|验收|设计|技术|性能)(?:要求|标准|条件|方法|内容)(?:如下)?[：:]?$")
+_REFERENCE_MEDIA_LABEL = re.compile(r"(?:测试|试验|检测|测量)(?:设备|仪器|装置|过程|点)(?:及(?:测试)?过程)?[：:]$")
+_FORMAL_TABLE_HEADER = re.compile(r"判定标准|合格判据|验收要求|技术要求|试验要求|测试要求|测试内容|试验内容")
+_OBSERVATION_HEADER = re.compile(r"样品编号|样件编号|批次|序列号|实测|测量值|初始压力|压降值|循环次数")
 
 
 def _text(element: Any) -> str:
@@ -118,21 +124,88 @@ def is_unvalued_historical_result_caption(text: str, context: str) -> bool:
     )
 
 
-def review_reference_source_ids(classification: dict | None) -> set[str]:
-    """Identify historical result artifacts and empty captions for review only.
+def _formal_requirement_table(source: dict, documents: dict) -> bool:
+    """Protect acceptance criteria even inside a mixed results chapter.
 
-    Require explicit results context and source coordinates as well as a
-    performance category for data artifacts. An empty result caption may also
-    carry the testability category. Mixed categories/fragments and paragraphs
-    containing a real value remain ordinary source evidence.
+    Observation tables can include a threshold in a column heading (for
+    example, particle counts >=100um). Sample IDs and observed-value columns
+    distinguish these from an acceptance-criteria table.
+    """
+    from docx import Document
+    from docx.opc.exceptions import PackageNotFoundError
+
+    path = str(source.get("source_path") or "")
+    text = str(source.get("text") or "")
+    header = ""
+    try:
+        if path not in documents:
+            documents[path] = Document(path)
+        element = documents[path].element.body[source["body_index"]]
+        if element.tag != f"{W}tbl":
+            return True
+        actual_text = _text(element)
+        if text and text != actual_text:
+            return True  # Stale coordinates cannot justify a coverage waiver.
+        text = actual_text
+        row = element.find(f"{W}tr")
+        header = _text(row) if row is not None else ""
+    except (OSError, ValueError, KeyError, IndexError, PackageNotFoundError):
+        # Metadata-only callers still protect explicit requirement language.
+        header = text[:180]
+    if _FORMAL_TABLE_HEADER.search(header) or _REQUIREMENT.search(text):
+        return True
+    return bool(re.search(r"[≥≤<>]|不得|不超过|不大于|不小于|至少", text)
+                and not _OBSERVATION_HEADER.search(header))
+
+
+def _physical_heading_levels(path: str, documents: dict) -> list[tuple[int, int]]:
+    """Keep heading boundaries omitted from the extracted evidence blocks."""
+    from docx import Document
+    from docx.opc.exceptions import PackageNotFoundError
+
+    try:
+        if path not in documents:
+            documents[path] = Document(path)
+    except (OSError, ValueError, PackageNotFoundError):
+        return []
+    result = []
+    for index, element in enumerate(documents[path].element.body):
+        text = _text(element)
+        if not is_source_heading(element, text) or has_substantive_heading_content(text):
+            continue
+        properties = element.find(f"{W}pPr")
+        outline = properties.find(f"{W}outlineLvl") if properties is not None else None
+        style = properties.find(f"{W}pStyle") if properties is not None else None
+        style_level = re.fullmatch(r"(?:Heading|标题)?\s*([1-9])", style.get(f"{W}val", "") if style is not None else "", re.I)
+        number = _NUMBER.match(text)
+        if outline is not None and outline.get(f"{W}val", "").isdigit():
+            level = int(outline.get(f"{W}val")) + 1
+        elif style_level:
+            level = int(style_level.group(1))
+        elif number:
+            level = len(re.match(r"\s*(\d+(?:\.\d+)*)", text).group(1).split("."))
+        else:
+            continue
+        result.append((index, level))
+    return result
+
+
+def review_reference_source_details(classification: dict | None) -> dict[str, dict]:
+    """Determine review-only evidence from source scope, independent of category.
+
+    A physical appendix title resets inherited results headings. This matters
+    for converted DOCs whose appendix paragraphs retain stale chapter metadata.
+    Within a results scope, raw tables/images and their unvalued labels are
+    review evidence; formal clauses, criterion tables and requirement diagrams
+    stay eligible for the taskbook body. Every decision retains source position.
     """
     if not isinstance(classification, dict):
-        return set()
+        return {}
     categories: dict[str, set[str]] = {}
     for item in classification.get("classifications", []) or []:
         if isinstance(item, dict) and item.get("source_id"):
             categories.setdefault(str(item["source_id"]), set()).add(str(item.get("category") or ""))
-    result: set[str] = set()
+    sources_by_file: dict[str, list[dict]] = {}
     for source in classification.get("source_blocks", []) or []:
         if not isinstance(source, dict) or source.get("source") != "tech":
             continue
@@ -141,21 +214,99 @@ def review_reference_source_ids(classification: dict | None) -> set[str]:
         if (not source_id or not source.get("source_path") or type(position) is not int
                 or position < 0 or source.get("parent_source_id")):
             continue
-        assigned = categories.get(source_id)
-        text = str(source.get("text") or "").strip()
-        artifact = source.get("type") == "table" or (
-            source.get("has_drawing") and (not text or re.fullmatch(r"\[图片对象 body=\d+\]", text))
-        )
-        headings = [*(source.get("parent_headings") or []), source.get("heading_text", ""), source.get("section", "")]
-        context = " / ".join(str(heading) for heading in headings)
-        if (artifact and assigned == {"performance_indicator"}
-                and _HISTORICAL_RESULTS_CONTEXT.search(re.sub(r"\s+", "", context))):
-            result.add(source_id)
-        elif (source.get("type") == "paragraph" and not source.get("has_drawing")
-              and assigned in ({"performance_indicator"}, {"testability"})
-              and is_unvalued_historical_result_caption(text, context)):
-            result.add(source_id)
+        sources_by_file.setdefault(str(source["source_path"]), []).append(source)
+    result: dict[str, dict] = {}
+    documents: dict = {}
+    for path, sources in sources_by_file.items():
+        heading_levels = _physical_heading_levels(path, documents) if any(
+            block.get("type") == "paragraph" and _APPENDIX_TITLE.fullmatch(re.sub(r"\s+", "", str(block.get("text") or "")))
+            for block in sources
+        ) else []
+        appendix_scope = None
+        appendix_owner_path: tuple[str, ...] = ()
+        appendix_owner_chapter = ""
+        appendix_owner_level = 0
+        previous_position = -1
+        appendix_heading = ""
+        requirement_media = False
+        previous_context = None
+        for source in sorted(sources, key=lambda block: block["body_index"]):
+            source_id = str(source["id"])
+            text = str(source.get("text") or "").strip()
+            compact = re.sub(r"\s+", "", text)
+            headings = [*(source.get("parent_headings") or []), source.get("heading_text", ""), source.get("section", "")]
+            context = " / ".join(str(heading) for heading in headings)
+            heading_path = tuple(str(heading) for heading in (
+                *(source.get("parent_headings") or []),
+                source.get("heading_text") or source.get("section") or "",
+            ))
+            chapter = str(source.get("chapter_id") or "")
+            if previous_context != context:
+                requirement_media = False
+            if appendix_scope is not None:
+                descendant = (
+                    len(heading_path) > len(appendix_owner_path)
+                    and heading_path[:len(appendix_owner_path)] == appendix_owner_path
+                )
+                same_chapter = heading_path == appendix_owner_path and (
+                    not chapter or not appendix_owner_chapter or chapter == appendix_owner_chapter
+                )
+                physical_boundary = appendix_owner_level and any(
+                    previous_position < index <= source["body_index"] and level <= appendix_owner_level
+                    for index, level in heading_levels
+                )
+                if physical_boundary or not (descendant or same_chapter):
+                    appendix_scope = None
+            is_appendix = source.get("type") == "paragraph" and bool(_APPENDIX_TITLE.fullmatch(compact))
+            if is_appendix:
+                if appendix_scope is None:
+                    appendix_owner_path, appendix_owner_chapter = heading_path, chapter
+                    appendix_owner_level = next((level for index, level in reversed(heading_levels)
+                                                 if index < source["body_index"]), 0)
+                appendix_scope = bool(_HISTORICAL_RESULTS_CONTEXT.search(compact) or _HISTORICAL_REPORT.search(compact))
+                # Unstyled physical appendices share their enclosing chapter.
+                # Child headings may change metadata, but do not end that scope.
+                appendix_heading = text
+                requirement_media = False
+            historical = appendix_scope if appendix_scope is not None else bool(
+                _HISTORICAL_RESULTS_CONTEXT.search(re.sub(r"\s+", "", context))
+            )
+            scope_heading = appendix_heading if appendix_scope is not None else context
+            image_only = source.get("has_drawing") and (
+                not text or bool(re.fullmatch(r"\[图片对象 body=\d+\]", text))
+            )
+            reason = ""
+            if historical:
+                if is_appendix:
+                    reason = "historical_report_heading"
+                elif source.get("type") == "table":
+                    if not _formal_requirement_table(source, documents):
+                        reason = "historical_result_table"
+                elif image_only and not requirement_media:
+                    reason = "historical_result_image"
+                elif not source.get("has_drawing"):
+                    if is_unvalued_historical_result_caption(text, scope_heading):
+                        reason = "historical_result_label"
+                    elif _REFERENCE_MEDIA_LABEL.search(compact):
+                        reason = "historical_equipment_label"
+            if not image_only:
+                requirement_media = bool(_REQUIREMENT_MEDIA_LABEL.search(compact))
+            if reason:
+                result[source_id] = {
+                    "source_id": source_id, "source_path": path,
+                    "body_index": source["body_index"], "source_type": source.get("type"),
+                    "reason": reason, "scope_heading": scope_heading,
+                    "assigned_categories": sorted(categories.get(source_id, set())),
+                    "policy": "historical_test_artifacts_review_only",
+                }
+            previous_context = context
+            previous_position = source["body_index"]
     return result
+
+
+def review_reference_source_ids(classification: dict | None) -> set[str]:
+    """Compatibility entry point shared by writers, routing and coverage."""
+    return set(review_reference_source_details(classification))
 
 
 def nontechnical_text_reason(text: str, *, kind: str = "paragraph") -> str | None:

@@ -3765,6 +3765,11 @@ def _merge_classified_content(
         projections = []
         projected_elements = []
         seen_environment_texts = set()
+        environment_categories_by_source = {}
+        for assignment in classification.get("classifications", []):
+            environment_categories_by_source.setdefault(assignment.get("source_id"), set()).add(
+                str(assignment.get("category", ""))
+            )
         for block in classification.get("source_blocks", []):
             if block.get("id") in (protected_block_ids | review_ids):
                 continue
@@ -3772,7 +3777,9 @@ def _merge_classified_content(
             if type(index) is not int or not 0 <= index < len(tech.element.body):
                 continue
             source_element = tech.element.body[index]
-            for projection in project_environmental_evidence(block, source_element):
+            for projection in project_environmental_evidence(
+                block, source_element, categories=environment_categories_by_source.get(block.get("id"), ()),
+            ):
                 projections.append(projection)
                 normalized = re.sub(r"\s+", "", projection["text"])
                 if normalized in seen_environment_texts:
@@ -4679,11 +4686,11 @@ def fill(
     to_del, filled = [], {}
     pending_rich = []  # [(anchor_para, tables, images, caption_ref)]
 
-    from docxcompose.composer import Composer
+    from .source_composer import SourceDocumentComposer as Composer
 
     source_composer = Composer(tpl)
 
-    def _import_source_relationships(element):
+    def _import_source_relationships(element, source_id=""):
         # A copied rId belongs to the source package. Rebuild relationships
         # on this element before insertion; the same rId in the template can
         # point to an entirely different picture or hyperlink.
@@ -4698,6 +4705,9 @@ def fill(
         source_composer.add_footnotes(tech, element)
         source_composer.remove_header_and_footer_references(tech, element)
         normalize_copied_body_paragraph(element, tpl)
+        if source_id:
+            from .figure_references import mark_source_element
+            mark_source_element(element, source_id, tpl)
         return element
 
     heading_stack: list[tuple[int, str]] = []
@@ -4934,14 +4944,17 @@ def fill(
                         if kind == "paragraph":
                             element = item.get("element")
                             if element is not None:
-                                _import_source_relationships(element)
+                                _import_source_relationships(element, item.get("source_id", ""))
                                 prev.addnext(element); prev = element
                             else:
                                 np = _make_p(str(item.get("text", "")), ref)
+                                if item.get("source_id"):
+                                    from .figure_references import mark_source_element
+                                    mark_source_element(np, item["source_id"], tpl)
                                 prev.addnext(np); prev = np
                         elif kind in {"table", "image"} and item.get("element") is not None:
                             element = item["element"]
-                            _import_source_relationships(element)
+                            _import_source_relationships(element, item.get("source_id", ""))
                             prev.addnext(element); prev = element
 
                     # 技术要求按整章节分类后，严格保持段落/表格/图片的原始顺序。

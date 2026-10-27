@@ -17,7 +17,9 @@ from pathlib import Path
 from lxml import etree
 import yaml
 from jonhon_taskbook.figure_pairing import pair_figure_captions
+from jonhon_taskbook.ooxml_properties import normalize_properties_xml
 from jonhon_taskbook.renderer.paragraph_style_engine import has_image, normalize_image_paragraph
+from jonhon_taskbook.renderer.document_layout import normalize_document_layout
 from jonhon_taskbook.renderer.table_style_engine import (
     DEFAULT_FONT,
     apply_table_style,
@@ -289,18 +291,49 @@ def _indicator_table_has_values(table) -> bool:
     return False
 
 
+def _normalize_indicator_item_labels(table) -> int:
+    """Remove trailing label separators without rebuilding formatted runs."""
+    changed = 0
+    for row in table.findall(f"{_W}tr"):
+        cells = row.findall(f"{_W}tc")
+        # Category rows span the table and are not item labels.
+        if len(cells) < 3 or "用户要求指标" in _para_text(row):
+            continue
+        label = cells[0]
+        if label.find(f"{_W}tbl") is not None:
+            continue
+        text_nodes = label.findall(f"{_W}p//{_W}t")
+        text = "".join(node.text or "" for node in text_nodes)
+        suffix = re.search(r"[:：]+(?=\s*$)", text)
+        if suffix is None or not text[:suffix.start()].strip():
+            continue
+        offset = 0
+        for node in text_nodes:
+            value = node.text or ""
+            start = max(0, suffix.start() - offset)
+            end = min(len(value), suffix.end() - offset)
+            if start < end:
+                node.text = value[:start] + value[end:]
+            offset += len(value)
+        changed += 1
+    return changed
+
+
 def _normalize_indicator_table_formatting(body, stats: dict) -> None:
     """Normalize the generated indicator table as one visual component.
 
     The indicator table is a controlled structured rendering surface, so
     source/template review styling (blue, italic, mixed fonts and sizes) must
-    not leak into the deliverable. No business text is changed.
+    not leak into the deliverable. Trailing item-label separators are removed;
+    requirement values and descriptions are not changed.
     """
     tables = [tbl for tbl in body.iter(f"{_W}tbl") if _is_indicator_table(tbl)]
     if not tables:
         return
     normalized_runs = 0
+    normalized_labels = 0
     for table in tables:
+        normalized_labels += _normalize_indicator_item_labels(table)
         normalize_table_typography(table)
         runs = [
             run for run in table.findall(f".//{_W}r")
@@ -321,6 +354,8 @@ def _normalize_indicator_table_formatting(body, stats: dict) -> None:
             normalized_runs += 1
     if normalized_runs:
         stats["indicator_font_normalized"] = normalized_runs
+    if normalized_labels:
+        stats["indicator_label_colons_removed"] = normalized_labels
 
 
 def _is_failure_table(element) -> bool:
@@ -1151,6 +1186,7 @@ def clean_doc_xml(
     preserve_template_guidance: bool = False,
     relationship_ids: set[str] | None = None,
     selected_product_domain: str = "",
+    source_aware_figures: bool = False,
 ) -> tuple[bytes, dict]:
     root  = etree.fromstring(doc_xml)
     stats = {"red_cleared": 0, "hl_cleared": 0, "date_cleared": 0,
@@ -1179,7 +1215,8 @@ def clean_doc_xml(
     # intentionally preserved.
     _remove_indicator_instructions(body, stats)
     _normalize_indicator_table_formatting(body, stats)
-    _renumber_figure_captions(root, stats)
+    if not source_aware_figures:
+        _renumber_figure_captions(root, stats)
     _remove_inapplicable_domain_paragraphs(
         body,
         selected_product_domain,
@@ -1299,6 +1336,9 @@ def clean_doc_xml(
     # cover/front matter and table-specific typography remain untouched.
     _normalize_body_text_formatting(body, stats)
     _keep_figure_captions_with_images(body, stats)
+    stats.update(normalize_document_layout(
+        list(_iter_body_blocks(body)), is_heading=lambda block: _heading_depth(block) > 0,
+    ))
 
     return (
         etree.tostring(root, xml_declaration=True,
@@ -1314,6 +1354,8 @@ def postprocess(
 ) -> dict:
     """就地处理 docx，返回统计信息。"""
     doc_path = Path(doc_path)
+    from .figure_references import load_figure_classification, synchronize_figure_references
+    figure_classification = load_figure_classification(doc_path)
     tmp_file = tempfile.NamedTemporaryFile(
         prefix=f"{doc_path.stem}.",
         suffix=".tmp.docx",
@@ -1367,6 +1409,7 @@ def postprocess(
                             preserve_template_guidance=preserve_template_guidance,
                             relationship_ids=document_relationship_ids,
                             selected_product_domain=selected_product_domain,
+                            source_aware_figures=bool(figure_classification),
                         )
                         stats.update(clean_stats)
                     elif name == "word/fontTable.xml":
@@ -1394,6 +1437,10 @@ def postprocess(
                     data, privacy_stats = _scrub_privacy_xml_part(name, data)
                     for key, value in privacy_stats.items():
                         stats[key] = stats.get(key, 0) + value
+                    if name.startswith("word/") and name.endswith(".xml"):
+                        data, property_stats = normalize_properties_xml(data)
+                        for key, value in property_stats.items():
+                            stats[key] = stats.get(key, 0) + value
                     zout.writestr(name, data)
 
         # Windows 的杀毒/索引器可能短暂占用刚写出的 DOCX；有界重试避免
@@ -1406,6 +1453,11 @@ def postprocess(
                 if attempt == 5:
                     raise
                 time.sleep(0.1 * (attempt + 1))
+        if figure_classification:
+            figure_audit = synchronize_figure_references(doc_path, figure_classification)
+            for key in ("figure_captions_renumbered", "figure_references_renumbered"):
+                stats[key] = figure_audit[key]
+            stats["figure_reference_violations"] = len(figure_audit["violations"])
         return stats
     finally:
         if tmp_path.exists():

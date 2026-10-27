@@ -110,4 +110,6 @@ def test_empty_result_caption_and_raw_table_are_review_references(tmp_path):
 
     mixed = deepcopy(classification)
     mixed["classifications"].append({"source_id": caption_id, "category": "technical_support"})
-    assert caption_id not in review_reference_source_ids(mixed)
+    assert caption_id in review_reference_source_ids(mixed)
+    requirement_id = next(block["id"] for block in blocks if block["text"] == requirement)
+    assert requirement_id not in review_reference_source_ids(mixed)

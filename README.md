@@ -1,4 +1,6 @@
-# 研制任务书受控生成服务 (agent-develop-task-doc-service)
+# 研发管理平台（含研制任务书受控生成）
+
+首页 `/` 为研发总览，统一导航贯通项目、需求、任务、成果与审签。任务书生成作为 `/taskbook` 工具保留原有生成逻辑。执行 `./start-demo.ps1` 可用 mock 身份和三组持久化示例项目直接体验，OA 校验自动放行；启动、身份配置与业务验收步骤见 [研发管理平台交接说明](docs/rd-platform-v1.md)。
 
 由 FastAPI 后端 + React SPA 前端 + nginx 反向代理组成。容器内 nginx 主站监听 80 端口，
 提供 `web/dist/` 构建产物，主站业务请求转发到 `127.0.0.1:18130`。
@@ -11,34 +13,45 @@
 
 2026-09-17 新增产品正式启用：15 类已可选择使用，加上原有 2 类共 17 类；1 类缺流体模板。状态、映射和验证范围见 [16 类产品接入记录](docs/product-template-intake-20260916.md)。
 
-## 目录结构
+## 开发入口与目录结构
 
-```
-agent-develop-task-doc-service/
-├── basic-service/
-│   ├── requirements.txt / requirements-dev.txt
-│   └── app/                      ← 运行时根（uvicorn 的 cwd）
-│       ├── resources/            application.yml + application-{dev,test,prod}.yml
-│       ├── data/                 运行期数据卷（uploads / outputs / 种子资源）
-│       ├── logs/                 运行期日志
-│       ├── tests/                pytest 单测
-│       └── src/
-│           ├── main.py           FastAPI 应用工厂（lifespan + 中间件链）
-│           ├── feedback_main.py  独立管理应用（反馈、日志、操作资料与管理员名单）
-│           ├── pipeline_cli.py   流水线统一入口（CLI 与 Web 共用）
-│           ├── controller/
-│           │   └── taskbook_controller.py   全部 /api 路由
-│           ├── common/           logger.py / request_context.py
-│           ├── utils/            config_loader.py（AppConfig frozen dataclass）
-│           └── service/
-│               ├── config/       12 个受控业务规则 YAML
-│               ├── prompts/      受控 LLM 提示词 .md
-│               └── jonhon_taskbook/  核心业务包（40 模块）
-├── web/                          单文件 SPA（index.html + assets/ + nginx/）
+开发与测试命令见 [开发指南](docs/development.md)，模块职责与依赖方向见 [架构说明](docs/architecture.md)。
+
+```text
+AiNative/
+├── web/                              前端 React + TypeScript + Vite
+│   ├── src/app/                      路由与平台壳
+│   ├── src/features/                 研发、任务书、小航、管理等业务模块
+│   ├── src/shared/                   HTTP、身份与通用 UI / hooks
+│   ├── tests/unit/                   Node 行为与纯函数测试
+│   ├── tests/browser/                浏览器交互回归
+│   └── tests/live/                   显式真实服务联调
+├── basic-service/                    后端依赖与虚拟环境
+│   └── app/                          保留既有运行根目录
+│       ├── src/application/          应用装配、中间件、页面、生命周期
+│       ├── src/controller/           按功能划分的 HTTP 适配
+│       ├── src/service/rd_platform/  项目事务与研发工作流
+│       ├── src/service/assistant/    小航问答与注册操作
+│       ├── src/service/jonhon_taskbook/  受控生成内核及模板
+│       ├── tests/                    按 rd_platform/assistant/platform/taskbook 分类
+│       ├── resources/                application*.yml
+│       └── data/、logs/、runtime/     本地运行数据，Git 忽略
+├── tests/e2e/                        前后端实际 HTTP + 隔离数据库回归
+├── tests/live/                       显式真实模型探测
+├── scripts/check.py                  统一检查入口，默认仅离线检查
+├── pytest.ini                        后端测试发现与导入路径
+├── docs/                             架构、开发和业务交接
 ├── Dockerfile / docker-compose.yml / entrypoint.sh
-├── build_.sh / run_.sh / start.ps1 / stop.ps1
-└── .env.example
+└── start-demo.ps1 / start.ps1 / stop.ps1 / run_.sh
 ```
+
+```powershell
+python scripts/check.py frontend   # 前端测试、类型检查、构建
+python scripts/check.py rd         # 研发与小航后端回归
+python scripts/check.py backend    # 完整后端离线回归
+```
+
+测试源码、受控模板和必要部署脚本保留在仓库；私有凭证、运行数据库、日志、截图报告、依赖目录和构建产物由 `.gitignore` 排除。
 
 ## 前置条件
 

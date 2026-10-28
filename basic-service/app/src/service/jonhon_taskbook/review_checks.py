@@ -142,7 +142,7 @@ def review_links(store, jid: str, revision_id: str) -> dict:
     return {"revision_id": revision_id, "sha256": output["sha256"], "links": links, "warnings": warnings}
 
 
-def check_review_revision(store, jid: str, revision_id: str, path: Path) -> dict:
+def check_review_revision(store, jid: str, revision_id: str, path: Path, *, independent_review: bool = False) -> dict:
     from jonhon_taskbook.review_document import document_projection
     from jonhon_taskbook.qa_gate import QAGate
     from jonhon_taskbook.qa_policy import load_configured_qa_policy
@@ -234,7 +234,8 @@ def check_review_revision(store, jid: str, revision_id: str, path: Path) -> dict
 
         baseline = store.revision(jid, "baseline")
         if revision["sha256"] != baseline["sha256"]:
-            issue("manual_changes", "正文已人工修改；原生成报告不适用于当前版本，修改内容及指标适用性须人工复核")
+            issue("manual_changes", "正文已人工修改；原生成报告不适用于当前版本，修改内容及指标适用性须人工复核",
+                  "info" if independent_review else "warning")
         issue("scope_limit", "本检查复核 DOCX、归档规则和原文覆盖；未重新运行模型，不构成自动交付批准", "info")
         if any(item["severity"] == "error" for item in issues):
             report["status"] = "failed"

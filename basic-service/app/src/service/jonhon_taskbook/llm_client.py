@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """受控 LLM 调用层。
 
-支持神州问学、DashScope、Azure OpenAI 和 OpenAI JSON 协议兼容接口。大模型仅由上层用于
-语义分类、路由和模板标题树操作，不在此模块生成业务正文。
+支持神州问学、DashScope、Azure OpenAI 和 OpenAI JSON 协议兼容接口。任务书调用由上层用于
+语义分类、路由和模板标题树操作；平台助手复用文本对话入口，不改变任务书正文生成规则。
 
 服务设置的凭据单独保存在运行目录的 SQLite 数据库；旧临时配置接口保留内存覆盖。
 凭据不写入源码、YAML、日志或输出文档。
@@ -53,6 +53,9 @@ _SHARED_ENV_FILE_KEY = "JTB_SHARED_ENV_FILE"
 
 _LOCAL_ENV_KEYS = {
     _SHARED_ENV_FILE_KEY,
+    "JTB_ASSISTANT_MODEL_PROVIDER",
+    "JTB_ASSISTANT_MODEL",
+    "JTB_ASSISTANT_MODEL_ID",
     "JTB_SERVICE_CREDENTIAL_PRESETS",
     "JTB_LLM_PROVIDER",
     "JTB_LLM_API_URL",
@@ -111,12 +114,12 @@ _LOCAL_ENV_KEYS = {
 }
 
 # The customer deployment uses this MaaS-compatible endpoint by default.
-# 默认值与 agent_auto_input_audit_service 的 application.yml 保持一致，
-# 指向神州问学内网部署。API Key 仍只由环境变量注入，不写入源码。
+# 研制任务书使用独立的内网模型应用；API Key 必须与应用编号配套，
+# 只由部署配置提供，不写入源码。登录应用编号单独配置。
 _DEFAULT_MAAS_ENDPOINT = (
     "http://172.23.255.36/open/opi-maas/v1/chat/completions"
 )
-_DEFAULT_MAAS_APP_ID = "1000000007"
+_DEFAULT_MAAS_APP_ID = "1000000033"
 _DEFAULT_MAAS_MODEL = "openai/qwen3.6"
 _DEFAULT_MAAS_MODEL_ID = ""
 _DEFAULT_DASHSCOPE_ENDPOINT = (
@@ -164,21 +167,25 @@ def _apply_env_values(values: dict[str, str]) -> None:
 def _load_local_env_once() -> None:
     """Load private local/shared dotenv files without exposing credentials.
 
-    Loading precedence is process environment > project ``.env`` > shared
-    dotenv. ``JTB_SHARED_ENV_FILE`` allows this service to consume the same
+    Loading precedence is process environment > project ``.env`` > packaged
+    ``service/.env`` > shared dotenv. ``JTB_SHARED_ENV_FILE`` allows this service to consume the same
     deployment credentials as the automation input audit service while keeping
     the secret values in their original ignored file.
     """
-    env_path = Path(__file__).resolve().parents[1] / ".env"
-    local_values = _read_env_file(env_path)
-    _apply_env_values(local_values)
+    module_path = Path(__file__).resolve()
+    project_env = module_path.parents[5] / ".env"
+    env_path = module_path.parents[1] / ".env"
+    project_values = _read_env_file(project_env)
+    _apply_env_values(project_values)
+    _apply_env_values(_read_env_file(env_path))
 
     shared_value = os.getenv(_SHARED_ENV_FILE_KEY, "").strip()
     if not shared_value:
         return
     shared_path = Path(os.path.expandvars(shared_value)).expanduser()
     if not shared_path.is_absolute():
-        shared_path = env_path.parent / shared_path
+        shared_base = project_env.parent if _SHARED_ENV_FILE_KEY in project_values else env_path.parent
+        shared_path = shared_base / shared_path
     try:
         if shared_path.resolve() == env_path.resolve():
             return
@@ -1273,6 +1280,9 @@ def _request_once(
         ],
         "temperature": temperature,
         "max_tokens": min(int(max_tokens), config.max_tokens),
+        # The cached SDK client may have been created for a different request
+        # budget; keep the assistant's local timeout on this request itself.
+        "timeout": config.timeout_seconds,
     }
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
@@ -1431,9 +1441,16 @@ def chat(
     temperature: float = 0.2,
     max_tokens: int = 4096,
     retries: int = 3,
+    *,
+    timeout_seconds: float | None = None,
 ) -> str:
-    """单次受控对话，返回文本。"""
+    """单次受控对话；可为助手单独限时，不改变任务书连接配置。"""
     config = _active_config()
+    if timeout_seconds is not None:
+        timeout = float(timeout_seconds)
+        if not 0 < timeout <= 600:
+            raise ValueError("模型请求超时须在 0 到 600 秒之间。")
+        config = replace(config, timeout_seconds=timeout)
     return _request_with_retry(
         config,
         system,

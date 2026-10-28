@@ -35,10 +35,18 @@ class EditorRequest(BaseModel):
 
 
 @router.post("/api/review/{jid}/editor")
-def open_editor(jid: str, body: EditorRequest):
+def open_editor(jid: str, body: EditorRequest, request: Request):
     try:
         ensure_review(jid)
-        return _editor().open(jid, body.revision_id, body.mode)
+        editor = _editor()
+        result = editor.open(jid, body.revision_id, body.mode)
+        from src.service.rd_platform.integration import get_rd_store, verified_actor
+        if get_rd_store().generation(jid):
+            from jonhon_taskbook.review_editor import _write_json
+            session = editor._session(jid, result["session_id"])
+            session["rd_actor_id"] = verified_actor(request)["user_id"]
+            _write_json(editor._session_path(jid, result["session_id"]), session)
+        return result
     except EditorError as exc:
         raise HTTPException(exc.status_code, str(exc)) from exc
     except (ValueError, FileNotFoundError) as exc:
@@ -76,7 +84,8 @@ async def editor_callback(jid: str, sid: str, request: Request):
         body = json.loads(raw)
         bearer = request.headers.get("authorization", "")
         token = body.get("token") or (bearer[7:] if bearer.lower().startswith("bearer ") else "")
-        return await run_in_threadpool(_editor().callback, jid, sid, token)
+        return await run_in_threadpool(_editor().callback, jid, sid, token,
+                                       actor=getattr(request.state, "rd_actor_id", "web-user"))
     except EditorError as exc:
         return JSONResponse({"error": 1, "message": str(exc)}, status_code=exc.status_code)
     except (ValueError, TypeError, AttributeError):

@@ -330,8 +330,11 @@ class PlatformAuthMiddleware(BaseHTTPMiddleware):
 
     def _reject(self, request: Request) -> Response:
         if request.url.path.startswith("/api/"):
+            payload = {"success": False, "error": "未登录或登录已失效", "auth_required": True, "login_url": "/auth/login"}
+            if request.url.path.startswith("/api/rd/"):
+                payload["detail"] = payload["error"]
             response = JSONResponse(
-                {"success": False, "error": "未登录或登录已失效", "auth_required": True, "login_url": "/auth/login"},
+                payload,
                 status_code=401, headers=AUTH_RESPONSE_HEADERS,
             )
         else:
@@ -348,12 +351,29 @@ class PlatformAuthMiddleware(BaseHTTPMiddleware):
             return await self._dispatch_authenticated(request, call_next)
 
     async def _dispatch_authenticated(self, request: Request, call_next) -> Response:
+        from src.service.rd_platform.demo import DEMO_COOKIE, DEMO_LOGGED_OUT_COOKIE, demo_mode_enabled, demo_user
+        if demo_mode_enabled():
+            logged_out = request.cookies.get(DEMO_LOGGED_OUT_COOKIE) == "1"
+            user = None if logged_out else MappingProxyType(demo_user(request.cookies.get(DEMO_COOKIE)))
+            request.state.demo_mode = True
+            request.state.auth_settings = AuthSettings(enabled=False)
+            request.state.current_user = user
+            path = request.url.path
+            public = path in {"/api/current-user", "/api/auth/me", "/api/health", "/api/demo/status", "/api/demo/identity", "/api/system/logout", "/auth/login", "/logged-out", "/favicon.ico", "/admin"} or path.startswith(("/assets/", "/static/", "/api/admin/"))
+            if logged_out and not public:
+                if path.startswith("/api/"):
+                    return JSONResponse({"error": "当前会话已退出，请重新进入平台。", "login_url": "/auth/login"}, status_code=401, headers=AUTH_RESPONSE_HEADERS)
+                return RedirectResponse("/logged-out", status_code=302, headers=AUTH_RESPONSE_HEADERS)
+            with model_user_scope(user["userid"] if user else None):
+                response = await call_next(request)
+            response.headers.update(AUTH_RESPONSE_HEADERS)
+            return response
         request.state.auth_settings = self.settings
         request.state.current_user = None
         path = request.url.path
         if not self.settings.enabled:
             return await call_next(request)
-        if path in {"/api/health", "/favicon.ico", "/assets", "/static", "/logged-out", "/api/system/logout"} or path.startswith(("/assets/", "/static/")):
+        if path in {"/api/health", "/api/demo/status", "/api/demo/identity", "/favicon.ico", "/assets", "/static", "/logged-out", "/api/system/logout"} or path.startswith(("/assets/", "/static/")):
             return await call_next(request)
         document_server = _SIGNED_EDITOR_SERVER_PATH.fullmatch(path)
         if document_server and (request.method, document_server.group(1)) in {("GET", "file"), ("POST", "callback")}:

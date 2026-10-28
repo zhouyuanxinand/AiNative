@@ -1,0 +1,21 @@
+.native-taskbook { min-width: 0; }
+.native-taskbook .rd-main { width: 100%; max-width: 1600px; }
+.native-stage-track { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); list-style: none; padding: 0; gap: var(--space-3,12px); }
+.native-stage-track li { display:flex; flex-direction:column; align-items:flex-start; gap:8px; padding:14px; border:1px solid var(--color-border); border-radius:var(--radius-control,10px); }
+.native-stage-track [aria-current=step] { border-color:var(--color-action); background:var(--color-bg-page); }
+.native-input-fields { border:0; margin:16px 0; padding:0; min-width:0; }
+.native-input-fields legend { font-weight:600; margin-bottom:12px; }
+.native-source-list { display:grid; gap:8px; margin-bottom:16px; }
+.native-source-list small { display:block; color:var(--color-text-secondary); }
+.native-save-status { color:var(--color-text-secondary); padding:12px 0; }
+.native-save-error { margin-bottom:16px; }
+.native-review-embed { height:820px; max-height:calc(100vh - 120px); min-height:560px; overflow:hidden; border:1px solid var(--color-border); border-radius:var(--radius-control,10px); margin:16px 0; }
+.native-review-embed .taskbook-review { height:100%; min-height:0; }
+.native-review-embed .review-heading h1 { font-size:16px; }
+.native-review-embed .review-task-id { display:none; }
+.native-auxiliary { color:var(--color-text-secondary); margin:20px 0; }
+.native-taskbook .rd-json { max-height:280px; overflow:auto; overflow-wrap:anywhere; }
+.native-taskbook .rd-record,.native-taskbook .rd-field,.native-taskbook .rd-panel { min-width:0; }
+@media(max-width:780px) { .native-stage-track { grid-template-columns:1fr; } .native-review-embed { height:760px; max-height:none; min-height:0; } .native-taskbook .rd-tabs { flex-wrap:wrap; } .native-taskbook .rd-fields { grid-template-columns:1fr; } }
+
+.native-reference-choice{border:1px solid var(--color-border);border-radius:var(--radius-control,10px);padding:12px;min-width:0;display:grid;gap:8px}.native-reference-choice legend{font-weight:600}.native-anchor-choice{padding:12px;background:var(--color-bg-page);border-radius:var(--radius-control,10px);margin:12px 0}.native-anchor-choice p{overflow-wrap:anywhere}

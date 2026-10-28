@@ -199,7 +199,7 @@ class ReviewEditor:
                             raise EditorError("编辑后的文件超过 100 MB。", 413)
                         output.write(chunk)
 
-    def callback(self, jid: str, sid: str, token: str) -> dict:
+    def callback(self, jid: str, sid: str, token: str, actor: str = "web-user") -> dict:
         signed = verify_token(token, self.config.secret)
         payload = signed.get("payload", signed)
         if not isinstance(payload, dict):
@@ -230,7 +230,7 @@ class ReviewEditor:
                         self._download(str(payload.get("url") or ""), downloaded)
                         digest = hashlib.sha256(downloaded.read_bytes()).hexdigest()
                         if digest != session["sha256"]:
-                            bundle = self.store.save_revision(jid, session["revision_id"], downloaded, actor="web-user", reason="版式编辑")
+                            bundle = self.store.save_revision(jid, session["revision_id"], downloaded, actor=actor, reason="版式编辑")
                             session.update(revision_id=bundle["current_revision_id"], sha256=digest)
                     session.update(status="saved", message="修订版已保存", saved_at=time.time())
                     session["saved_request_id"] = payload.get("userdata") if status == 6 else None

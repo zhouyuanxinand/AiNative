@@ -14,6 +14,17 @@ if (Test-Path -LiteralPath $processFile) {
     $candidates += @(Get-Content -LiteralPath $processFile -Raw | ConvertFrom-Json)
 }
 
+# A demo may use a non-default port in another terminal. Include its listener
+# before any launcher is stopped, then apply the same ownership checks below.
+foreach ($entry in @($candidates)) {
+    if ($entry.module -notin @('src.main', 'src.feedback_main') -or -not $entry.port) { continue }
+    $recordedPort = [int]$entry.port
+    if ($recordedPort -lt 1 -or $recordedPort -gt 65535) { continue }
+    foreach ($connection in @(Get-NetTCPConnection -LocalPort $recordedPort -State Listen -ErrorAction SilentlyContinue)) {
+        $candidates += @{ pid=$connection.OwningProcess; module=$entry.module; port=$recordedPort }
+    }
+}
+
 # 支持停止旧版脚本启动的服务；同时读取 .env 中的端口，避免环境变化漏停。
 $ports = @{ JTB_PORT = 18130; JTB_FEEDBACK_PORT = 18131 }
 $envFile = Join-Path $serviceRoot ".env"
@@ -35,6 +46,7 @@ foreach ($name in @("JTB_PORT", "JTB_FEEDBACK_PORT")) {
 
 $stopped = 0
 $seen = @{}
+$verifiedProcesses = @()
 foreach ($entry in $candidates) {
     $procId = [int]$entry.pid
     if ($seen.ContainsKey($procId)) { continue }
@@ -43,14 +55,25 @@ foreach ($entry in $candidates) {
     $process = Get-CimInstance Win32_Process -Filter "ProcessId=$procId" -ErrorAction SilentlyContinue
     if (-not $process) { continue }
     $commandLine = $process.CommandLine
-    # 同时校验本项目虚拟环境与入口模块；不停止其他占用端口的程序。
-    if ($commandLine -and $commandLine.Contains($venvPython) -and $commandLine.Contains($entry.module)) {
-        Write-Host "[stop] 终止 $($entry.module) PID=$procId (端口 $($entry.port))"
-        Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
-        $stopped++
+    # uv-managed Windows venvs launch a child interpreter outside .venv.
+    # Validate its live parent launcher before treating that child as ours.
+    $ownedByProject = $commandLine -and $commandLine.Contains($venvPython) -and $commandLine.Contains($entry.module)
+    if (-not $ownedByProject -and $commandLine -and $commandLine.Contains($entry.module) -and $process.ParentProcessId) {
+        $launcher = Get-CimInstance Win32_Process -Filter "ProcessId=$($process.ParentProcessId)" -ErrorAction SilentlyContinue
+        $ownedByProject = $launcher -and $launcher.CommandLine -and $launcher.CommandLine.Contains($venvPython) -and $launcher.CommandLine.Contains($entry.module)
+    }
+    if ($ownedByProject) {
+        $verifiedProcesses += @{ pid=$procId; module=$entry.module; port=$entry.port }
     } else {
         Write-Host "[stop] PID=$procId 属于其他程序，未终止"
     }
+}
+
+# Check every parent/child relationship before stopping any launcher.
+foreach ($entry in $verifiedProcesses) {
+    Write-Host "[stop] 终止 $($entry.module) PID=$($entry.pid) (端口 $($entry.port))"
+    Stop-Process -Id $entry.pid -Force -ErrorAction SilentlyContinue
+    $stopped++
 }
 
 if (Test-Path -LiteralPath $processFile) {

@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -144,7 +144,7 @@ def revision_download(jid: str, revision_id: str):
 
 
 @router.post("/{jid}/revisions")
-def save_edits(jid: str, request: EditRequest):
+def save_edits(jid: str, request: EditRequest, http_request: Request):
     from jonhon_taskbook.review_document import apply_edits
     try:
         bundle = ensure_review(jid)
@@ -154,14 +154,15 @@ def save_edits(jid: str, request: EditRequest):
         with tempfile.TemporaryDirectory(prefix="review-edit-") as directory:
             target = Path(directory) / "edited.docx"
             edited = apply_edits(store.revision_path(jid, request.expected_revision_id), target, request.operations)
-            return store.save_revision(jid, request.expected_revision_id, target, request.actor,
+            from src.service.rd_platform.integration import review_actor
+            return store.save_revision(jid, request.expected_revision_id, target, review_actor(http_request, jid, request.actor),
                                        "正文修改", changes=edited.get("changes", []))
     except (ValueError, FileNotFoundError) as exc:
         _error(exc)
 
 
 @router.post("/{jid}/revisions/upload")
-async def upload_revision(jid: str, expected_revision_id: str = Form(...),
+async def upload_revision(jid: str, request: Request, expected_revision_id: str = Form(...),
                           file: UploadFile = File(...), actor: str = Form("web-user"),
                           reason: str = Form("上传修订件")):
     try:
@@ -174,7 +175,8 @@ async def upload_revision(jid: str, expected_revision_id: str = Form(...),
         with tempfile.TemporaryDirectory(prefix="review-upload-") as directory:
             path = Path(directory) / "revision.docx"
             path.write_bytes(data)
-            return get_store().save_revision(jid, expected_revision_id, path, actor, reason)
+            from src.service.rd_platform.integration import review_actor
+            return get_store().save_revision(jid, expected_revision_id, path, review_actor(request, jid, actor), reason)
     except (ValueError, FileNotFoundError) as exc:
         _error(exc)
 
@@ -183,24 +185,31 @@ async def upload_revision(jid: str, expected_revision_id: str = Form(...),
 def check_revision(jid: str, revision_id: str):
     try:
         ensure_review(jid)
+        from src.service.rd_platform.integration import get_rd_store
+        if get_rd_store().generation(jid):
+            # Technical QA can pass an edited file; independent engineering
+            # approval remains a separate mandatory R&D workflow decision.
+            return get_store().check_revision(jid, revision_id, independent_review=True)
         return get_store().check_revision(jid, revision_id)
     except (ValueError, FileNotFoundError) as exc:
         _error(exc)
 
 
 @router.post("/{jid}/revisions/{revision_id}/restore")
-def restore_revision(jid: str, revision_id: str, request: RestoreRequest):
+def restore_revision(jid: str, revision_id: str, request: RestoreRequest, http_request: Request):
     try:
         ensure_review(jid)
-        return get_store().restore_revision(jid, revision_id, request.expected_revision_id, request.actor)
+        from src.service.rd_platform.integration import review_actor
+        return get_store().restore_revision(jid, revision_id, request.expected_revision_id, review_actor(http_request, jid, request.actor))
     except (ValueError, FileNotFoundError) as exc:
         _error(exc)
 
 
 @router.post("/{jid}/revisions/{revision_id}/annotations")
-def annotations(jid: str, revision_id: str, request: AnnotationRequest):
+def annotations(jid: str, revision_id: str, request: AnnotationRequest, http_request: Request):
     try:
         ensure_review(jid)
-        return get_store().annotate(jid, revision_id, request.element_id, request.status, request.note, request.actor)
+        from src.service.rd_platform.integration import review_actor
+        return get_store().annotate(jid, revision_id, request.element_id, request.status, request.note, review_actor(http_request, jid, request.actor))
     except (ValueError, FileNotFoundError) as exc:
         _error(exc)

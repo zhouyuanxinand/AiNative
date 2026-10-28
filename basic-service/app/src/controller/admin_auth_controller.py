@@ -64,12 +64,16 @@ def _mutation_allowed(request: Request) -> bool:
 
 @router.get("/admin/auth/error", include_in_schema=False)
 async def login_error(request: Request):
+    if getattr(request.state, "demo_mode", False):
+        return RedirectResponse("/admin", status_code=303, headers=AUTH_RESPONSE_HEADERS)
     message, status = _ERRORS.get(request.query_params.get("reason"), _ERRORS["identity"])
     return _login_error(message, status)
 
 
 @router.get("/admin/auth/login", include_in_schema=False)
 async def login(request: Request):
+    if getattr(request.state, "demo_mode", False):
+        return RedirectResponse("/admin", status_code=302, headers=AUTH_RESPONSE_HEADERS)
     settings = request.app.state.admin_auth_settings
     try:
         origin = external_origin(request, settings)
@@ -91,6 +95,8 @@ async def login(request: Request):
 
 @router.get("/admin/auth/callback", include_in_schema=False)
 async def callback(request: Request):
+    if getattr(request.state, "demo_mode", False):
+        return RedirectResponse("/admin", status_code=303, headers=AUTH_RESPONSE_HEADERS)
     settings = request.app.state.admin_auth_settings
     try:
         origin = external_origin(request, settings)
@@ -160,11 +166,17 @@ async def callback(request: Request):
 @router.get("/api/admin/session")
 async def session_info(request: Request):
     user = request.state.admin_user
+    if getattr(request.state, "demo_mode", False):
+        return admin_response({"authenticated": True, "demo_mode": True, "user": {key: user[key] for key in ("username", "userid", "display_name", "source", "verified")}, "can_manage_admins": user["is_owner"]})
     return admin_response({"authenticated": True, "user": {key: user[key] for key in ("username", "userid", "display_name")}, "can_manage_admins": user["is_owner"]})
 
 
 @router.post("/api/admin/logout")
 async def logout(request: Request):
+    if getattr(request.state, "demo_mode", False):
+        response = admin_response({"success": True})
+        clear_admin_cookie(response, request.url.scheme == "https")
+        return response
     if not _mutation_allowed(request):
         return admin_response({"error": "请从管理员页面退出登录。"}, 403)
     settings = request.app.state.admin_auth_settings

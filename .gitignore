@@ -1,3 +1,6 @@
+# 仓库保留业务源码、测试源码、锁文件、配置模板、部署脚本和开发文档。
+# 仅排除机器私有文件与可再生文件；不要用 *.py / tests/ / *.docx 屏蔽源码或受控模板。
+
 # 环境与密钥
 .env
 .env.*
@@ -5,6 +8,7 @@
 *.secret
 credentials*.json
 secrets*.json
+.envrc
 *.key
 *.pem
 
@@ -21,6 +25,11 @@ env/
 .coverage
 htmlcov/
 coverage/
+.tox/
+.nox/
+.hypothesis/
+.coverage.*
+*.tsbuildinfo
 
 # 运行期数据与日志
 basic-service/app/logs/
@@ -29,8 +38,14 @@ basic-service/app/正式输出/
 basic-service/app/最终输出/
 basic-service/app/input_docs/
 basic-service/app/runtime/
-basic-service/app/data/uploads/
-basic-service/app/data/outputs/
+/runtime/
+basic-service/app/data/
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3-shm
+*.sqlite3-wal
 runtime-*.log
 *.log
 *.stackdump
@@ -39,12 +54,31 @@ runtime-*.log
 *.tar
 
 # 前端依赖、构建产物与迁移备份
-web/node_modules/
+node_modules/
 web/dist/
 web/index.html.bak
+.vite/
+.cache/
+playwright-report/
+test-results/
+blob-report/
+/artifacts/
+/web/artifacts/
+/tests/artifacts/
+*.tmp
+*.bak
+*.orig
+*.rej
+
+# 本地助手工作资料，不属于产品和工程文档
+.codex/
+.agents/
+.worktrees/
+docs/superpowers/
 
 # IDE / OS
 .idea/
 .vscode/
 .DS_Store
 Thumbs.db
+Desktop.ini

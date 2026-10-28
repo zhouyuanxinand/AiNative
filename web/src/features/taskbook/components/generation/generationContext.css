@@ -1,0 +1,9 @@
+.rd-generation-context { margin: 0 0 var(--space-4, 16px); padding: var(--space-4, 16px); border: 1px solid var(--color-border); border-left: 3px solid var(--color-action); border-radius: var(--radius-control, 10px); background: var(--color-bg-surface); color: var(--color-text-primary); font-size: 14px; }
+.rd-generation-heading { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.rd-generation-context a { color: var(--color-action); }
+.rd-generation-context p { margin: 10px 0; line-height: 1.6; }
+.rd-generation-context summary, .rd-generation-context button { cursor: pointer; }
+.rd-generation-context ul { max-height: 240px; overflow: auto; line-height: 1.7; }
+.rd-generation-confirm { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; cursor: pointer; }
+.rd-generation-confirm input { margin-top: 4px; flex-shrink: 0; }
+.rd-generation-context :focus-visible { outline: 2px solid var(--color-action); outline-offset: 3px; }

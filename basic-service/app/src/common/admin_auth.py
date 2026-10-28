@@ -71,6 +71,19 @@ class AdminAuthMiddleware(BaseHTTPMiddleware):
     """Public HTML is only the login shell; every management API requires a session."""
 
     async def dispatch(self, request: Request, call_next):
+        from src.service.rd_platform.demo import DEMO_COOKIE, demo_mode_enabled, demo_user
+        if demo_mode_enabled():
+            identity = demo_user(request.cookies.get(DEMO_COOKIE))
+            request.state.demo_mode = True
+            request.state.auth_settings = AuthSettings(enabled=False)
+            request.state.current_user = MappingProxyType(identity)
+            request.state.admin_user = MappingProxyType({
+                **identity, "username": identity["userid"],
+                "is_owner": identity["role"] == "owner",
+            })
+            response = await call_next(request)
+            response.headers.update(AUTH_RESPONSE_HEADERS)
+            return response
         request.state.admin_user = None
         settings = request.app.state.admin_auth_settings
         path = request.url.path

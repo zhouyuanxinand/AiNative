@@ -1,0 +1,93 @@
+.xiaohang-assistant{position:fixed;right:24px;bottom:22px;z-index:45;font-family:var(--font-family-sans);color:var(--color-text-primary);font-size:13px;line-height:1.6;max-width:calc(100vw - 24px)}
+.xiaohang-assistant.is-open{position:relative;right:auto;bottom:auto;flex:0 0 var(--xiaohang-pane-width);width:var(--xiaohang-pane-width);max-width:none;height:100%;min-height:0;min-width:0;z-index:40;background:var(--color-bg-surface)}
+.xiaohang-assistant button,.xiaohang-assistant a{cursor:pointer;font:inherit;-webkit-tap-highlight-color:transparent}
+.xiaohang-assistant button:disabled{cursor:not-allowed}
+.xiaohang-assistant :is(button,a,textarea):focus-visible{outline:2px solid var(--color-border-focus);outline-offset:3px}
+.xiaohang-assistant svg{width:18px;height:18px;flex-shrink:0}
+.xiaohang-launcher{display:flex;flex-direction:column;align-items:center;gap:1px;padding:0;min-height:160px;min-width:124px;border:0;background:transparent;border-radius:18px;color:var(--color-text-primary);touch-action:none;user-select:none;-webkit-user-select:none}
+.xiaohang-assistant .xiaohang-launcher{cursor:grab}
+.xiaohang-launcher:hover .xiaohang-launcher-label{border-color:var(--color-action);color:var(--color-action);box-shadow:0 4px 14px rgb(23 42 66 / 12%)}
+.xiaohang-assistant.is-launcher-dragging .xiaohang-launcher{cursor:grabbing}
+.xiaohang-assistant.is-launcher-dragging{will-change:left,top}
+.xiaohang-figure{display:flex;align-items:flex-end;justify-content:center;width:124px;height:124px;margin:0;position:relative}
+.xiaohang-figure img{display:block;width:92px;height:116px;max-width:none;object-fit:contain;filter:drop-shadow(0 3px 2px rgb(23 42 66 / 10%))}
+.xiaohang-figure b{width:50px;height:50px;display:grid;place-items:center;background:var(--color-bg-selected);border-radius:50%;font-size:24px;color:var(--color-action)}
+.xiaohang-launcher-label{font-weight:650;white-space:nowrap;text-align:center;font-size:12px;line-height:1.5;padding:3px 14px 4px;border:1px solid var(--color-border);background:var(--color-bg-surface);border-radius:12px;box-shadow:0 3px 10px rgb(23 42 66 / 8%);transition:border-color var(--motion-duration-fast),color var(--motion-duration-fast)}
+.xiaohang-launcher-help{display:block;font-size:9px;font-weight:400;color:var(--color-text-secondary)}
+.xiaohang-panel{display:flex;flex-direction:column;width:100%;height:100%;min-height:0;background:var(--color-bg-surface);border-left:1px solid var(--color-border-strong);overflow:hidden;isolation:isolate}
+.xiaohang-resizer{position:absolute;z-index:2;left:-5px;top:0;bottom:0;width:10px;cursor:col-resize;touch-action:none;display:flex;align-items:center;justify-content:center}
+.xiaohang-resizer:before{content:'';position:absolute;left:4px;top:0;bottom:0;width:2px;background:transparent;transition:background var(--motion-duration-fast)}
+.xiaohang-resizer:hover:before,.xiaohang-resizer:focus-visible:before{background:var(--color-action)}
+.xiaohang-resizer>span{height:38px;width:3px;border-radius:3px;background:var(--color-border-strong)}
+.xiaohang-header{display:flex;gap:11px;align-items:center;flex-shrink:0;min-height:var(--platform-topbar-height);padding:15px 18px;background:var(--color-bg-page);border-bottom:1px solid var(--color-border)}
+.xiaohang-header>div:nth-child(2){min-width:0;flex:1}
+.xiaohang-header h2{font-size:17px;line-height:1.4;margin:0;font-weight:650;display:flex;gap:8px;align-items:center}
+.xiaohang-header h2 span{font-size:9px;font-weight:550;color:var(--color-action);border:1px solid var(--color-border);border-radius:4px;padding:1px 5px;background:var(--color-bg-surface)}
+.xiaohang-header p{font-size:10px;color:var(--color-text-secondary);margin:3px 0 0}
+.xiaohang-avatar{width:42px;height:45px;overflow:hidden;border-radius:12px;border:1px solid var(--color-border);background:var(--color-bg-surface);display:grid;place-items:center;color:var(--color-action);font-size:20px;font-weight:650;flex-shrink:0}
+.xiaohang-avatar img{width:45px;height:58px;object-fit:contain;object-position:top;align-self:start}
+.xiaohang-icon-button{border:0;background:transparent;width:32px;height:32px;display:grid;place-items:center;padding:6px;border-radius:8px;color:var(--color-text-secondary)}
+.xiaohang-icon-button:hover{background:var(--color-bg-selected);color:var(--color-action)}
+.xiaohang-icon-button:disabled{opacity:.35}
+.xiaohang-header-actions{display:flex;gap:1px;align-items:center;flex-shrink:0}
+.xiaohang-context{display:flex;align-items:center;gap:7px;padding:9px 18px;min-height:35px;flex-shrink:0;border-bottom:1px solid var(--color-border);font-size:10px;color:var(--color-text-secondary)}
+.xiaohang-context>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.xiaohang-context small{font-size:9px;border-left:1px solid var(--color-border-strong);margin-left:8px;padding-left:8px}
+.xiaohang-context-dot{width:5px;height:5px;background:var(--color-action);border-radius:50%;flex-shrink:0}
+.xiaohang-transcript{padding:19px 17px 15px;overflow:auto;min-height:0;flex:1;overscroll-behavior:contain;scrollbar-gutter:stable;overflow-wrap:anywhere}
+.xiaohang-welcome h3{font-size:19px;line-height:1.5;font-weight:600;margin:3px 0 7px;letter-spacing:-.3px}
+.xiaohang-eyebrow{font-size:10px;color:var(--color-action);font-weight:550}
+.xiaohang-welcome>p{color:var(--color-text-secondary);font-size:11px;line-height:1.9;margin:0 0 16px}
+.xiaohang-actions{display:grid;gap:7px}
+.xiaohang-actions-quick{grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:18px}
+.platform-shell .xiaohang-action{display:flex;gap:8px;align-items:center;justify-content:space-between;background:var(--color-bg-surface);border:1px solid var(--color-border);border-radius:9px;padding:10px;text-decoration:none;color:var(--color-text-primary);min-width:0}
+.xiaohang-action>span{min-width:0}
+.xiaohang-action strong{display:block;font-size:11px;font-weight:550}
+.xiaohang-action small{display:block;font-size:9px;color:var(--color-text-secondary);line-height:1.6;margin-top:3px}
+.xiaohang-action svg{width:14px;height:14px;color:var(--color-action)}
+.platform-shell .xiaohang-action:hover{color:var(--color-action);border-color:var(--color-action);background:var(--color-bg-selected)}
+.xiaohang-suggestions{display:flex;flex-direction:column;gap:7px}
+.xiaohang-suggestions button{border:1px solid var(--color-border);border-radius:8px;background:var(--color-bg-page);text-align:left;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 11px;color:var(--color-text-secondary);font-size:11px;line-height:1.6}
+.xiaohang-suggestions button:hover{color:var(--color-action);border-color:var(--color-action);background:var(--color-bg-selected)}
+.xiaohang-suggestions button span{color:var(--color-action);flex-shrink:0}
+.xiaohang-message{display:flex;flex-direction:column;align-items:flex-start;margin-bottom:15px;gap:4px}
+.xiaohang-message.is-user{align-items:flex-end}
+.xiaohang-speaker{font-size:9px;color:var(--color-text-secondary);padding:0 2px}
+.xiaohang-bubble{background:var(--color-bg-page);border:1px solid var(--color-border);border-radius:3px 11px 11px 11px;padding:10px 12px;max-width:100%;min-width:0}
+.xiaohang-bubble p{margin:0;white-space:pre-wrap;font-size:12px;line-height:1.85;overflow-wrap:anywhere}
+.xiaohang-message.is-user .xiaohang-bubble{background:var(--color-bg-selected);border-radius:11px 3px 11px 11px}
+.xiaohang-actions-reply{margin-top:11px}.xiaohang-actions-reply:empty{display:none}.xiaohang-actions-reply .xiaohang-action{padding:8px}
+.xiaohang-source{display:block;font-size:9px;color:var(--color-text-secondary);margin-top:7px}
+.xiaohang-pending{display:flex;align-items:center;gap:9px;min-height:38px;font-size:11px;color:var(--color-text-secondary)}
+.xiaohang-thinking{display:flex;align-items:center;gap:3px;height:15px}
+.xiaohang-thinking i{width:4px;height:4px;border-radius:50%;background:var(--color-action);animation:xiaohang-thinking 1.2s infinite ease-in-out}
+.xiaohang-thinking i:nth-child(2){animation-delay:.15s}.xiaohang-thinking i:nth-child(3){animation-delay:.3s}
+.xiaohang-request-note{font-size:11px;color:var(--color-text-secondary);padding:9px 11px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-bg-page)}
+.xiaohang-request-note.is-error{color:var(--color-error);border-color:var(--color-error-border);background:var(--color-error-bg)}
+.xiaohang-request-note p{margin:0}
+.xiaohang-request-note button,.xiaohang-context-error button{border:0;background:transparent;color:var(--color-action);padding:5px 0 0;text-decoration:underline;text-underline-offset:3px;font-size:11px}
+.xiaohang-context-error{display:flex;gap:8px;align-items:baseline;font-size:10px;color:var(--color-error);background:var(--color-error-bg);border-top:1px solid var(--color-error-border);padding:7px 17px;flex-shrink:0}
+.xiaohang-context-error>span{flex:1}.xiaohang-context-error button{white-space:nowrap;padding:0;font-size:10px}
+.xiaohang-composer{padding:11px 15px 10px;border-top:1px solid var(--color-border);flex-shrink:0;background:var(--color-bg-surface)}
+.xiaohang-input-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.xiaohang-input-wrap{border:1px solid var(--color-border-strong);border-radius:10px;background:var(--color-bg-surface);overflow:hidden}
+.xiaohang-input-wrap:focus-within{border-color:var(--color-border-focus);box-shadow:0 0 0 1px var(--color-border-focus)}
+.xiaohang-composer textarea{display:block;width:100%;min-height:64px;max-height:130px;border:0;background:transparent;padding:10px 11px 2px;resize:none;outline:none!important;font:inherit;font-size:12px;line-height:1.7;color:var(--color-text-primary);box-sizing:border-box}
+.xiaohang-composer textarea:disabled{color:var(--color-text-secondary);cursor:wait}.xiaohang-composer textarea::placeholder{color:var(--color-text-secondary);font-size:11px}
+.xiaohang-compose-toolbar{display:flex;gap:8px;align-items:center;justify-content:space-between;min-height:35px;padding:0 7px 6px 11px}
+.xiaohang-compose-toolbar>span{font-size:9px;color:var(--color-text-secondary)}
+.xiaohang-send{background:var(--color-action);border:1px solid var(--color-action);color:var(--color-bg-surface);border-radius:7px;padding:6px;width:31px;height:29px;display:grid;place-items:center}
+.xiaohang-send:hover:not(:disabled){filter:brightness(.92)}.xiaohang-send:disabled{opacity:.4}
+.xiaohang-stop{background:var(--color-bg-surface);border:1px solid var(--color-border-strong);border-radius:6px;padding:4px 8px;color:var(--color-text-secondary);font-size:10px!important}
+.xiaohang-stop:hover{color:var(--color-action);border-color:var(--color-action)}
+.xiaohang-composer>p{font-size:9px;color:var(--color-text-secondary);margin:6px 0 0;text-align:center}
+.xiaohang-proposal{border:1px solid var(--color-border-strong);background:var(--color-bg-surface);border-radius:9px;margin-top:12px;padding:12px;min-width:0}
+.xiaohang-proposal-kicker{color:var(--color-action);font-size:10px;font-weight:550}.xiaohang-proposal h4{margin:3px 0;font-size:13px;line-height:1.6}
+.xiaohang-bubble .xiaohang-proposal-project{font-size:9px;color:var(--color-text-secondary);margin-bottom:7px}.xiaohang-proposal>p{font-size:11px}
+.xiaohang-proposal dl,.xiaohang-confirm-fields{margin:10px 0;font-size:11px;min-width:0}.xiaohang-proposal dl>div,.xiaohang-confirm-fields>div{display:grid;grid-template-columns:75px minmax(0,1fr);gap:8px;border-top:1px solid var(--color-border);padding:6px 0}.xiaohang-proposal dt,.xiaohang-confirm-fields dt{color:var(--color-text-secondary)}.xiaohang-proposal dd,.xiaohang-confirm-fields dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.xiaohang-proposal-warnings{font-size:10px;color:var(--color-warning);padding-left:16px;margin:8px 0}.xiaohang-proposal-buttons{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:7px;margin-top:12px}.xiaohang-proposal-buttons .feedback-button{min-height:30px;padding:5px 9px;font-size:10px}
+.xiaohang-operation-success{border-top:1px solid var(--color-success-border);padding-top:8px;color:var(--color-success);font-size:11px}.xiaohang-operation-success p{font-size:11px;margin-bottom:6px}
+@keyframes xiaohang-thinking{0%,70%,100%{opacity:.4;transform:translateY(0)}35%{opacity:1;transform:translateY(-3px)}}
+@media(max-width:980px){.platform-shell.has-assistant-open>.platform-main-column,.platform-shell.has-assistant-open>.platform-sidebar{display:none}.xiaohang-assistant.is-open{position:fixed;inset:0;width:100%;height:100vh;height:100dvh;border:0;max-width:none;z-index:48}.xiaohang-panel{border:0}.xiaohang-resizer,.xiaohang-width-button{display:none}.xiaohang-header{padding-top:max(12px,env(safe-area-inset-top))}.xiaohang-composer{padding-bottom:max(10px,env(safe-area-inset-bottom))}}
+@media(max-width:600px){.xiaohang-assistant{right:12px;bottom:max(12px,env(safe-area-inset-bottom));max-width:calc(100vw - 24px)}.xiaohang-assistant.is-open{inset:0;max-width:none}.xiaohang-figure{width:112px;height:112px;margin:0}.xiaohang-launcher{min-height:148px;min-width:112px}.xiaohang-header{padding-inline:15px}.xiaohang-transcript{padding:19px 17px}.xiaohang-composer textarea{min-height:64px}.xiaohang-context{padding:7px 15px}}
+@media(prefers-reduced-motion:reduce){.xiaohang-thinking i{animation:none}.xiaohang-launcher-label{transition:none}}

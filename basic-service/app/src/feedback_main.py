@@ -11,19 +11,29 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
-# main establishes the shared business-package import paths but does not start jobs.
-from src.main import CorrelationIdMiddleware, _resolve_web_index
+# Shared import setup never constructs the public app or seeds its workspace.
+from src.application.bootstrap import configure_import_paths
+
+configure_import_paths()
+
+from src.application import web
+from src.application.middleware import CorrelationIdMiddleware
 
 # isort: split
-from src.common.logger import configure_logging, get_logger, shutdown_logging
 from src.common.admin_access_store import AdminAccessStore, get_admin_access_store
 from src.common.admin_auth import AdminAuthMiddleware, admin_auth_settings
+from src.common.logger import configure_logging, get_logger, shutdown_logging
 from src.common.platform_auth import AuthSettings, PlatformTokenVerifier, TokenVerifier
 from src.controller import feedback_controller
 from src.controller.admin_auth_controller import router as admin_auth_router
 from src.controller.auth_settings_controller import router as auth_settings_router
+from src.controller.help_resources_controller import (
+    admin_router as help_resources_admin_router,
+)
+from src.controller.help_resources_controller import (
+    read_router as help_resources_router,
+)
 from src.controller.runtime_logs_controller import router as runtime_logs_router
-from src.controller.help_resources_controller import admin_router as help_resources_admin_router, read_router as help_resources_router
 from src.utils.config_loader import AppConfig, get_config
 
 logger = get_logger("src.feedback_main")
@@ -100,7 +110,7 @@ def create_app(
         query.append(("view", "logs"))
         return RedirectResponse("/admin?" + urlencode(query))
 
-    web_index = _resolve_web_index()
+    web_index = web.resolve_web_index()
     if web_index is not None:
         @application.get("/admin", response_class=HTMLResponse, include_in_schema=False)
         async def management_page():

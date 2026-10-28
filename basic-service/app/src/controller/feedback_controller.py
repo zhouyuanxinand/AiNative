@@ -142,6 +142,9 @@ async def _call(operation):
 def _create(payload, *, admin=False, output_dir=None, identity=None):
     values = validate_create(payload, admin=admin)
     jid = values["jid"]
+    from src.service.rd_platform.integration import get_rd_store
+    if get_rd_store().generation(jid):
+        raise ValueError("项目任务请使用项目成果审阅；项目资料不能保存到独立反馈管理库。")
     snapshot = _snapshot(jid, _resolve_job(jid, output_dir=output_dir))
     return {"record": get_feedback_store().create(payload, snapshot=snapshot, admin=admin, identity=identity)}
 

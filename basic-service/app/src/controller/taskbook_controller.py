@@ -992,6 +992,7 @@ async def clear_llm(request: Request):
 @router.post("/api/submit_local")
 async def submit_local(
     background_tasks: BackgroundTasks,
+    request: Request,
     tech: str = Form(None),
     spec: str = Form(None),
     product_type: str = Form(_DEFAULT_PRODUCT_TYPE),
@@ -1009,7 +1010,11 @@ async def submit_local(
     fail_on_regression: str = Form("false"),
     template_edit_plan: str = Form(""),
     template_edit_confirmed: str = Form("false"),
+    rd_project: str = Form(""),
+    rd_task: str = Form(""),
 ):
+    if rd_project or rd_task or request.query_params.get("rd_project") or request.query_params.get("rd_task"):
+        return JSONResponse({"detail": "项目生成请上传资料文件；不支持服务器本地默认资料"}, status_code=422)
     submission_started = time.perf_counter()
     tech = tech or _default_local_tech()
     spec = spec or _default_local_spec()
@@ -1459,10 +1464,13 @@ async def precheck_local(
 
 
 @router.get("/api/history")
-async def history(include_legacy: bool = False):
+async def history(request: Request, include_legacy: bool = False):
+    from src.service.rd_platform.integration import history_visible, native_job_payload
     _cleanup_expired_jobs()
     items = []
     for jid, job in list(_STATE.jobs.items())[::-1]:
+        if not history_visible(request, jid):
+            continue
         result = job.get("result", {})
         if not isinstance(result, dict):
             result = {"error": str(result or "")}
@@ -1480,7 +1488,7 @@ async def history(include_legacy: bool = False):
                 delivery_status = "blocked"
             else:
                 delivery_status = status
-        items.append(
+        items.append(native_job_payload(jid,
             {
                 "jid": jid,
                 "status": status,
@@ -1508,7 +1516,7 @@ async def history(include_legacy: bool = False):
                 "media_count": stats.get("media_count", 0),
                 "created_at": meta.get("created_at", ""),
             }
-        )
+        ))
         if len(items) >= _HISTORY_LIMIT:
             break
     return JSONResponse(items)
@@ -1527,6 +1535,7 @@ def _history_runtime_process_id(meta: dict) -> int | None:
 @router.post("/api/submit")
 async def submit(
     background_tasks: BackgroundTasks,
+    request: Request,
     tech: UploadFile = File(...),
     spec: UploadFile = File(...),
     product_type: str = Form(_DEFAULT_PRODUCT_TYPE),
@@ -1544,7 +1553,16 @@ async def submit(
     fail_on_regression: str = Form("false"),
     template_edit_plan: str = Form(""),
     template_edit_confirmed: str = Form("false"),
+    rd_project: str = Form(""),
+    rd_task: str = Form(""),
+    rd_baseline_id: str = Form(""),
+    rd_inputs_confirmed: str = Form("false"),
 ):
+    from src.service.rd_platform.integration import prepare_submission, submission_error
+    try:
+        rd_context = prepare_submission(request, rd_project, rd_task, rd_baseline_id, rd_inputs_confirmed)
+    except Exception as exc:
+        return submission_error(exc)
     submission_started = time.perf_counter()
     update_archive_metadata({
         "files": {"tech": tech.filename or "", "spec": spec.filename or ""},
@@ -1589,6 +1607,29 @@ async def submit(
             return JSONResponse({"error": f"baseline_json: {error}"}, status_code=400)
         payloads["baseline_json"] = data or b""
 
+    # Serialize the complete synchronous bind/register/enqueue phase for retries.
+    # Upload reading has completed before taking this per-intent lock.
+    if rd_context:
+        from src.service.rd_platform.integration import submission_fingerprint, enqueue_bound_job
+        fingerprint = submission_fingerprint(payloads, {
+            "product_type": product_type, "product_domain": product_domain,
+            "development_process": development_process, "product_series": product_series,
+            "organization_scope": organization_scope, "cover_phase": cover_phase,
+            "use_llm": use_llm, "model_provider": model_provider, "model_name": model_name,
+            "model_id": model_id, "fail_on_regression": fail_on_regression,
+            "template_edit_plan": edit_plan, "rd_baseline_id": rd_baseline_id,
+            "filenames": {"tech": tech.filename, "spec": spec.filename},
+        })
+        try:
+            return enqueue_bound_job(rd_context, fingerprint, payloads, {
+                "tech": tech.filename, "spec": spec.filename,
+            }, background_tasks, selection, {
+                "development_process": development_process, "product_series": product_series,
+                "organization_scope": organization_scope, "cover_phase": cover_phase,
+                "model_provider": model_provider, "model_name": model_name, "model_id": model_id,
+            }, use_llm.lower() == "true", edit_plan, fail_on_regression.lower() == "true")
+        except Exception as exc:
+            return submission_error(exc)
     jid = uuid.uuid4().hex[:10]
     job_dir = _STATE.upload_dir / jid
     job_dir.mkdir(parents=False, exist_ok=False)
@@ -1657,6 +1698,10 @@ def _sse(data: dict, event_id: int | None = None) -> str:
 
 @router.get("/api/stream/{jid}")
 async def stream(jid: str, request: Request):
+    def event(data, event_id=None):
+        from src.service.rd_platform.integration import native_job_payload
+        return _sse(native_job_payload(jid,data),event_id)
+
     async def gen() -> AsyncGenerator[str, None]:
         try:
             last_event_id = max(0, int(request.headers.get("last-event-id", "0") or 0))
@@ -1665,29 +1710,33 @@ async def stream(jid: str, request: Request):
         sent = last_event_id
         heartbeat_interval = 1.0
         while True:
+            from src.service.rd_platform.integration import history_visible
+            if not history_visible(request, jid):
+                yield event({"type": "error", "msg": "项目访问权限已失效"})
+                return
             job = _get_job(jid)
             if job is None:
-                yield _sse({"type": "error", "msg": "任务不存在"}, 1)
+                yield event({"type": "error", "msg": "任务不存在"}, 1)
                 return
             logs = job["log"]
             sent = min(sent, len(logs))
             while sent < len(logs):
                 sent += 1
-                yield _sse({"type": "log", "msg": logs[sent - 1]}, sent)
+                yield event({"type": "log", "msg": logs[sent - 1]}, sent)
             terminal_event_id = len(logs) + 1
             if job["status"] in {"done", "blocked", "cancelled"}:
                 if last_event_id < terminal_event_id:
-                    yield _sse(
+                    yield event(
                         {"type": job["status"], "jid": jid, "result": job["result"]},
                         terminal_event_id,
                     )
                 return
             if job["status"] == "error":
                 if last_event_id < terminal_event_id:
-                    yield _sse({"type": "error", "msg": job["error"]}, terminal_event_id)
+                    yield event({"type": "error", "msg": job["error"]}, terminal_event_id)
                 return
             started = job.get("started_ts") or job.get("created_ts") or time.time()
-            yield _sse(
+            yield event(
                 {
                     "type": "heartbeat",
                     "status": job.get("status", "queued"),
@@ -1857,6 +1906,20 @@ async def clarify_indicators(jid: str, request: Request, background_tasks: Backg
         if llm_error:
             raise ValueError(llm_error)
         combined = {**review["indicator_clarifications"], **clarifications}
+        from src.service.rd_platform.integration import get_rd_store, prepare_submission, submission_fingerprint, enqueue_bound_job
+        rd_store = get_rd_store()
+        binding = rd_store.generation(jid)
+        if binding:
+            context = prepare_submission(request, binding["project_id"], binding["task_id"], binding["baseline_id"], "true")
+            payloads = {key: Path(paths[key]).read_bytes() for key in ("tech", "spec", "baseline_docx", "baseline_json") if key in paths}
+            inputs = submission_fingerprint(payloads, {"rd_baseline_id": binding["baseline_id"],
+                "parent_jid": jid, "indicator_clarifications": combined, "selection": selection_data, "options": options})
+            registration = {key: options.get(key, "") for key in ("development_process", "product_series", "organization_scope", "cover_phase",
+                                                                 "model_provider", "model_name", "model_id")}
+            return enqueue_bound_job(context, inputs, payloads,
+                original_job.get("result", {}).get("meta", {}).get("original_filenames") or {"tech": "tech.docx", "spec": "spec.docx"},
+                background_tasks, selection, registration, True, options.get("template_edit_plan"),
+                bool(options.get("fail_on_regression")), parent_jid=jid, indicator_clarifications=combined)
         new_jid = uuid.uuid4().hex[:10]
         (_STATE.upload_dir / new_jid).mkdir(parents=False, exist_ok=False)
         _register_job(
@@ -1893,6 +1956,9 @@ async def clarify_indicators(jid: str, request: Request, background_tasks: Backg
         return JSONResponse({"error": str(exc)}, status_code=404)
     except (ValueError, OSError, TypeError, KeyError) as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
+    except Exception as exc:
+        from src.service.rd_platform.integration import submission_error
+        return submission_error(exc)
 
 
 @router.get("/api/input_evidence/{jid}/{role}")
@@ -2770,7 +2836,8 @@ def _run_job(
                 }
             )
             result["meta"].setdefault("created_at", time.strftime("%Y-%m-%d %H:%M:%S"))
-            if result.get("ok") and result.get("out") and Path(result["out"]).exists():
+            from src.service.rd_platform.integration import get_rd_store
+            if result.get("ok") and result.get("out") and Path(result["out"]).exists() and not get_rd_store().generation(jid):
                 try:
                     saved_path = _copy_result_to_downloads(result["out"])
                     result["meta"]["saved_path"] = saved_path

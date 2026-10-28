@@ -299,10 +299,10 @@ class ReviewStore:
         return self.save_revision(jid, expected_revision_id, self.revision_path(jid, revision_id),
                                   actor, f"恢复版本 {revision_id}")
 
-    def check_revision(self, jid: str, revision_id: str) -> dict:
+    def check_revision(self, jid: str, revision_id: str, *, independent_review: bool = False) -> dict:
         from jonhon_taskbook.review_checks import check_review_revision
         path = self.revision_path(jid, revision_id)
-        checks = check_review_revision(self, jid, revision_id, path)
+        checks = check_review_revision(self, jid, revision_id, path, independent_review=independent_review)
         with self._lock(jid):
             bundle = self.get_review(jid)
             for item in bundle["revisions"]:

@@ -1,0 +1,17 @@
+{"version":"filter-connector-1","product_type":"filter_connector","groups":["项目与研制目标","确认需求","选型差异与范围","计划与交付","验收与依据"],"sections":[
+{"section_key":"function","label":"功能用途","aliases":["产品的功能用途","来源和功能"],"group":"项目与研制目标"},
+{"section_key":"composition","label":"产品组成","aliases":["产品组成"],"group":"项目与研制目标"},
+{"section_key":"regulations","label":"法律法规","aliases":["适用的法律法规要求","法律法规"],"group":"确认需求"},
+{"section_key":"technical","label":"技术要求","aliases":["技术要求","技术指标"],"group":"确认需求"},
+{"section_key":"quality","label":"通用质量特性","aliases":["通用质量特性要求","可靠性要求"],"group":"确认需求"},
+{"section_key":"failure_modes","label":"初步失效模式分析","aliases":["初步的失效模式分析","潜在失效模式初步分析"],"group":"选型差异与范围"},
+{"section_key":"customer_special","label":"顾客特殊要求","aliases":["顾客的特殊要求"],"group":"确认需求"},
+{"section_key":"process","label":"工艺","aliases":["工艺要求"],"group":"选型差异与范围"},
+{"section_key":"similar_design","label":"类似设计","aliases":["以前类似设计提供的信息"],"group":"选型差异与范围"},
+{"section_key":"resources","label":"其他资源要求","aliases":["设计开发所需其他要求"],"group":"选型差异与范围"},
+{"section_key":"confidentiality","label":"保密属性","aliases":["项目是否为涉密科研项目","保密属性"],"group":"项目与研制目标"},
+{"section_key":"schedule","label":"进度","aliases":["任务进度要求"],"group":"计划与交付"},
+{"section_key":"acceptance","label":"验收","aliases":["验收要求","验收","接受准则"],"group":"验收与依据"},
+{"section_key":"budget","label":"预算","aliases":["研制经费预算","预算"],"group":"计划与交付"},
+{"section_key":"basis","label":"编制依据","aliases":["任务书编制依据"],"group":"验收与依据"}
+]}

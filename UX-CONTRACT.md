@@ -1,8 +1,36 @@
-# 反馈界面 UX Contract
+# 研发管理平台 UX Contract
+
+## 小航问答与业务操作
+
+人物入口使用脚底对齐的逐帧动画，拖动时暂停、页面不可见时暂停，减少动效偏好时保持静态；资产加载失败保留原静态人物入口。鼠标、触屏超过6px位移才进入拖动，松手吸附最近屏幕边缘，不触发对话。方向键调整停靠侧及高度，Home 恢复默认右下位置，Enter/Space仍打开。仅将停靠侧与高度比例存入 `xiaohang-launcher-position-v1`，不存身份或对话；窗口尺寸变化重新约束完整人物可见范围，打开/收起右栏保留位置。
+
+小航挂载在共享平台壳中，默认显示有动效的人物；点击后打开占据右侧空间的非模态工作栏，支持边缘拖拽及键盘调整宽度，标题栏只保留收起按钮。Esc 收起并将焦点归还人物入口，内层确认弹窗仍沿用 `FeedbackConfirmDialog` 的焦点管理。右栏消息区独立滚动，业务页面保持挂载，窄屏转为全宽工作抽屉；减少动效偏好时禁用人物浮动。输入采用显式标签、站内校验、中文输入法安全的 Enter 提交和 Shift+Enter 换行；发送中提供停止等待，错误保留问题并可重试，迟到响应不能覆盖新会话。
+
+用户使用单一对话，不显示平台/通用模式按钮；仅发送最近十二条已完成消息，自动识别意图后才决定是否读取权限内项目事实。一般问题不额外注入项目资料。切换身份重新挂载小航并取消旧请求。后端只接收 user/assistant 历史，不接收客户端 system 指令、身份或模型凭证。前端等待上限九十秒、业务问答上限七十五秒、模型回答单次上限六十秒；模糊意图分类使用更短的请求上限。未配置或连接失败时，明确业务问题可返回标记为内置的指引；一般问题显示可重试错误，不伪装模型答复。
+
+业务操作先形成十分钟有效、绑定用户和项目版本的草案。预览展示项目、参数、固定成果修订及影响，再经共享确认弹窗提交固定草案 ID；前端不重传可更改 payload。未保存业务输入或其他写入处理中阻止旁路执行。成功显示持久回执及最新项目链接；冲突、权限变化和过期保留问题并要求重建草案。脚本/skill 的后续接入归属同一服务端能力注册表和确认链，不能把自由模型文本当作程序执行。
+
+## 平台壳、业务中心与演示身份（2026-10-28）
+
+`PlatformShell` 统一主站导航、当前身份和演示角色切换，并为页面提供 `CurrentUserProvider`；首页与跨项目中心通过真实 `/api/rd/workspace` 读取当前成员可访问的项目详情。统计、待办、项目阶段、最近动态与中心记录均由响应派生。中心采用显式关键词查询，复用 authored 选择器筛选项目/状态，URL 保存 `q/project/status/mine/page`，每页10条；无匹配、无数据、加载和失败分别呈现。审签待办默认筛选待审签记录，“仅看待我审签”再限定当前指定审核人。所有办理入口携带所属项目、所属分页与记录锚点回到项目工作区，成果和审签按项目中的倒序记录计算页码；全局中心不绕过项目权限与版本规则直接更改业务状态。
+
+用户已明确授权可对外展示的本地演示模式，无需 OA。演示身份只接受服务端返回的 `auth_enabled:false/authenticated:true/demo_mode:true` 且 `user.source:mock/verified:true` 组合；企业登录分支继续接受既有验证来源。`/api/demo/status` 返回允许的角色；切换通过 `/api/demo/identity` 设置 HttpOnly Cookie 后重新读取页面。界面始终标记“演示环境”，有未保存输入先使用 `FeedbackConfirmDialog` 确认，处理中暂停切换。真实企业登录账号在平台账户区复用 `SidebarLogout` 的退出与草稿确认；演示身份保留角色切换。帮助入口复用 `HELP_RESOURCES` 的视频与手册地址。演示记录来自后端持久化种子，角色与业务数据不写入 localStorage，也不由浏览器伪造身份。
+
+后端种子作业通过 `generation.inputs.demo:true` 明确区分。其“演示资料 · 查看固定成果”读取真实样例 DOCX 的受控成果下载，不跳转不存在的实时文档审阅，也不进入正式文档修订捕获选择。实际从任务发起的新作业继续进入现有审阅与精确修订检查。任务书工具入口为 `/taskbook`，项目绑定继续携带 `rd_project/rd_task`，生成算法与模型能力是否可用单独呈现，不把演示样例称为模型生成成功。
+
+## 研发项目工作区（2026-10-28）
+
+`/rd`、`/rd/{pid}` 与 `web/src/features/rd/api/rd.ts` 遵循本约定既有控件、就地反馈、北京时间与表格滚动规则；领域依据为 `docs/superpowers/specs/2026-10-28-rd-platform-v1-design.md` 及同日实施计划的共享 API。界面先通过 `CurrentUserProvider` 读取服务端身份，再读取研发记录。企业模式和显式演示模式分别采用上文身份契约；未登录及身份读取失败分别提供登录与重试，不将操作身份写入业务请求体或浏览器存储。
+
+项目列表显式查询，关键词有立即清除动作，中文组合输入不提交；`q/page/page_size` 保存在 URL，每页 10/20/50 条。项目详情 `tab` 与各记录列表页码保存在 URL；全量详情中的需求、基线、任务、成员、成果、审签与事件分别以 10 条分页。所有项目标签页保持挂载，切换后保留草稿；站内链接离开通过共享确认弹窗保护未保存输入，实际关闭页面使用既有离开保护。
+
+创建项目成功回到当前列表并显示进入新项目的明确链接；其他写入成功停留所属工作区并更新服务端返回的版本。表单错误保留输入，409 显示冲突并通过页首“读取最新版本”比较后重试；不自动覆盖新记录。每次实际写入携带 `expected_version`（项目创建除外）与 `Idempotency-Key`，相同内容与版本失败重试复用请求键。权限、基线确认、分派、撤回与工程批准以服务端规则为准；权限变更和影响旧任务的动作显示明确后果确认。
+
+需求保存保留修订，基线确认保留不可变快照。任务生成入口携带 `rd_project/rd_task`；成果登记仅从本任务已绑定作业加载审阅修订，执行人明确选择固定修订。服务端核验文件及精确修订的质量检查，自动通过仅允许送审；批准版下载必须存在独立审核人的批准。基线改变显示待复核，历史批准与文件仍可追溯并明确标注历史基线。撤回、退回和新审签轮次保留历史。
 
 ## Scope and evidence
 
-本约定适用于 `web/src/components/feedback/`、`web/src/api/feedback.ts`、`web/src/feedback.css`、结果卡反馈入口、`web/src/components/management/AdminPage.tsx` 统一管理员壳，以及操作资料管理 `HelpResourcesView`、主站阅读页 `HelpResourcePage` 与 `web/src/api/helpResources.ts`。它不声明其他历史页面已经采用这些交互规则。视觉与令牌归属见 [DESIGN.md](DESIGN.md)。
+本约定适用于 `web/src/features/feedback/components/`、`web/src/features/feedback/api/feedback.ts`、`web/src/shared/styles/feedback.css`、结果卡反馈入口、`web/src/features/admin/components/AdminPage.tsx` 统一管理员壳，以及操作资料管理 `HelpResourcesView`、主站阅读页 `HelpResourcePage` 与 `web/src/features/help/api/resources.ts`。它不声明其他历史页面已经采用这些交互规则。视觉与令牌归属见 [DESIGN.md](DESIGN.md)。
 
 用户需求是收集每次生成结果的好、一般、差评分和意见，并在独立 18131 管理入口查询、查看、增加、修改、删除和统计。主站接入神州问学统一登录后，用户名与账号来自后端验证；默认关闭的本地模式才允许手填姓名，并标记为未验证。侧栏与公开反馈共用 `CurrentUserProvider`，不能把请求失败降级为手填。
 
@@ -14,26 +42,26 @@
 | 登录、可信身份及部署要求 | `basic-service/app/src/common/platform_auth.py`、`docs/platform-auth-migration.md` | 接入协议及实现 | 2026-10-15 |
 | 统一登录配置及修改边界 | `basic-service/app/src/controller/auth_settings_controller.py`、`basic-service/app/src/common/auth_settings_store.py` | 版本化设置 API | 2026-10-15 |
 | 完整请求归档、结果标签、50 条保留及游标读取 | 用户 2026-10-22 的日志归档需求；`basic-service/app/src/controller/runtime_logs_controller.py`、`basic-service/app/src/common/request_log_store.py` | 用户范围与服务 API | 2026-10-22 |
-| 操作资料上传、外链、读取预览及管理员写入边界 | `basic-service/app/src/controller/help_resources_controller.py`、`web/src/api/helpResources.ts`、`README.md` | 服务 API、界面与部署约定 | 2026-10-22 |
+| 操作资料上传、外链、读取预览及管理员写入边界 | `basic-service/app/src/controller/help_resources_controller.py`、`web/src/features/help/api/resources.ts`、`README.md` | 服务 API、界面与部署约定 | 2026-10-22 |
 
 ## Canonical UI Map
 
 | Capability | Canonical owner | Source of truth | Allowed variants | Verification |
 |---|---|---|---|---|
-| Select/Listbox | `web/src/components/ui/StyledSelect.tsx` | 已有 authored 下拉组件 | 筛选、评分与状态；隐藏原生 select 仅同步表单值，不打开平台菜单 | 浏览器选择评分和过滤条件；键盘与 portal 以共享组件行为为准 |
-| Date | `FeedbackAdminPage` 的原生 `input[type=date]` | 本约定的原生所有权决策与 `web/src/api/feedback.ts` 边界转换 | 接受键盘日期录入及平台拥有的日历外观、语言和弹出几何 | 浏览器日期输入与北京时间请求边界断言；尚无完整平台日历矩阵 |
+| Select/Listbox | `web/src/shared/ui/StyledSelect.tsx` | 已有 authored 下拉组件 | 筛选、评分与状态；隐藏原生 select 仅同步表单值，不打开平台菜单 | 浏览器选择评分和过滤条件；键盘与 portal 以共享组件行为为准 |
+| Date | `FeedbackAdminPage` 的原生 `input[type=date]` | 本约定的原生所有权决策与 `web/src/features/feedback/api/feedback.ts` 边界转换 | 接受键盘日期录入及平台拥有的日历外观、语言和弹出几何 | 浏览器日期输入与北京时间请求边界断言；尚无完整平台日历矩阵 |
 | Form | `GenerationFeedback`、`FeedbackRecordDialog` 及 `.feedback-textarea.resize-none` | 本约定与反馈 API | 公开提交、管理新增和编辑；textarea 固定布局及内部滚动 | 浏览器必填验证、输入保留、提交去重和保存流程 |
-| Scrollbar | `web/src/feedback.css` 的表格局部样式与系统滚动条 | DESIGN.md 的表格几何决策 | 表格横向滚动；弹窗与长 textarea 保留系统滚动 | 390px 无页面溢出断言与截图；未声称已执行完整滚动条样式自动审计 |
+| Scrollbar | `web/src/shared/styles/feedback.css` 的表格局部样式与系统滚动条 | DESIGN.md 的表格几何决策 | 表格横向滚动；弹窗与长 textarea 保留系统滚动 | 390px 无页面溢出断言与截图；未声称已执行完整滚动条样式自动审计 |
 | Toast | 反馈流程的 inline status/alert；不调用全站 Toast | 本约定的就地反馈决策 | 成功回执 `role=status`，错误 `role=alert`；不自动消失 | 浏览器成功回执和失败提示 |
-| CRUD | `FeedbackAdminPage`、`FeedbackRecordDialog`、`FeedbackConfirmDialog` 与反馈 API | 反馈 API 版本契约 | 新增/编辑成功停留详情；删除回列表；查询保留 URL 状态 | `web/tests/feedback.browser.mjs` 完整流程 |
-| 管理导航 | `AdminPage` 侧栏与 URL `view` | 用户指定侧边栏形式、`feedback_main.py` 的私有服务边界 | 桌面左侧栏；窄屏纵向折叠菜单；旧路径重定向 | `web/tests/admin.browser.mjs` 的导航、草稿、前后退与手机测试 |
-| 审阅定位与滚动 | `TaskbookReviewPage`、`taskbookReview.css` 的目录和文档容器 | 用户指定的连续切换对照点行为 | 桌面目录常驻；窄屏通过顶部“目录 / 来源 / 任务书”切换；文档独立滚动，宽表格局部横向滚动 | `web/tests/review-navigation.browser.mjs` 的长文档、旧视口单位兼容、双向定位和阅读位置检查 |
-| 操作资料表单与删除 | `HelpResourcesView`、`StyledSelect`、`FeedbackConfirmDialog` | 资料 API 与既有控件 | 单条文件或链接添加、分类筛选、上传进度、原件访问及删除确认 | `web/tests/help-resources.browser.mjs` 的普通管理员维护、校验、草稿和恢复测试 |
+| CRUD | `FeedbackAdminPage`、`FeedbackRecordDialog`、`FeedbackConfirmDialog` 与反馈 API | 反馈 API 版本契约 | 新增/编辑成功停留详情；删除回列表；查询保留 URL 状态 | `web/tests/browser/feedback.browser.mjs` 完整流程 |
+| 管理导航 | `AdminPage` 侧栏与 URL `view` | 用户指定侧边栏形式、`feedback_main.py` 的私有服务边界 | 桌面左侧栏；窄屏纵向折叠菜单；旧路径重定向 | `web/tests/browser/admin.browser.mjs` 的导航、草稿、前后退与手机测试 |
+| 审阅定位与滚动 | `TaskbookReviewPage`、`taskbookReview.css` 的目录和文档容器 | 用户指定的连续切换对照点行为 | 桌面目录常驻；窄屏通过顶部“目录 / 来源 / 任务书”切换；文档独立滚动，宽表格局部横向滚动 | `web/tests/browser/review-navigation.browser.mjs` 的长文档、旧视口单位兼容、双向定位和阅读位置检查 |
+| 操作资料表单与删除 | `HelpResourcesView`、`StyledSelect`、`FeedbackConfirmDialog` | 资料 API 与既有控件 | 单条文件或链接添加、分类筛选、上传进度、原件访问及删除确认 | `web/tests/browser/help-resources.browser.mjs` 的普通管理员维护、校验、草稿和恢复测试 |
 | 操作资料阅读 | `HelpResourcePage`、浏览器 video 与 iframe、Word 内容渲染 | 资料 API 返回的预览类型与内容 | 多资料切换、刷新、视频/PDF/Word 内容预览和原件入口 | 同一浏览器用例的视频播放、PDF、Word 表格图片及手机截图 |
 
 本轮没有表格多选和批量动作，因此 Table Selection 不适用。已有其他页面的原生 select 与纵向拖拽 textarea 不由本文件迁移。
 
-管理员导航与筛选共用 `web/src/lib/url.ts` 序列化查询参数，以序列化字符串是否为空决定是否附加查询串，不依赖较新浏览器才提供的 `URLSearchParams.size`；切换视图及前进、后退保留其余筛选参数。
+管理员导航与筛选共用 `web/src/shared/lib/url.ts` 序列化查询参数，以序列化字符串是否为空决定是否附加查询串，不依赖较新浏览器才提供的 `URLSearchParams.size`；切换视图及前进、后退保留其余筛选参数。
 
 审阅页使用受视口约束的工作区，`100vh` 为 `100dvh` 提供兼容回退。章节、待核对项和双向来源定位仅移动文档容器及必要的内部表格滚动区域，不滚动整页。隐藏面板收到定位请求时，在面板展示后执行一次；完成后切换面板应保留用户手动阅读的位置。定位动画遵循减少动态效果偏好。
 
@@ -94,7 +122,7 @@
 
 阅读页每次进入或点击“刷新资料”时读取所选分类，不后台轮询；管理员添加或删除后，用户通过这两个动作获得最新列表，无需重启或重建前端。刷新后仍存在的当前选项继续保留，否则选择列表第一份。加载、空态和失败分别呈现，失败提供重试；不同资料通过带当前状态的列表按钮切换。
 
-操作手册与视频页共用 `.help-page` 作为纵向滚动容器，使用 `100vh` 回退和 `100dvh` 增强，保证 Chrome 104 忽略新视口单位时仍能完整阅读。保持主站的全局滚动边界；长手册可用滚轮、滚动条和键盘到达末段，宽表格仍在自身区域横向滚动。`web/tests/help-resources.browser.mjs` 在桌面及窄屏验证正常样式和仅移除帮助页 `dvh` 声明的兼容场景；这是本地浏览器的能力降级验证，不代替内网 Chrome 104 实机复测。
+操作手册与视频页共用 `.help-page` 作为纵向滚动容器，使用 `100vh` 回退和 `100dvh` 增强，保证 Chrome 104 忽略新视口单位时仍能完整阅读。保持主站的全局滚动边界；长手册可用滚轮、滚动条和键盘到达末段，宽表格仍在自身区域横向滚动。`web/tests/browser/help-resources.browser.mjs` 在桌面及窄屏验证正常样式和仅移除帮助页 `dvh` 声明的兼容场景；这是本地浏览器的能力降级验证，不代替内网 Chrome 104 实机复测。
 
 视频使用原生播放器，PDF 使用有标题的 iframe，始终提供原文件或原链接入口。上传的 DOCX 及经服务器本地转换的 DOC 展示文字、表格和图片内容，同时说明原始排版以下载原件为准；预览失败仍保留下载，并提供重试。HTTP(S) 外链由浏览器直接访问，按 URL 路径扩展名识别 MP4/WebM/OGG 视频或 PDF 并尝试内嵌，其他链接仅打开原链接，不在服务端抓取或转换。视频播放失败显示文字提示；PDF 页面提示预览不可见时打开原件。外部访问权限和嵌入限制不被描述为本站已验证能力。
 
@@ -111,9 +139,9 @@
 ## Verification and legacy boundary
 
 - `npm --prefix web run build`：TypeScript 与生产构建已通过。
-- `web/tests/feedback.browser.mjs`：模拟 API 的新增、查看、编辑、版本冲突保留、删除确认、筛选 URL、北京时间边界、公开反馈必填、快速重复点击、重试去重和下载可用性已通过。通过 `PLAYWRIGHT_MODULE` 指向已有 Playwright，`PLAYWRIGHT_CHROMIUM_EXECUTABLE` 指向本机 Chrome，`TEST_BASE_URL` 指向启动中的 Vite；不新增依赖。
-- `web/tests/identity.browser.mjs` 与 `web/tests/auth-settings.browser.mjs`：共享身份、只读姓名、401 草稿恢复、切换账号，以及独立登录配置的空地址、启用校验、409/503恢复、只读和未保存关闭保护已通过。原模型凭证及历史凭证浏览器回归已通过，登录配置保存不会提交或刷新模型凭证。
-- 已查看 `runtime/feedback-browser/` 下桌面管理、手机管理、手机表单和回执截图（1440×1000、390×844）。这些验证使用模拟 API，真实持久化和隔离由 `basic-service/app/tests/test_feedback_*.py` 覆盖。
+- `web/tests/browser/feedback.browser.mjs`：模拟 API 的新增、查看、编辑、版本冲突保留、删除确认、筛选 URL、北京时间边界、公开反馈必填、快速重复点击、重试去重和下载可用性已通过。通过 `PLAYWRIGHT_MODULE` 指向已有 Playwright，`PLAYWRIGHT_CHROMIUM_EXECUTABLE` 指向本机 Chrome，`TEST_BASE_URL` 指向启动中的 Vite；不新增依赖。
+- `web/tests/browser/identity.browser.mjs` 与 `web/tests/browser/auth-settings.browser.mjs`：共享身份、只读姓名、401 草稿恢复、切换账号，以及独立登录配置的空地址、启用校验、409/503恢复、只读和未保存关闭保护已通过。原模型凭证及历史凭证浏览器回归已通过，登录配置保存不会提交或刷新模型凭证。
+- 已查看 `runtime/feedback-browser/` 下桌面管理、手机管理、手机表单和回执截图（1440×1000、390×844）。这些验证使用模拟 API，真实持久化和隔离由 `basic-service/app/tests/platform/test_feedback_*.py` 覆盖。
 - 真实进程联调另以隔离的输出目录和 SQLite 运行主服务与管理服务（18132/18133），通过实际 SSE 显示测试任务并提交表单，验证跨进程读取、自动任务快照、查看/编辑/状态保存、筛选刷新恢复、删除和管理补录。未调用模型；测试数据不写入默认反馈库。脚本及截图位于 `basic-service/app/runtime/feedback-live-test/`。
 - `premium-ui.json` 的静态审计覆盖 `web/src`，报告输出至 `basic-service/app/runtime/feedback-ui-audit.json`。审计不会执行浏览器测试；其历史页面 finding 独立报告，本轮只修复新增反馈代码的真实问题。执行命令为安装的 frontend-design-premium skill 中 `scripts/audit_project.py . --mode strict --output basic-service/app/runtime/feedback-ui-audit.json`。
 
@@ -129,12 +157,41 @@
 
 这些记录使全量严格审计保持失败；本约定没有把历史差异改写为已修复或已迁移。
 
-2026-10-21 自动回跳验证：`web/tests/auth-settings.browser.mjs` 通过启用时保存 `public_url: null`、API 内网/外网预设、不自动改变启用状态、历史应用 ID 与固定地址保留、手动地址校验、自动/手动只读、409/503 草稿保护、父表单隔离、未保存关闭及保存期间禁用退出。1440px/390px 视口验证了选择菜单宽度、键盘选择和 Escape 焦点恢复，窄屏字段及页脚可访问；同时通过生产构建和反馈浏览器回归。截图与审计报告位于 `runtime/auth-settings-auto-browser/`，审计仍为上述 21 条历史 finding（0 unresolved）。
+2026-10-21 自动回跳验证：`web/tests/browser/auth-settings.browser.mjs` 通过启用时保存 `public_url: null`、API 内网/外网预设、不自动改变启用状态、历史应用 ID 与固定地址保留、手动地址校验、自动/手动只读、409/503 草稿保护、父表单隔离、未保存关闭及保存期间禁用退出。1440px/390px 视口验证了选择菜单宽度、键盘选择和 Escape 焦点恢复，窄屏字段及页脚可访问；同时通过生产构建和反馈浏览器回归。截图与审计报告位于 `runtime/auth-settings-auto-browser/`，审计仍为上述 21 条历史 finding（0 unresolved）。
 
-2026-10-21 退出验证：`web/tests/logout.browser.mjs` 通过 OA/本地/未登录入口、重复点击单次 POST、成功跳转、存储保留、503/失败响应/网络失败恢复、收起与手机布局。真实规则编辑界面覆盖取消确认零请求、失败后保留草稿及离开保护、成功后不再弹原生确认；延迟预检覆盖请求完成前禁止退出、预检失败后恢复正常确认。共享身份浏览器回归和 TypeScript/Vite 构建通过；截图在 `runtime/logout-browser/`。
+2026-10-21 退出验证：`web/tests/browser/logout.browser.mjs` 通过 OA/本地/未登录入口、重复点击单次 POST、成功跳转、存储保留、503/失败响应/网络失败恢复、收起与手机布局。真实规则编辑界面覆盖取消确认零请求、失败后保留草稿及离开保护、成功后不再弹原生确认；延迟预检覆盖请求完成前禁止退出、预检失败后恢复正常确认。共享身份浏览器回归和 TypeScript/Vite 构建通过；截图在 `runtime/logout-browser/`。
 
 2026-10-22 管理员权限验证：`admin-access.browser.mjs` 覆盖登录前不读取管理数据、OA 入口、身份错误、名单新增/重复/移除确认、普通管理员只读、撤权清屏及退出草稿确认；`admin`、`request-logs`、`feedback`、`auth-settings` 浏览器回归与生产构建通过。相关后端 300 项测试通过，包括伪造主站 Cookie 拒绝、回跳一次性状态、平台失败、名单撤权、会话绑定及主站日志和设置隔离。实际 18131 生产包匿名检查通过，只有会话读取请求，没有提前查询反馈或日志。OA 跳转确认使用外网应用 9086 和动态管理端口；真实 OA 账号尚待用户登录验证。截图保存在 `basic-service/app/runtime/admin-access-ui/`。独立界面审阅结论为 ship，仅覆盖指定桌面/手机状态与本轮代码；未将模拟账号测试描述为真实 OA 联调。
 
-2026-10-22 操作资料验证：`web/tests/help-resources.browser.mjs` 通过普通管理员维护、文件/链接校验、上传进度、侧栏切换草稿保留、删除确认与失败重试、阅读页刷新、可播放视频、PDF、Word 表格图片内容预览，以及空态和错误恢复。1440px、390px 与 1990px 检查无整页横向溢出；本轮已查看 `runtime/help-resources-browser/` 下的 `admin-desktop.png`、`admin-mobile.png`、`help-desktop.png`、`help-mobile.png`、`help-mobile-preview.png` 与 `user1990.png`，生产构建通过。这些浏览器证据使用 API 测试夹具，不代表真实 OA 账号或任意外部链接已完成联调。
+2026-10-22 操作资料验证：`web/tests/browser/help-resources.browser.mjs` 通过普通管理员维护、文件/链接校验、上传进度、侧栏切换草稿保留、删除确认与失败重试、阅读页刷新、可播放视频、PDF、Word 表格图片内容预览，以及空态和错误恢复。1440px、390px 与 1990px 检查无整页横向溢出；本轮已查看 `runtime/help-resources-browser/` 下的 `admin-desktop.png`、`admin-mobile.png`、`help-desktop.png`、`help-mobile.png`、`help-mobile-preview.png` 与 `user1990.png`，生产构建通过。这些浏览器证据使用 API 测试夹具，不代表真实 OA 账号或任意外部链接已完成联调。
 
 后续修改本约定范围内行为时同步对应组件与验证证据；其他页面若需要采用这些选择，按独立任务评估，不据此宣布全站迁移。
+# 原生任务书工作面（2026-10-28）
+
+- 项目先采用已批准的新研或改型路线及固定流程模板，再创建 BP05 工作包；直接选用仅登记依据。项目任务、任务中心和该任务的审签待办均直达同一个 `/rd/:pid/tasks/:tid`。旧独立生成与历史 `/review/:jid` 保持兼容。
+- 项目资料保存一次，固定输入包引用 `source_id + version`，同时固定参数、模型和模板环境。模型失效明确阻断，不静默改用另一模型。输入包变化使旧工作稿不再直接适用。
+- 草稿由服务端按项目、任务、当前身份/角色及输入包隔离；输入与尚未提交的 ReviewStore 操作自动保存。正文保存始终形成正式新修订。保存失败保留当前编辑并暂停确认、运行、采用、检查、送审和发布；409 需比较服务器草稿并明确确认合并。保存未确认结果使用原请求编号重试。
+- 标签切换保持挂载；离开页面、退出和身份切换遵循共享未保存保护。审阅器接收明确任务上下文和修订；查看旧运行或历史修订不自动替换当前稿。选择正文可带入覆盖核对位置，覆盖记录可反向定位正文；核对其他类别保留同修订已有结论。
+- 十五类覆盖列出缺少依据、待核对、有依据和已确认不适用。来源引用必须属于固定包，不适用须真实依据与理由；基础 QA、人工覆盖、独立审签、发布及交接各自记录，不能相互替代。
+- WBS 条目记录执行、独立审核、接受责任、交付物、验收、验证方法、要求、正文位置、前置和日期。阶段依次推进；草案不提前派工。送审固定当前正文、检查、覆盖、输入和 WBS。批准后形成发布包，负责人另行发布计划，下游执行人接收后才能开工。
+- 项目概览同页展示上方流程与下方甘特，读取同一服务端 `project_plan`，实际日期仅来自执行记录。新发布版保留旧发布与在途任务，要求明确接受新交接。输入变化保留影响记录与人工复核原因。
+- 使用共享选择器、提交、确认、错误和语义色。日期继续接受现有原生日期控件；简体中文与 Asia/Shanghai 时间不变。窄屏表格局部滚动，任务面板自然增长，嵌入文档保留自己的阅读滚动边界。
+
+
+原生工作面的业务依据见 [实施计划](docs/superpowers/plans/2026-10-28-taskbook-native-workflow.md) 与 [集成接口契约](basic-service/app/runtime/taskbook-native-build/contract.md)；权限、状态和固定包有效性以服务端校验为准。
+
+WBS 模板导入支持 schema_version 1 的 UTF-8 JSON（2 MB / 500 条上限）。解析先形成候选；替换本页草案前使用共享确认，读取或字段校验失败保留当前编辑。示例只提供结构，不代填工程结论；导入后仍由成员、需求和正文选择器补齐，保存沿用原 WBS 服务端版本及业务校验，不自动送审、发布或派工。
+
+
+## 角色工作台、选型路线与项目三区域（2026-10-28）
+
+`/`为我的工作，按project.role与项目分派事实组织视图，写入仍校验owner/engineer/reviewer/viewer。首页读模型统一在rdWorkbench.ts，项目阶段使用服务端journey及其证据，任务完成数仅表示执行进度。负责人看到变更复核、有效批准包待发布、需求基线、选型待核实与直接交接；工程师看到接收和任务，评审定位固定审查版；仅项目负责人、工程师、独立评审形成办理队列，只读成员查阅项目。职位、知识缺项、平台治理或运营身份不产生项目派工；运行历史仍在对应任务查看。
+
+项目URL主区域为tab=results/flow/materials。旧overview/artifacts映射results，tasks映射flow，requirements/members/history映射materials并保留子区域、分页及记录锚点。前后退与刷新恢复区域；子区域常驻，RdDraftContext与现有离开确认继续保护输入。直接选用保留已有协作任务与其深链，仅关闭新增研制任务书入口。
+
+选型和直接交接采用既有commands协议、project.version、Idempotency-Key和RdOperation；只有负责人办理。选型记录引用需求基线，允许待核实，适用性已确认须有资料引用。接受直接交接须同时有确认适用性、供应条件、接收方与实际凭据；阻断记录保留原因。历史记录追加保存，需求修订或基线变化后显式待复核，不覆盖旧决定。保存失败保留输入，版本冲突要求读回核对，重复请求复用同一意图。
+
+任务书合法view参数优先；缺省只在工作面首次加载时按责任选择步骤，后续刷新不改变用户选择。工程审签与计划发布/下游接收分别办理。通用成果列表中的原生成果导航回原工作包，不另行通用送审。原生当前成果必须匹配当前采用修订和发布包；历史批准可查看或下载，但明确标记历史。
+
+
+成员仅维护owner/engineer/reviewer/viewer一层职责，不提供第二层工作台视角配置。添加或调整成员默认收起；任务执行人和独立评审人仍在具体任务分派。后台拒绝额外workbench_role参数；遗留标签不会改变页面、派工或权限。演示仅提供四种对应身份，不自动向项目增加全局平台角色。

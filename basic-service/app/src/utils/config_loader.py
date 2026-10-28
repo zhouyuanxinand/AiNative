@@ -6,10 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-# ``app/`` is the runtime root (the cwd required by ``uvicorn src.main:app``).
-# Layout: app/src/utils/config_loader.py  -> parents[2] == app/
-APP_DIR = Path(__file__).resolve().parents[2]
-SERVICE_DIR = APP_DIR / "src" / "service"
+from src.application.paths import APP_DIR, SERVICE_DIR
 
 
 def _active_profile() -> str:

@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 
 const playwrightModule = process.env.PLAYWRIGHT_MODULE;
 const { chromium } = await import(playwrightModule && /^[A-Z]:[\\/]/i.test(playwrightModule) ? pathToFileURL(playwrightModule).href : playwrightModule || 'playwright');
-const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined });
+const browser = await chromium.launch({ headless: true, ignoreDefaultArgs: ['--hide-scrollbars'], executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined });
 const base = process.env.TEST_BASE_URL || 'http://127.0.0.1:5193';
 const shotDir = process.env.SCREENSHOT_DIR;
 if (shotDir) await mkdir(shotDir, { recursive: true });
@@ -37,6 +37,8 @@ const projection = { document_id: 'help-manual-fixture', sha256: 'fixture-sha256
     { cells: ['上传文件', '需求文件与产品规范', '文件格式与产品类型', '预检通过'].map((text, index) => ({ id: `value-${index}`, blocks: [paragraph(`value-p-${index}`, text)] })) },
   ] },
   paragraph('guide-diagram', '', 0, [{ id: 'steps-image', mime: 'image/svg+xml', available: true, alt: '操作步骤示意图', src: `data:image/svg+xml;base64,${Buffer.from(diagram).toString('base64')}` }]),
+  ...Array.from({ length: 40 }, (_, index) => paragraph(`guide-detail-${index}`, `操作说明 ${index + 1}：核对需求文件、产品规范和生成结果中的表格及图片，确认后保存复核记录。`)),
+  paragraph('guide-end', '操作手册结束：全部操作说明已展示。'),
 ] };
 
 function pdfBytes() {
@@ -91,13 +93,14 @@ try {
 
   await context.route('**/api/**', async route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname;
+    if (!path.startsWith('/api/') && !path.startsWith('/admin/api/')) return route.continue();
     requests.push({ path, method: request.method(), headers: request.headers() });
     if (path === '/api/admin/session') return route.fulfill({ json: member });
     if (path === '/api/admin/members') return route.fulfill({ json: { items: [{ username: 'wangxue', created_at: stamp, created_by: 'system', is_owner: true }], can_manage_admins: false } });
     if (path === '/api/feedback-admin') return route.fulfill({ json: { items: [], total: 0, page: 1, page_size: 20,
       stats: { total: 0, good: 0, average: 0, poor: 0, good_rate: 0, open: 0, in_progress: 0, resolved: 0 } } });
     if (path === '/api/logs/requests') return route.fulfill({ json: { items: [], retention: 50, stats: { total: 0, running: 0, success: 0, failed: 0 } } });
-    if (path === '/api/help-resources') {
+    if (path === '/api/help-resources' || path === '/admin/api/help-resources') {
       if (listGate) await listGate;
       if (listMode === 'error') return route.fulfill({ status: 503, json: { error: '资料列表暂时不可用，请重试。' } });
       return route.fulfill({ json: { items: listMode === 'empty' ? [] : items.filter(item => item.kind === url.searchParams.get('kind')) } });
@@ -142,6 +145,66 @@ try {
     if (path === '/api/health') return route.fulfill({ json: { status: 'ok', ready_for_generation: true } });
     unexpected.push(`${request.method()} ${path}`); return route.fulfill({ status: 404, json: { error: 'Unexpected fixture API' } });
   });
+
+  // Chrome 104 ignores dynamic viewport units. Keep all other production CSS
+  // and exercise actual wheel/keyboard scrolling, not programmatic positioning.
+  for (const legacy of [true, false]) {
+    const reader = await context.newPage();
+    let removedViewportDeclarations = 0;
+    if (legacy) await reader.route(/\/(?:assets\/[^/]+|helpResources)\.css(?:\?.*)?$/, async route => {
+      const response = await route.fetch();
+      const body = (await response.text()).replace(/(\.help-page\s*\{[^}]*?)height:\s*100dvh\s*;/g, (_match, prefix) => {
+        removedViewportDeclarations++;
+        return prefix;
+      });
+      await route.fulfill({ response, body });
+    });
+    for (const viewport of [{ width: 1366, height: 768 }, { width: 390, height: 844 }]) {
+      const label = `manual-${legacy ? 'legacy' : 'modern'}-${viewport.width}`;
+      await reader.setViewportSize(viewport);
+      await reader.goto(`${base}/help/manual`);
+      await reader.getByText('操作手册结束：全部操作说明已展示。', { exact: true }).waitFor({ state: 'attached' }).catch(async error => {
+        console.error('Manual load diagnostics:', await reader.locator('body').innerText(), errors, unexpected);
+        throw error;
+      });
+      if (legacy) assert.ok(removedViewportDeclarations > 0, `${label}: production help viewport declaration was removed`);
+      const dimensions = await reader.locator('.help-page').evaluate(element => ({
+        height: element.clientHeight, content: element.scrollHeight, viewport: innerHeight,
+      }));
+      assert.ok(dimensions.height <= dimensions.viewport && dimensions.content > dimensions.height,
+        `${label}: long manual has a viewport-bounded scroller: ${JSON.stringify(dimensions)}`);
+      await reader.mouse.move(viewport.width / 2, viewport.height / 2);
+      await reader.mouse.wheel(0, 600);
+      await reader.waitForFunction(() => document.querySelector('.help-page').scrollTop > 100);
+      await reader.getByRole('link', { name: '返回平台', exact: true }).focus();
+      await reader.keyboard.press('Control+End');
+      await reader.waitForFunction(() => {
+        const element = document.querySelector('.help-page');
+        return element.scrollHeight - element.clientHeight - element.scrollTop < 2;
+      });
+      const end = await reader.getByText('操作手册结束：全部操作说明已展示。', { exact: true }).boundingBox();
+      assert.ok(end.y >= 0 && end.y + end.height <= viewport.height, `${label}: final paragraph is reachable`);
+      await assertNoPageOverflow(reader, label);
+      await shot(reader, `${label}-bottom.png`);
+      await reader.keyboard.press('Control+Home');
+      await reader.waitForFunction(() => document.querySelector('.help-page').scrollTop === 0);
+      if (viewport.width > 1000) {
+        // The native scrollbar must also be reachable with the pointer.
+        await reader.mouse.move(viewport.width - 8, 30);
+        await reader.mouse.down();
+        await reader.mouse.move(viewport.width - 8, viewport.height - 30, { steps: 8 });
+        await reader.mouse.up();
+        await reader.waitForFunction(() => document.querySelector('.help-page').scrollTop > 100);
+        await reader.getByRole('link', { name: '返回平台', exact: true }).focus();
+        await reader.keyboard.press('Control+Home');
+      }
+      await reader.getByRole('navigation', { name: '使用帮助', exact: true }).getByRole('link', { name: '操作视频', exact: true }).click();
+      await reader.locator('video').waitFor();
+      await assertNoPageOverflow(reader, `${label}: video sibling`);
+    }
+    await reader.close();
+  }
+  console.log('Long manual scroll passed: legacy viewport fallback, wheel, keyboard, final paragraph and video navigation.');
 
   const admin = await context.newPage();
   await admin.goto(`${base}/admin`);

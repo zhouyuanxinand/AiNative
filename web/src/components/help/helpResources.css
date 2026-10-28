@@ -17,7 +17,8 @@
 .workspace-shell:not(.sidebar-expanded) .sidebar-help-link{width:36px;padding:8px}
 .workspace-shell:not(.sidebar-expanded) .sidebar-help-link span{display:none}
 
-.help-page{height:100dvh;overflow:auto;background:var(--color-bg-page);scrollbar-gutter:stable}
+/* Chrome 104 needs vh; otherwise body overflow:hidden clips long manuals. */
+.help-page{height:100vh;height:100dvh;overflow:auto;background:var(--color-bg-page);scrollbar-gutter:stable}
 .help-page-header{
   display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);
   min-height:76px;padding:var(--space-4) var(--space-8);

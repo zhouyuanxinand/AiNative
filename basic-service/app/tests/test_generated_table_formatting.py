@@ -1,6 +1,7 @@
 """Imported requirement tables share the taskbook's visible table geometry."""
 from copy import deepcopy
 from pathlib import Path
+import re
 
 import pytest
 from docx import Document
@@ -36,8 +37,22 @@ def _grid_widths(table):
 
 
 def _table_xml_without_typography(table):
-    """Compare all content/layout while allowing the universal font rule."""
+    """Compare content/layout, fonts aside, using equivalent legacy look flags."""
     root = deepcopy(table._tbl)
+    # ECMA-376 table-look bits, independent of the production normalizer.
+    # These fixtures carry both encodings. Only discard a named flag after
+    # proving it agrees with w:val, which remains in the XML comparison.
+    look_bits = {"firstRow": 0x0020, "lastRow": 0x0040,
+                 "firstColumn": 0x0080, "lastColumn": 0x0100,
+                 "noHBand": 0x0200, "noVBand": 0x0400}
+    for look in root.iter(qn("w:tblLook")):
+        mask = int(look.get(qn("w:val")), 16)
+        for name, bit in look_bits.items():
+            value = look.get(qn("w:" + name))
+            if value is not None:
+                assert value in {"0", "1", "false", "true", "off", "on"}
+                assert bool(mask & bit) == (value in {"1", "true", "on"})
+                del look.attrib[qn("w:" + name)]
     for properties in root.iter(qn("w:rPr")):
         for tag in ("rFonts", "sz", "szCs"):
             for node in list(properties.findall(qn(f"w:{tag}"))):
@@ -47,6 +62,12 @@ def _table_xml_without_typography(table):
             if not len(node) and not node.attrib:
                 node.getparent().remove(node)
     return root.xml
+
+
+def _assert_legacy_table_looks(table):
+    for look in table._tbl.iter(qn("w:tblLook")):
+        assert set(look.attrib) == {qn("w:val")}
+        assert re.fullmatch(r"[0-9A-Fa-f]{4}", look.get(qn("w:val")))
 
 
 def _save_and_process(document, tmp_path):
@@ -86,6 +107,7 @@ def test_imported_table_and_indicator_keep_column_ratios_at_same_body_width(tmp_
 
     result = _save_and_process(document, tmp_path)
 
+    _assert_legacy_table_looks(result.tables[0])
     assert _table_xml_without_typography(result.tables[0]) == cover_xml
     indicator, imported = result.tables[1:]
     expected = ([1200, 2400, 1800, 1800] if len(indicator_widths) == 4
@@ -100,7 +122,9 @@ def test_imported_table_and_indicator_keep_column_ratios_at_same_body_width(tmp_
     assert imported.cell(2, 0)._tc.tcPr.find(qn("w:gridSpan")).get(qn("w:val")) == "2"
     assert imported.cell(2, 0).width.twips == 7200
     assert imported.rows[1].height.twips == 420
-    assert _table_xml_without_typography(imported.cell(1, 1).tables[0]) == nested_xml
+    nested = imported.cell(1, 1).tables[0]
+    _assert_legacy_table_looks(nested)
+    assert _table_xml_without_typography(nested) == nested_xml
     assert imported._tbl.tblPr.find(qn("w:tblpPr")) is None
 
 

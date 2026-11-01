@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useDialogBackdrop } from '../../hooks/useDialogBackdrop';
 
 /** Native modal lifecycle follows the existing service-settings and document-review dialogs. */
 export function FeedbackDialog({ title, children, className = '', visible = true, onCancel }: {
@@ -7,6 +8,7 @@ export function FeedbackDialog({ title, children, className = '', visible = true
   const ref = useRef<HTMLDialogElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
+  const backdrop = useDialogBackdrop(onCancel);
   useEffect(() => {
     if (!visible) return;
     const element = ref.current!;
@@ -21,8 +23,8 @@ export function FeedbackDialog({ title, children, className = '', visible = true
   useEffect(() => {
     if (visible) heading.current?.focus();
   }, [title, visible]);
-  return <dialog ref={ref} className={`feedback-dialog ${className}`} aria-labelledby={titleId}
-    onCancel={event => { event.preventDefault(); onCancel(); }}>
+  return <dialog ref={ref} className={`feedback-dialog ${className}`} aria-labelledby={titleId} {...backdrop}
+    onCancel={event => { event.preventDefault(); event.stopPropagation(); onCancel(); }}>
     <h2 ref={heading} tabIndex={-1} id={titleId} className="feedback-dialog-title">{title}</h2>{children}
   </dialog>;
 }

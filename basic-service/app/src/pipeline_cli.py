@@ -1025,14 +1025,8 @@ def run_pipeline(
 
     # ── 7. HTML 报告 ───────────────────────────────────────────
     try:
-        import zipfile, re
-        with zipfile.ZipFile(out_path) as z:
-            _xml = z.read("word/document.xml").decode("utf-8", errors="ignore")
-            _media = [n for n in z.namelist() if n.startswith("word/media/")]
-        result["meta"]["stats"].update({
-            "drawing_count": _xml.count("<w:drawing"),
-            "media_count": len(_media),
-        })
+        from jonhon_taskbook.image_stats import document_image_stats
+        result["meta"]["stats"].update(document_image_stats(out_path))
     except Exception:
         pass
 

@@ -7,6 +7,7 @@ import {
 } from '../../api/review';
 import { allElementIds, allParagraphs, elementPath, emptyReviewDraft, ReviewDocumentPane, type ReviewDraft } from './ReviewDocumentPane';
 import { ReviewOfficeEditor } from './ReviewOfficeEditor';
+import { useDialogBackdrop } from '../../hooks/useDialogBackdrop';
 import './taskbookReview.css';
 
 const sourceTabs = [{ role: 'tech', label: '需求文件' }, { role: 'template', label: '本次模板' }, { role: 'spec', label: '产品规范' }];
@@ -342,6 +343,7 @@ function ConfirmDialog({ title, message, cancel, confirm, disabled, onCancel, on
   title: string; message: string; cancel: string; confirm: string; disabled?: boolean; onCancel: () => void; onConfirm: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const backdrop = useDialogBackdrop(() => { if (!disabled) onCancel(); });
   useEffect(() => { const element = ref.current!; element.showModal(); return () => element.close(); }, []);
-  return <dialog ref={ref} className="review-confirm" aria-labelledby="review-confirm-title" onCancel={event => { event.preventDefault(); if (!disabled) onCancel(); }}><h2 id="review-confirm-title">{title}</h2><p>{message}</p><div><button type="button" disabled={disabled} onClick={onCancel}>{cancel}</button><button type="button" className="review-primary" disabled={disabled} onClick={onConfirm}>{confirm}</button></div></dialog>;
+  return <dialog ref={ref} className="review-confirm" aria-labelledby="review-confirm-title" {...backdrop} onCancel={event => { event.preventDefault(); event.stopPropagation(); if (!disabled) onCancel(); }}><h2 id="review-confirm-title">{title}</h2><p>{message}</p><div><button type="button" disabled={disabled} onClick={onCancel}>{cancel}</button><button type="button" className="review-primary" disabled={disabled} onClick={onConfirm}>{confirm}</button></div></dialog>;
 }

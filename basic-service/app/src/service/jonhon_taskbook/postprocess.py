@@ -1368,6 +1368,9 @@ def postprocess(
     try:
         with zipfile.ZipFile(doc_path, "r") as zin:
             names = zin.namelist()
+            # Keep the original logical style properties while processing every
+            # story and numbering part; styles.xml may be rewritten first.
+            styles_root = etree.fromstring(zin.read("word/styles.xml")) if "word/styles.xml" in names else None
             referenced_parts: set[str] = set()
             document_relationship_ids: set[str] = set()
             rel_ns = {"r": "http://schemas.openxmlformats.org/package/2006/relationships"}
@@ -1438,7 +1441,7 @@ def postprocess(
                     for key, value in privacy_stats.items():
                         stats[key] = stats.get(key, 0) + value
                     if name.startswith("word/") and name.endswith(".xml"):
-                        data, property_stats = normalize_properties_xml(data)
+                        data, property_stats = normalize_properties_xml(data, styles_root=styles_root)
                         for key, value in property_stats.items():
                             stats[key] = stats.get(key, 0) + value
                     zout.writestr(name, data)

@@ -8,6 +8,7 @@ import {
 import { ModelConnectionTest } from './ModelConnectionTest';
 import { StyledSelect } from './StyledSelect';
 import { PlatformAuthSettings } from './PlatformAuthSettings';
+import { useDialogBackdrop } from '../../hooks/useDialogBackdrop';
 import './serviceCredentials.css';
 
 interface Field { key: string; label: string; url?: boolean; secret?: boolean }
@@ -29,16 +30,17 @@ const historyHost = (value: string) => {
   try { return new URL(value).host; } catch { return value; }
 };
 
-export function ServiceCredentialsSettings({ onSaved }: { onSaved: () => Promise<void> }) {
+export function ServiceCredentialsSettings({ onSaved, triggerVariant = 'icon' }: { onSaved: () => Promise<void>; triggerVariant?: 'icon' | 'button' }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   return <>
-    <button ref={trigger} className="credentials-trigger" type="button" title="服务凭证设置"
+    <button ref={trigger} className={`credentials-trigger${triggerVariant === 'button' ? ' credentials-trigger-labeled' : ''}`} type="button" title="服务凭证设置"
       aria-label="服务凭证设置" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>
       <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path d="m9.5 3-.6 2.1-1.8 1-2.1-.5-2.5 4.3L4 11.5v2L2.5 15 5 19.3l2.1-.5 1.8 1 .6 2.2h5l.6-2.2 1.8-1 2.1.5 2.5-4.3-1.5-1.5v-2l1.5-1.6L19 5.6l-2.1.5-1.8-1-.6-2.1h-5Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
         <circle cx="12" cy="12.5" r="3" stroke="currentColor" strokeWidth="1.6" />
       </svg>
+      {triggerVariant === 'button' && <span>服务凭证设置</span>}
     </button>
     {open && createPortal(<CredentialsDialog onClose={() => {
       setOpen(false);
@@ -247,12 +249,13 @@ function CredentialsDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
     }
   }
 
-  return <dialog ref={dialog} className="credentials-dialog" aria-labelledby="credentials-title"
+  const backdrop = useDialogBackdrop(close);
+  return <dialog ref={dialog} className="credentials-dialog" aria-labelledby="credentials-title" {...backdrop}
     aria-describedby="credentials-scope" onKeyDown={keepDialogFocus}
-    onCancel={event => { event.preventDefault(); close(); }}>
+    onCancel={event => { event.preventDefault(); event.stopPropagation(); close(); }}>
     <form className="credentials-form" noValidate onSubmit={event => { event.preventDefault(); void save(); }}>
       <header className="credentials-header">
-        <div><h2 id="credentials-title">服务凭证设置</h2><p id="credentials-scope">对当前研制任务书平台生效，保存后自动刷新模型列表。</p></div>
+        <div><h2 id="credentials-title">服务凭证设置</h2><p id="credentials-scope">对当前平台生效，保存后自动刷新模型列表。</p></div>
         <button className="credentials-close" type="button" aria-label="关闭凭证设置" disabled={saving} onClick={close}>
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
         </button>

@@ -17,6 +17,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 from dataclasses import dataclass
 from functools import lru_cache
@@ -256,33 +257,64 @@ def _convert_legacy_doc(source: Path, destination: Path) -> str:
         word = opened = None
         pythoncom = None
         update_links = None
+        staging = None
+        com_initialized = False
         try:
             import pythoncom
             from win32com.client import DispatchEx
 
+            # Word COM does not reliably support the long paths used by scoped
+            # RD assets. Keep both Office-facing paths short and copy the final
+            # bytes back with Python, which supports those destination paths.
+            staging = tempfile.TemporaryDirectory(prefix="jtb-doc-")
+            short_source = Path(staging.name) / "input.doc"
+            short_destination = Path(staging.name) / "output.docx"
+            shutil.copy2(source, short_source)
             pythoncom.CoInitialize()
+            com_initialized = True
             word = DispatchEx("Word.Application")
             word.Visible = False
             word.DisplayAlerts = 0
             word.AutomationSecurity = 3
             update_links = word.Options.UpdateLinksAtOpen
             word.Options.UpdateLinksAtOpen = False
-            opened = word.Documents.Open(str(source), ReadOnly=True, AddToRecentFiles=False,
+            opened = word.Documents.Open(str(short_source), ReadOnly=True, AddToRecentFiles=False,
                                          ConfirmConversions=False, Visible=False)
-            opened.SaveAs2(str(destination), FileFormat=16)
+            if opened is None:
+                raise InputNormalizationError("Word 未返回已打开的旧版 DOC 文档。")
+            opened.SaveAs2(str(short_destination), FileFormat=16)
+            if not short_destination.is_file():
+                raise InputNormalizationError("Word 未输出转换后的 DOCX。")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(short_destination, destination)
             return "word_com"
         except Exception as exc:
             logger.exception("Word COM 旧版 DOC 转换失败，将检查本地 LibreOffice。")
             word_error = exc
         finally:
             if opened is not None:
-                opened.Close(False)
+                try:
+                    opened.Close(False)
+                except Exception:
+                    logger.warning("旧版 DOC 转换结束时关闭 Word 文档失败。", exc_info=True)
             if word is not None:
                 if update_links is not None:
-                    word.Options.UpdateLinksAtOpen = update_links
-                word.Quit()
-            if pythoncom is not None:
-                pythoncom.CoUninitialize()
+                    try:
+                        word.Options.UpdateLinksAtOpen = update_links
+                    except Exception:
+                        logger.warning("旧版 DOC 转换结束时恢复 Word 选项失败。", exc_info=True)
+                try:
+                    word.Quit()
+                except Exception:
+                    logger.warning("旧版 DOC 转换结束时退出 Word 失败。", exc_info=True)
+            if com_initialized:
+                try:
+                    pythoncom.CoUninitialize()
+                finally:
+                    if staging is not None:
+                        staging.cleanup()
+            elif staging is not None:
+                staging.cleanup()
     executable = shutil.which("soffice") or shutil.which("libreoffice")
     if executable:
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0

@@ -74,6 +74,52 @@ class InlineStandardsAndIdentityTests(unittest.TestCase):
             self.assertFalse(audit["passed"])
             self.assertNotIn("《tech》", "".join(p.text for p in output.paragraphs))
 
+    def test_split_source_title_is_used_in_compilation_basis_after_conversion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tech_path = Path(tmp) / "tech.docx"
+            tech = Document()
+            tech.add_paragraph("YLZJ-BG-469产品规格书")
+            tech.save(tech_path)
+            spec_path = Path(tmp) / "normalized.docx"
+            spec = Document()
+            spec.add_paragraph("YLZJ-BG-363/452/542液冷组件", style="Title")
+            spec.add_paragraph("")
+            spec.add_paragraph("产品规范", style="Title")
+            spec.add_paragraph("本规范规定了液冷组件的技术要求、试验方法。")
+            spec.save(spec_path)
+            output = Document()
+            output.add_heading("任务书编制依据", level=1)
+            _apply_compilation_basis(output, str(tech_path), str(spec_path), str(Path(tmp) / "out.docx"))
+            text = "".join(p.text for p in output.paragraphs)
+            self.assertIn("《YLZJ-BG-363/452/542液冷组件产品规范》", text)
+            self.assertNotIn("normalized", text)
+
+    def test_normalization_or_blob_names_cannot_supply_a_missing_title(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for stem in ("normalized", "1a58d9f2b4794742ae035d98b9bb500c"):
+                path = Path(tmp) / (stem + ".docx")
+                doc = Document()
+                doc.add_paragraph("1.2 产品应满足技术要求，且具备良好的电气性能。")
+                doc.add_paragraph("产品规范")
+                doc.save(path)
+                self.assertEqual("", read_document_identity(path, "spec")["title"])
+
+    def test_split_title_requires_adjacent_title_lines_not_codes_or_chapters(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for preceding in ("Q/21EJ21930-2024", "1 引用文件", "某科技有限公司"):
+                path = Path(tmp) / "normalized.docx"
+                doc = Document()
+                doc.add_paragraph(preceding, style="Title")
+                doc.add_paragraph("产品规范", style="Title")
+                doc.save(path)
+                self.assertEqual("", read_document_identity(path, "spec")["title"])
+            doc = Document()
+            doc.add_paragraph("冷板组件", style="Title")
+            doc.add_table(rows=1, cols=1).cell(0, 0).text = ""
+            doc.add_paragraph("产品规范", style="Title")
+            doc.save(path)
+            self.assertEqual("", read_document_identity(path, "spec")["title"])
+
 
 if __name__ == "__main__":
     unittest.main()

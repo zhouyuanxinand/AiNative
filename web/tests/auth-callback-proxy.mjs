@@ -21,7 +21,7 @@ let vite;
 try {
   vite = await createServer({
     root: fileURLToPath(new URL('..', import.meta.url)),
-    logLevel: 'error', server: { host: '127.0.0.1', port: 0 },
+    logLevel: 'error', server: { host: '127.0.0.1', port: Number(process.env.JTB_TEST_VITE_PORT || 0) },
   });
   for (const proxy of Object.values(vite.config.server.proxy)) {
     proxy.target = `http://127.0.0.1:${backend.address().port}`;

@@ -49,19 +49,23 @@ agent-develop-task-doc-service/
 ## 环境配置
 
 `.env.example` 是无密钥模板。按需另存为 `.env` 并填写凭据；仓库不提交真实密钥。
-Compose 会读取同目录 `.env`，所有值仍可被环境变量覆盖。
+Compose 和直接启动的 Python 服务均读取服务根目录 `.env`，所有值仍可被进程环境变量覆盖。
 
 常用变量：`APP_ENV`、`JTB_HOST`、`JTB_PORT`、`CORS_ORIGINS`、
 `JTB_MAX_UPLOAD_MB`、`JTB_MAX_CONCURRENT_JOBS`、`JTB_ALLOW_LOCAL_PATHS`、
 以及 LLM 凭据 `MODEL_*` / `AI_*` / `JTB_LLM_*` / `AZURE_*`（四选一）。
 
-左侧栏底部的齿轮按钮打开“服务凭证设置”。模型设置支持神州问学的 Base URL、
+研发平台左侧栏底部的齿轮进入“系统管理”，其中“模型服务”打开“服务凭证设置”。模型设置支持神州问学的 Base URL、
 App ID、API Key 和租户 ID，保存后立即刷新模型目录；密钥默认隐藏，可恢复部署默认凭证。
 页面配置保存在 `basic-service/app/runtime/service_credentials.sqlite3`，重启后保留，
 可用 `JTB_SERVICE_CREDENTIALS_DB` 指定保存位置。容器部署时持久化 runtime 目录。
 
-页面保存的模型凭据优先于部署默认值。部署默认值仍按“进程环境 > 本项目 `.env` >
-`JTB_SHARED_ENV_FILE` 指向的共享 `.env`”读取。其他模型供应方继续使用各自部署配置。
+页面保存的模型凭据优先于部署默认值。部署默认值按“进程环境 > 旧路径
+`basic-service/app/src/service/.env` > 服务根目录 `.env` > `JTB_SHARED_ENV_FILE`
+指向的共享文件”读取。共享文件的相对路径以声明它的 `.env` 所在目录为基准；
+从进程环境指定相对路径时沿用旧路径目录。修改 `.env` 后需重启后端；页面保存或切换凭证立即生效。
+新工作树不会自动复制私有 `.env` 和 runtime 数据，须显式配置或迁移，否则设置字段可能为空。
+其他模型供应方继续使用各自部署配置。
 凭据不写入浏览器本地存储、公开模型目录、日志或生成文档。
 
 语义分类与规划的 JSON 请求首轮输出额度为 16384 token，发生截断时提升到配置上限重试一次，

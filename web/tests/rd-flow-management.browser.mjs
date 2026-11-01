@@ -1,0 +1,165 @@
+/** Flow directory + canvas behavior. Draft mutations are fixtures; never run a generation. */
+import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined });
+const base = process.env.TEST_BASE_URL || 'http://127.0.0.1:18370';
+const output = process.env.SCREENSHOT_DIR;
+if (output) await mkdir(output, { recursive: true });
+const errors = [];
+const snap = async (page, name) => { if (output) await page.screenshot({ path: join(output, name) }); };
+try {
+  const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } });
+  page.setDefaultTimeout(15000); page.on('pageerror', error => errors.push(error.message));
+  await page.route('**/api/**', route => route.request().method() === 'GET' ? route.continue() : route.abort());
+  await page.goto(`${base}/?rd_view=flows`);
+  const canvas = page.getByRole('region', { name: '工作包节点预览', exact: true });
+  await canvas.locator('.rd-canvas-node').first().waitFor();
+  assert.equal(await canvas.locator('.rd-canvas-node').count(), 5);
+  assert.equal(await canvas.locator('.rd-canvas-edges > path').count(), 4);
+  await canvas.getByRole('button', { name: '生成研制任务书，模板节点', exact: true }).click();
+  assert.equal(await page.locator('.rd-flow-node-inspector h4').innerText(), '生成研制任务书');
+  const beforeZoom = await canvas.locator('.rd-canvas-scale').innerText();
+  await canvas.getByRole('button', { name: '放大画布', exact: true }).click();
+  assert.notEqual(await canvas.locator('.rd-canvas-scale').innerText(), beforeZoom);
+  const beforePan = await canvas.locator('.rd-canvas-plane').getAttribute('style');
+  await canvas.locator('.rd-canvas-viewport').focus(); await page.keyboard.press('ArrowLeft');
+  assert.notEqual(await canvas.locator('.rd-canvas-plane').getAttribute('style'), beforePan);
+  const bounds = await canvas.locator('.rd-canvas-viewport').boundingBox();
+  const beforeDrag = await canvas.locator('.rd-canvas-plane').getAttribute('style');
+  await page.mouse.move(bounds.x + 15, bounds.y + 15); await page.mouse.down(); await page.mouse.move(bounds.x + 70, bounds.y + 55, { steps: 4 }); await page.mouse.up();
+  assert.notEqual(await canvas.locator('.rd-canvas-plane').getAttribute('style'), beforeDrag);
+  await canvas.getByRole('button', { name: '适应画布', exact: true }).click();
+  await canvas.getByRole('button', { name: '列表', exact: true }).click();
+  assert.equal(await canvas.locator('.rd-canvas-list li').count(), 5);
+  await canvas.getByRole('button', { name: '画布', exact: true }).click();
+  await snap(page, '01-流程模板画布.png');
+  await page.getByRole('button', { name: '研发流程 2', exact: true }).click();
+  await page.getByRole('region', { name: '研发路径预览', exact: true }).waitFor();
+  assert.equal(await page.locator('.rd-canvas-node').count(), 6);
+  await snap(page, '02-研发路径画布.png');
+  const resourcesTab = page.getByRole('tab', { name: '智能体与 Skill', exact: true });
+  await resourcesTab.focus(); await page.keyboard.press('ArrowRight');
+  assert.equal(await page.evaluate(() => document.activeElement.textContent), '动作模板');
+  await page.keyboard.press('Enter');
+  await page.locator('.rd-flow-resource-card').first().waitFor();
+  assert.equal(await page.locator('.rd-flow-resource-card').count(), 6);
+  await page.getByLabel('搜索动作模板', { exact: true }).fill('不存在的动作');
+  await page.getByText('没有匹配的记录，请调整关键词。', { exact: true }).waitFor();
+  await page.getByRole('button', { name: '清空搜索', exact: true }).click();
+  assert.equal(await page.locator('.rd-flow-resource-card').count(), 6);
+  await page.locator('.rd-flow-resource-card').filter({ hasText: '生成研制任务书' }).locator('summary').click();
+  await snap(page, '03-动作模板目录.png');
+  await resourcesTab.click();
+  await page.locator('.rd-flow-resource-card').first().waitFor();
+  await snap(page, '04-智能体与Skill目录.png');
+  await page.getByRole('tab', { name: '报告模板', exact: true }).click();
+  await page.locator('.rd-flow-resource-card').first().waitFor();
+  const templateLink = await page.getByRole('link', { name: '下载当前模板 ↗' }).first().getAttribute('href');
+  assert(templateLink.startsWith('/api/templates/'));
+  await snap(page, '05-报告模板目录.png');
+  if (await page.getByRole('button', { name: '下一页', exact: true }).count()) {
+    await page.getByRole('button', { name: '下一页', exact: true }).click();
+    assert(await page.locator('.rd-flow-resource-card').count() > 0);
+  }
+  await page.getByRole('tab', { name: '流程模板', exact: true }).click();
+  await page.getByRole('button', { name: '工作包模板 4', exact: true }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await canvas.scrollIntoViewIfNeeded();
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+  const scroll = page.locator('.rd-application-shell');
+  await scroll.evaluate(element => { element.scrollTop = element.scrollHeight; });
+  await page.getByRole('button', { name: '进入项目编排 →' }).scrollIntoViewIfNeeded();
+  await snap(page, '06-窄屏底部可浏览.png');
+  await canvas.getByRole('button', { name: '列表', exact: true }).click();
+  await canvas.scrollIntoViewIfNeeded(); await snap(page, '07-窄屏节点列表.png');
+  const catalog = await (await page.request.get(`${base}/api/rd/catalog`)).json();
+  await page.close();
+
+  const definition = catalog.workpackage_definitions.find(item => item.id === 'taskbook');
+  const workpackage = { id: 'canvas-package', definition_id: 'taskbook', title: '画布交互验证工作包', stage: 'design', status: 'draft', plan_revision: 1, nodes: structuredClone(definition.nodes), artifacts: [], obligations: [], blocked_reasons: [] };
+  let project = { id: 'canvas-project', title: '画布交互验证（测试数据）', version: 1, owner_id: 'test', members: [], events: [], cases: [{ id: 'canvas-case', title: '液冷管路编排验证', scenario_id: 'taskbook', stage: 'design', status: 'active', input_revision: 1, context: {}, product_route: null, composition_route: null, sources: [], requirements: [], decisions: [], workpackages: [workpackage] }] };
+  const fixture = await browser.newPage({ viewport: { width: 1600, height: 1100 } });
+  fixture.setDefaultTimeout(15000); fixture.on('pageerror', error => errors.push(error.message));
+  let failSave = true, failResources = true; const commands = [];
+  await fixture.route('**/api/**', async route => {
+    const request = route.request(), path = new URL(request.url()).pathname;
+    if (!path.startsWith('/api/')) return route.continue();
+    if (path === '/api/current-user') return route.fulfill({ json: { auth_enabled: false, authenticated: false, user: null } });
+    if (path === '/api/rd/catalog') return route.fulfill({ json: catalog });
+    if (path === '/api/rd/projects') return route.fulfill({ json: { projects: [project] } });
+    if (path === '/api/rd/projects/canvas-project') return route.fulfill({ json: project });
+    if (path === '/api/models') return route.fulfill({ json: { success: true, models: [] } });
+    if (path.endsWith('/assistant')) return route.fulfill({ json: { messages: [], suggestions: [], context: { stage: 'design', project_version: project.version } } });
+    if (path.endsWith('/workspace/resources')) {
+      if (failResources) { failResources = false; return route.fulfill({ status: 503, json: { error: '测试资源目录暂不可用' } }); }
+      return route.fulfill({ json: { resources: [{ id: 'unbound', kind: 'agent', name: '未绑定智能体（测试数据）', description: '只验证目录状态。', version: 1, status: 'published', executable: false, configuration: {} }] } });
+    }
+    if (path.endsWith('/commands')) {
+      const body = request.postDataJSON(); commands.push({ ...body, key: request.headers()['idempotency-key'] });
+      assert.equal(body.data.case_id, 'canvas-case'); assert.equal(body.expected_version, project.version);
+      if (body.command === 'save_plan') {
+        if (failSave) { failSave = false; return route.fulfill({ status: 503, json: { error: '测试计划保存失败，修改仍保留' } }); }
+        workpackage.nodes = body.data.nodes; workpackage.plan_revision += 1;
+      } else if (body.command === 'submit_workpackage') { workpackage.status = 'submitted'; }
+      else throw new Error(`Unexpected mutation ${body.command}`);
+      project.version += 1; return route.fulfill({ json: project });
+    }
+    return route.fulfill({ json: path.endsWith('/session') ? { ok: true } : {} });
+  });
+  await fixture.goto(`${base}/?project=canvas-project&case=canvas-case`);
+  await fixture.getByRole('button', { name: '检查计划并确认提交', exact: true }).click().catch(async error => { console.error({ errors, body: await fixture.locator('body').innerText() }); throw error; });
+  const panel = fixture.getByRole('region', { name: '工作包计划与执行', exact: true });
+  await panel.waitFor();
+  const canvasArea = await panel.locator('.rd-workpackage-canvas-main').boundingBox();
+  const detailsArea = await panel.locator('.rd-node-detail').boundingBox();
+  assert(canvasArea.width > detailsArea.width, 'desktop canvas must own the larger column, not the old node sidebar');
+  await panel.getByRole('button', { name: '选择或规划受控模板，草稿', exact: true }).click();
+  await panel.getByLabel('增加可选节点', { exact: true }).click();
+  await fixture.getByRole('option', { name: '资料一致性检查', exact: true }).click();
+  await panel.getByRole('button', { name: '加入执行计划', exact: true }).click();
+  assert.equal(await panel.locator('.rd-canvas-node').count(), 6);
+  assert.equal(await panel.getByRole('button', { name: '确认提交', exact: true }).isDisabled(), true);
+  await panel.getByRole('button', { name: '移除此可选节点', exact: true }).click();
+  assert.equal(await panel.locator('.rd-canvas-node').count(), 5);
+  await panel.getByRole('button', { name: '选择或规划受控模板，草稿', exact: true }).click();
+  await panel.getByLabel('增加可选节点', { exact: true }).click();
+  await fixture.getByRole('option', { name: '资料一致性检查', exact: true }).click();
+  await panel.getByRole('button', { name: '加入执行计划', exact: true }).click();
+  await panel.getByRole('button', { name: '保存计划', exact: true }).click();
+  await fixture.getByRole('alert').filter({ hasText: '测试计划保存失败' }).first().waitFor();
+  assert.equal(await panel.locator('.rd-canvas-node').count(), 6);
+  await panel.getByRole('button', { name: '保存计划', exact: true }).click();
+  await fixture.waitForFunction(() => !document.querySelector('.rd-plan-actions button.primary')?.disabled);
+  assert.equal(commands[0].key, commands[1].key, 'retry keeps idempotency key');
+  assert.equal(workpackage.nodes.length, 6);
+  const added = workpackage.nodes.find(item => item.action_id === 'consistency');
+  assert.deepEqual(added.depends_on, ['template_plan']);
+  assert.deepEqual(workpackage.nodes.find(item => item.id === 'content_completion').depends_on, [added.id]);
+  assert(!workpackage.nodes.some(item => 'position' in item), 'geometry must not alter execution contract');
+  await panel.locator('.rd-workpackage-canvas-layout').scrollIntoViewIfNeeded(); await snap(fixture, '08-项目工作包编排-测试数据.png');
+  await fixture.getByRole('button', { name: '项目流程', exact: true }).click();
+  const preview = fixture.getByRole('region', { name: '工作包执行图', exact: true });
+  await preview.waitFor();
+  assert.equal(await preview.locator('.rd-canvas-node').count(), 6);
+  await fixture.getByRole('button', { name: '编辑工作包计划 →', exact: true }).click();
+  await panel.waitFor();
+  await fixture.setViewportSize({ width: 390, height: 844 });
+  await panel.locator('.rd-add-node').scrollIntoViewIfNeeded();
+  assert.equal(await fixture.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+  await snap(fixture, '09-窄屏编排操作-测试数据.png');
+  await fixture.setViewportSize({ width: 1600, height: 1100 });
+  await panel.getByRole('button', { name: '确认提交', exact: true }).click();
+  await fixture.getByRole('dialog').getByRole('button', { name: '固定快照并提交', exact: true }).click();
+  await panel.getByRole('region', { name: '执行记录画布', exact: true }).waitFor();
+  assert.equal(await panel.getByRole('button', { name: '保存计划', exact: true }).count(), 0);
+  assert.equal(await panel.getByLabel('增加可选节点', { exact: true }).count(), 0);
+  assert.equal(commands.filter(item => item.command === 'submit_workpackage').length, 1);
+  await fixture.goto(`${base}/?rd_view=flows&flow_tab=resources`);
+  await fixture.getByRole('alert').filter({ hasText: '测试资源目录暂不可用' }).waitFor();
+  await fixture.getByRole('button', { name: '重试读取', exact: true }).click();
+  await fixture.getByText('仅定义 · 未绑定执行能力', { exact: true }).waitFor();
+  assert.deepEqual(errors, []);
+  console.log('PASS: 4 catalog categories, real graph edges, zoom/pan/keyboard/list, search, paging, narrow scroll, optional add/remove, failed-save retry, correct dependency rewiring and submitted read-only state. No real generation or project mutations.');
+} finally { await browser.close(); }

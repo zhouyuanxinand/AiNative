@@ -1,0 +1,4 @@
+.xiaohang-sprite{display:block;width:124px;height:124px;flex-shrink:0;pointer-events:auto;background-repeat:no-repeat;filter:drop-shadow(0 3px 2px rgb(23 42 66 / 10%))}
+.xiaohang-sprite>canvas{display:block;width:100%;height:100%;pointer-events:none}
+.xiaohang-sprite>img{display:block;width:100%!important;height:100%!important;max-width:none;object-fit:contain;filter:none!important;pointer-events:none;user-select:none;-webkit-user-drag:none}
+@media(max-width:600px){.xiaohang-sprite{width:112px;height:112px}}

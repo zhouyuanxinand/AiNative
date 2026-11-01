@@ -10,6 +10,10 @@ from pathlib import Path
 from lxml import etree
 from datetime import datetime
 from html import escape
+if __package__:
+    from .image_stats import count_image_references
+else:  # Preserve the documented standalone report command.
+    from image_stats import count_image_references
 
 W  = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _W = f"{{{W}}}"
@@ -28,7 +32,7 @@ def _qa_scan(docx_path: str) -> dict:
     hl_count = len(root.findall(f".//{_W}highlight"))
     para_count = len(root.findall(f".//{_W}p"))
     tbl_count  = len(root.findall(f".//{_W}tbl"))
-    img_count  = len([e for e in root.iter() if e.tag.endswith("}blip")])
+    img_count  = count_image_references(root)
 
     headings = []
     for p in root.findall(f".//{_W}p"):
@@ -222,7 +226,8 @@ def _review_reference_panel(ledger: dict | None) -> str:
     rows = []
     for item in references:
         source = escape(str(item.get("source_file") or ledger.get("source_file", "")))
-        kind = {"table": "原始数据表", "image": "历史测试图片"}.get(item.get("block_type"), "测试资料")
+        kind = ("来源签批与修订记录" if item.get("rule_ref") == "source_administrative_metadata_review_only"
+                else {"table": "原始数据表", "image": "历史测试图片"}.get(item.get("block_type"), "测试资料"))
         position = item.get("source_body_index", -1)
         location = f"正文对象第 {position + 1} 项" if isinstance(position, int) and position >= 0 else "位置未记录"
         ids = escape(", ".join(str(sid) for sid in item.get("semantic_source_ids", [])))
@@ -238,8 +243,10 @@ def _review_reference_panel(ledger: dict | None) -> str:
             + (f'<pre>{raw}</pre>' if raw else '')
             + '</details>'
         )
+    title = ("来源资料（仅供审阅）" if any(item.get("rule_ref") == "source_administrative_metadata_review_only"
+                                       for item in references) else "历史测试资料（仅供审阅）")
     return (
-        '<div class="section"><h2>历史测试资料（仅供审阅）</h2>'
+        f'<div class="section"><h2>{title}</h2>'
         f'<p>共 {len(references)} 项，不计入正文覆盖率。保留来源位置及原始证据，供审阅时对照。</p>'
         + ''.join(rows) + '</div>'
     )

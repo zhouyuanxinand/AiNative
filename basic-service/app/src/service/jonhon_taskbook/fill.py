@@ -34,7 +34,7 @@ from jonhon_taskbook.renderer.table_style_engine import apply_table_style
 from jonhon_taskbook.renderer.paragraph_style_engine import normalize_copied_body_paragraph
 from jonhon_taskbook.source_scope import review_reference_source_ids
 from jonhon_taskbook.environmental_prose import (
-    environmental_paragraph, project_environmental_evidence,
+    environmental_paragraph, project_environmental_evidence, _source_character_alignments,
 )
 try:
     from jonhon_taskbook.template_scanner import (
@@ -140,7 +140,105 @@ def _compact_basis_reference(tech_basis: str, spec_basis: str) -> str:
         parts.append(label)
     return "；".join(parts)
 
-def _fill_indicator_table(tpl, ind_rows: list, excluded_names: list[str] | None = None) -> int:
+def _indicator_source_typography(document) -> list[tuple[str, list[str | None]]]:
+    """Read explicit source character positions; never infer powers from digits."""
+    if document is None:
+        return []
+    fragments = []
+    body = document.element.body
+    for element in [*body.findall(qn("w:p")), *body.iter(qn("w:tc"))]:
+        text, alignments = _source_character_alignments(element, cell=element.tag == qn("w:tc"))
+        positions = [index for index, character in enumerate(text) if not character.isspace()]
+        compact = "".join(text[index] for index in positions)
+        styles = [alignments[index] for index in positions]
+        # An isolated footnote number is not evidence for formatting another
+        # number. Require an expression with baseline and raised/lowered text.
+        # Baseline occurrences remain candidates too: identical text with
+        # conflicting source typography is ambiguous, not uniquely superscript.
+        if any(style not in {"superscript", "subscript"} for style in styles):
+            fragments.append((compact, styles))
+    return fragments
+
+
+def _indicator_character_alignments(text: str, fragments) -> list[str | None]:
+    """Transfer source typography only across an exact, whitespace-tolerant match."""
+    positions = [index for index, character in enumerate(text) if not character.isspace()]
+    compact = "".join(text[index] for index in positions)
+    candidates: dict[int, tuple[int, set]] = {}
+    for source, styles in fragments:
+        if not compact or not source:
+            continue
+        if compact in source:
+            needle, haystack, source_is_haystack = compact, source, True
+        elif source in compact:
+            needle, haystack, source_is_haystack = source, compact, False
+        else:
+            continue
+        offset = haystack.find(needle)
+        while offset >= 0:
+            end = offset + len(needle)
+            token_char = lambda character: character.isascii() and (character.isalnum() or character in "_.")
+            within_token = (
+                offset > 0 and token_char(haystack[offset - 1]) and token_char(needle[0])
+            ) or (end < len(haystack) and token_char(needle[-1]) and token_char(haystack[end]))
+            matched_styles = styles[offset:end] if source_is_haystack else styles
+            if within_token or all(style in {"superscript", "subscript"} for style in matched_styles):
+                offset = haystack.find(needle, offset + 1)
+                continue
+            for index in range(len(needle)):
+                output_index = index if source_is_haystack else offset + index
+                source_index = offset + index if source_is_haystack else index
+                score, choices = candidates.get(output_index, (0, set()))
+                if len(needle) > score:
+                    candidates[output_index] = (len(needle), {styles[source_index]})
+                elif len(needle) == score:
+                    choices.add(styles[source_index])
+            offset = haystack.find(needle, offset + 1)
+    result: list[str | None] = [None] * len(text)
+    for index, (_, choices) in candidates.items():
+        if len(choices) == 1:
+            result[positions[index]] = next(iter(choices))
+    return result
+
+
+def _apply_indicator_typography(paragraph, alignments: list[str | None]) -> None:
+    """Split freshly written text runs while retaining template font and marker color."""
+    if not any(value in {"superscript", "subscript"} for value in alignments):
+        return
+    cursor = 0
+    for run in list(paragraph.findall(qn("w:r"))):
+        text = "".join(node.text or "" for node in run.findall(qn("w:t")))
+        styles = alignments[cursor:cursor + len(text)]
+        cursor += len(text)
+        start = 0
+        while start < len(text):
+            end = start + 1
+            while end < len(text) and styles[end] == styles[start]:
+                end += 1
+            replacement = copy.deepcopy(run)
+            for node in list(replacement.findall(qn("w:t"))):
+                replacement.remove(node)
+            properties = replacement.find(qn("w:rPr"))
+            if properties is None:
+                properties = OxmlElement("w:rPr")
+                replacement.insert(0, properties)
+            for node in list(properties.findall(qn("w:vertAlign"))):
+                properties.remove(node)
+            if styles[start] in {"superscript", "subscript"}:
+                vertical = OxmlElement("w:vertAlign")
+                vertical.set(qn("w:val"), styles[start])
+                properties.append(vertical)
+            value = OxmlElement("w:t")
+            value.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+            value.text = text[start:end]
+            replacement.append(value)
+            run.addprevious(replacement)
+            start = end
+        paragraph.remove(run)
+
+
+def _fill_indicator_table(tpl, ind_rows: list, excluded_names: list[str] | None = None,
+                          *, source_documents: dict | None = None) -> int:
     """
     找到模板指标表（4列或5列），按名称匹配行填充单元格。
     列结构以模板为准，不再自动插入“标准要求”列。
@@ -172,6 +270,10 @@ def _fill_indicator_table(tpl, ind_rows: list, excluded_names: list[str] | None 
             break
     if target_tbl is None:
         return 0
+    source_formats = {
+        role: _indicator_source_typography(document)
+        for role, document in (source_documents or {}).items()
+    }
 
     def _raw_tc_text(tc_el) -> str:
         return "".join(
@@ -249,7 +351,7 @@ def _fill_indicator_table(tpl, ind_rows: list, excluded_names: list[str] | None 
             real.append(tc)
         return real
 
-    def _write_tc(tc_el, text: str):
+    def _write_tc(tc_el, text: str, source_role: str = ""):
         """清空 tc 并写入文本，同时继承模板单元格的段落/字体格式。"""
         old_paragraphs = tc_el.findall(f"{_W}p")
         sample_ppr = None
@@ -294,6 +396,10 @@ def _fill_indicator_table(tpl, ind_rows: list, excluded_names: list[str] | None 
                     value_text = etree.SubElement(value_run, f"{_W}t")
                     value_text.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
                     value_text.text = fragment
+        if source_role:
+            _apply_indicator_typography(
+                p_el, _indicator_character_alignments(text, source_formats.get(source_role, []))
+            )
 
     def _auto_height(tr_el):
         """指标数据行自适应，且不得继承模板占位行的重复表头标记。"""
@@ -427,23 +533,29 @@ def _fill_indicator_table(tpl, ind_rows: list, excluded_names: list[str] | None 
 
         tcs = _tc_list(tr)
         display_name = template_labels.get(canonical_name, str(name))
+        # Adopted values are selected from one of the existing source values.
+        # Keep user/spec provenance distinct even if a similarly named metric
+        # elsewhere in the other document has different scientific notation.
+        adopted_role = "tech" if adopted_val and adopted_val == user_val else ""
+        if std_val and (adopted_val == std_val or adopted_val == "【人工填写】\n规范候选：" + std_val):
+            adopted_role = adopted_role or "spec"
         if len(tcs) >= 5:
             # 五列：项目|用户要求|标准要求|拟采用|依据
             _write_tc(tcs[0], display_name)
-            _write_tc(tcs[1], user_val or "")
-            _write_tc(tcs[2], std_val or "")
-            _write_tc(tcs[3], adopted_val or "")
+            _write_tc(tcs[1], user_val or "", "tech")
+            _write_tc(tcs[2], std_val or "", "spec")
+            _write_tc(tcs[3], adopted_val or "", adopted_role)
             if basis: _write_tc(tcs[4], basis)
         elif len(tcs) == 4:
             # 四列回退：项目|用户要求|拟采用|依据（无标准列）
             _write_tc(tcs[0], display_name)
-            _write_tc(tcs[1], user_val or "")
-            _write_tc(tcs[2], adopted_val or "")
+            _write_tc(tcs[1], user_val or "", "tech")
+            _write_tc(tcs[2], adopted_val or "", adopted_role)
             if basis: _write_tc(tcs[3], basis)
         else:
             if len(tcs) >= 1: _write_tc(tcs[0], display_name)
-            if len(tcs) >= 2: _write_tc(tcs[1], user_val or "")
-            if len(tcs) >= 3: _write_tc(tcs[2], adopted_val or "")
+            if len(tcs) >= 2: _write_tc(tcs[1], user_val or "", "tech")
+            if len(tcs) >= 3: _write_tc(tcs[2], adopted_val or "", adopted_role)
         if current_cat:
             cat_last[current_cat] = tr
         written += 1
@@ -4754,6 +4866,7 @@ def fill(
                             tpl,
                             ind_rows,
                             cfg.get("indicator_excluded_names") or [],
+                            source_documents={"tech": tech, "spec": spec},
                         )
                     if ind_rows:
                         filled[sid] = (len(ind_rows), 0, 0)

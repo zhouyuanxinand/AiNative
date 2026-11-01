@@ -83,15 +83,16 @@ def test_direct_callback_checks_platform_then_sets_namespaced_session_cookies(re
     assert len(calls) == 1
 
 
-def test_complete_application_cookies_are_used_without_platform_revalidation(reference_client):
+def test_complete_application_cookies_reuse_only_a_verified_server_session(reference_client):
     client, calls, upstream = reference_client
-    upstream["error"] = auth.PlatformUnavailableError()
     session_cookies(client, username="已有会话姓名")
+    assert client.get("/api/protected").json()["user"]["name"] == "平台姓名"
+    upstream["error"] = auth.PlatformUnavailableError()
     response = client.get("/api/protected")
     assert response.status_code == 200
-    assert response.json()["user"]["name"] == "已有会话姓名"
+    assert response.json()["user"]["name"] == "平台姓名"
     assert response.json()["user"]["userid"] == "synthetic-user"
-    assert not calls
+    assert calls == [("synthetic-user", "synthetic-token", 127)]
 
 
 @pytest.mark.parametrize("username", ["已有会话姓名", None])
@@ -160,8 +161,9 @@ def test_unusable_different_user_callback_clears_existing_session(reference_clie
 ])
 def test_same_or_absent_callback_user_preserves_existing_session(reference_client, query, status):
     client, calls, upstream = reference_client
-    upstream["error"] = auth.PlatformUnavailableError()
     session_cookies(client, username="已有会话姓名")
+    assert client.get("/api/protected").status_code == 200
+    upstream["error"] = auth.PlatformUnavailableError()
     response = client.get(f"/{query}")
     assert response.status_code == status
     if status == 307:
@@ -169,8 +171,8 @@ def test_same_or_absent_callback_user_preserves_existing_session(reference_clien
     assert client.cookies.get("jtb_sv_token") == "synthetic-token"
     identity = client.get("/api/current-user").json()
     assert identity["user"]["userid"] == "synthetic-user"
-    assert identity["user"]["display_name"] == "已有会话姓名"
-    assert not calls
+    assert identity["user"]["display_name"] == "平台姓名"
+    assert calls == [("synthetic-user", "synthetic-token", 127)]
 
 
 @pytest.mark.parametrize("path", ["/api/protected", "/api/current-user"])
@@ -185,30 +187,29 @@ def test_api_callback_for_different_user_rejects_and_clears_existing_session(ref
     assert client.get("/api/current-user").json()["authenticated"] is False
 
 
-def test_missing_name_is_backfilled_after_serving_the_existing_session(reference_client):
+def test_missing_name_is_verified_before_serving_the_existing_session(reference_client):
     client, calls, _ = reference_client
     session_cookies(client, username=None)
     response = client.get("/api/protected")
     assert response.status_code == 200
-    assert response.json()["user"]["name"] == "synthetic-user"
+    assert response.json()["user"]["name"] == "平台姓名"
     assert client.cookies.get("jtb_sv_username") == quote("平台姓名")
     assert calls == [("synthetic-user", "synthetic-token", 127)]
     assert client.get("/api/protected").json()["user"]["name"] == "平台姓名"
     assert len(calls) == 1
 
 
-def test_name_backfill_failure_keeps_session_and_cools_down(reference_client, monkeypatch):
+def test_verification_failure_keeps_retry_credentials_but_does_not_authorize(reference_client):
     client, calls, upstream = reference_client
-    now = [100.0]
-    monkeypatch.setattr(auth.time, "time", lambda: now[0])
     upstream["error"] = auth.PlatformUnavailableError()
     session_cookies(client, username=None)
-    assert client.get("/api/protected").status_code == 200
-    assert client.get("/api/protected").status_code == 200
-    assert len(calls) == 1
-    now[0] = 161.0
-    assert client.get("/api/protected").status_code == 200
+    assert client.get("/api/protected").status_code == 503
+    assert client.get("/api/protected").status_code == 503
+    assert client.cookies.get("jtb_sv_token") == "synthetic-token"
     assert len(calls) == 2
+    upstream["error"] = None
+    assert client.get("/api/protected").status_code == 200
+    assert len(calls) == 3
 
 
 @pytest.mark.parametrize("prefix", ["sv", "p02_sv"])

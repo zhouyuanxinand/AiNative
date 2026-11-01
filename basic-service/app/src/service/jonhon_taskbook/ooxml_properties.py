@@ -19,6 +19,7 @@ import re
 from lxml import etree
 
 from .ooxml_style_repair import normalize_template_styles
+from .ooxml_word2007 import normalize_word2007_layout
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _W = f"{{{W}}}"
@@ -114,6 +115,10 @@ _PROPERTY_SEQUENCES = {
     "tcBorders": "top left start bottom right end insideH insideV tl2br tr2bl",
     "tblCellMar": "top left start bottom right end",
     "tcMar": "top left start bottom right end",
+    "lvl": (
+        "start numFmt lvlRestart pStyle isLgl suff lvlText lvlPicBulletId "
+        "legacy lvlJc pPr rPr"
+    ),
 }
 _PROPERTY_ORDER = {
     _W + parent: {_W + child: index for index, child in enumerate(sequence.split())}
@@ -148,7 +153,7 @@ def normalize_property_order(root: etree._Element) -> int:
     return changed
 
 
-def normalize_properties(root: etree._Element) -> dict[str, int]:
+def normalize_properties(root: etree._Element, *, styles_root=None) -> dict[str, int]:
     """Correct invalid zero run formatting and order the resulting properties.
 
     A zero character scale is invalid and collapses text: use normal 100%
@@ -163,6 +168,7 @@ def normalize_properties(root: etree._Element) -> dict[str, int]:
         "ooxml_word2007_flag_sets_normalized": _normalize_legacy_style_flags(root),
     }
     stats.update(normalize_template_styles(root))
+    stats.update(normalize_word2007_layout(root, styles_root))
     for properties in list(root.iter(_W + "rPr")):
         for scale in properties.findall(_W + "w"):
             if scale.get(_W + "val") == "0":
@@ -189,10 +195,10 @@ def normalize_properties(root: etree._Element) -> dict[str, int]:
     return stats
 
 
-def normalize_properties_xml(data: bytes) -> tuple[bytes, dict[str, int]]:
+def normalize_properties_xml(data: bytes, *, styles_root=None) -> tuple[bytes, dict[str, int]]:
     """Normalize one XML part without reserializing an unchanged part."""
     root = etree.fromstring(data)
-    stats = normalize_properties(root)
+    stats = normalize_properties(root, styles_root=styles_root)
     if not any(stats.values()):
         return data, stats
     return etree.tostring(

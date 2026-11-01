@@ -121,7 +121,16 @@ try {
   assert.equal(await page.getByLabel('编辑正文 requirement', { exact: true }).inputValue(), '插入损耗不大于 0.4 dB。');
   await page.getByRole('button', { name: '加载最新版本', exact: true }).click();
   const confirm = page.getByRole('dialog', { name: '有未保存的修改' });
-  await confirm.waitFor(); await confirm.getByRole('button', { name: '继续编辑', exact: true }).click();
+  await confirm.waitFor();
+  const confirmBounds = await confirm.boundingBox();
+  assert.ok(confirmBounds);
+  await page.mouse.click(confirmBounds.x + 8, confirmBounds.y + 8);
+  assert.equal(await confirm.isVisible(), true, 'blank padding inside a confirmation is not its backdrop');
+  await page.mouse.click(confirmBounds.x - 12, confirmBounds.y + confirmBounds.height / 2);
+  await confirm.waitFor({ state: 'hidden' });
+  assert.equal(await page.getByLabel('编辑正文 requirement', { exact: true }).inputValue(), '插入损耗不大于 0.4 dB。', 'backdrop cancellation retains the unsaved review draft');
+  await page.getByRole('button', { name: '加载最新版本', exact: true }).click();
+  await confirm.getByRole('button', { name: '继续编辑', exact: true }).click();
   assert.equal(await page.getByLabel('编辑正文 requirement', { exact: true }).inputValue(), '插入损耗不大于 0.4 dB。');
   await page.getByRole('button', { name: '加载最新版本', exact: true }).click();
   await confirm.getByRole('button', { name: '放弃修改并继续', exact: true }).click();
@@ -176,5 +185,5 @@ try {
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, independentQAAndHumanReview: true, verifiedOnlyBidirectionalLinks: true,
     missingSource: true, loadAndSourceRetry: true, legacyDocNormalization: true, tableEvidenceNavigation: true, editParagraphAndTableCell: true, insertDeleteUndo: true, conflictPreservesDraft: true,
-    versionRestorePreservesHistory: true, revisionDownload: true, independentScrolling: true, keyboardResize: true, narrowScreenSwitching: true, saves, checks, restores }));
+    confirmationBackdropPreservesDraft: true, versionRestorePreservesHistory: true, revisionDownload: true, independentScrolling: true, keyboardResize: true, narrowScreenSwitching: true, saves, checks, restores }));
 } finally { await browser.close(); }

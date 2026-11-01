@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { AuthSettingsApiError, getAuthSettings, saveAuthSettings, type AuthSettingsResponse, type PlatformAuthConfig } from '../../api/authSettings';
 import { StyledSelect } from './StyledSelect';
+import { useDialogBackdrop } from '../../hooks/useDialogBackdrop';
 import './serviceCredentials.css';
 import './platformAuthSettings.css';
 
@@ -148,7 +149,8 @@ function AuthSettingsDialog({ onClose, admin }: { onClose: () => void; admin: bo
     return `${id}-${field}-hint${invalid === field ? ` ${id}-error` : ''}`;
   }
 
-  return <dialog ref={dialog} className="credentials-dialog auth-settings-dialog" aria-labelledby={`${id}-title`} onKeyDown={event => event.stopPropagation()}
+  const backdrop = useDialogBackdrop(close);
+  return <dialog ref={dialog} className="credentials-dialog auth-settings-dialog" aria-labelledby={`${id}-title`} {...backdrop} onKeyDown={event => event.stopPropagation()}
     onCancel={event => { event.preventDefault(); event.stopPropagation(); close(); }}>
     <form className="credentials-form" noValidate onSubmit={event => void save(event)}>
       <header className="credentials-header">

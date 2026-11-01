@@ -969,7 +969,9 @@ def extract_source_blocks(
         if tag == "p" and (inline_heading or (is_heading and not substantive)):
             section = label
             heading_number, heading_text = _split_heading(section)
-            if inline_heading and heading_number:
+            if (inline_heading and heading_number
+                    and body_index not in (heading_hints or {})
+                    and not _is_style_heading(el)):
                 level = heading_number.count(".") + 1 + numbered_level_offset
             else:
                 level = int((heading_hints or {}).get(body_index, {}).get("level", _heading_level(el)))

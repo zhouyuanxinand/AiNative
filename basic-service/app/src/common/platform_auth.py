@@ -8,12 +8,14 @@ An empty ``JTB_AUTH_PUBLIC_URL`` derives the callback from the current request,
 including its published port. Automatic callback hosts are restricted to the
 configured platform host, loopback, and explicit ``JTB_AUTH_CALLBACK_HOSTS``.
 Direct ``userid`` and ``token`` callbacks are checked with the platform. Existing
-application cookies follow the reference session flow only when the callback
-does not select a different userid; a missing display name is backfilled without
-blocking access. No shared session store is required.
+application cookies are validated server-side before establishing identity, with
+a bounded, short-lived cache of successful checks. A callback selecting a
+different userid is independently validated. No shared session store is required.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import math
 import os
@@ -220,12 +222,15 @@ class PlatformTokenVerifier:
                     f"{self.settings.platform_base_url}/tenant-api/api/auth/check-app-token",
                     json={"userid": userid, "token": token, "appid": appid},
                 )
+            if response.status_code in {401, 403}:
+                return None
+            response.raise_for_status()
             payload = response.json()
         except (httpx.HTTPError, ValueError):
             raise PlatformUnavailableError from None
         if not isinstance(payload, dict):
             raise PlatformUnavailableError
-        if payload.get("code") != 0:
+        if type(payload.get("code")) is not int or payload["code"] != 0:
             return None
         return payload
 
@@ -320,13 +325,36 @@ class PlatformAuthMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.settings = settings if settings is not None else AuthSettings.from_env()
         self.verifier = verifier if verifier is not None else PlatformTokenVerifier(self.settings)
-        self._backfill_cooldown_until = 0.0
+        self._verified_sessions: dict[str, tuple[float, CurrentUser]] = {}
+        self._verification_epoch = 0
+
+    def _session_key(self, userid: str, token: str) -> str:
+        # Do not retain raw credentials as cache keys or put them into logs.
+        value = json.dumps([self.settings.platform_base_url, self.settings.app_id, userid, token], ensure_ascii=False)
+        return hashlib.sha256(value.encode()).hexdigest()
 
     async def _verify(self, userid: str, token: str) -> CurrentUser | None:
+        key = self._session_key(userid, token)
+        cached = self._verified_sessions.get(key)
+        now = time.monotonic()
+        if cached is not None:
+            if cached[0] > now:
+                return cached[1]
+            self._verified_sessions.pop(key, None)
+        epoch = self._verification_epoch
         payload = await self.verifier(userid, token, self.settings.app_id)
         if payload is None:
             return None
-        return _verified_identity(userid, payload)
+        user = _verified_identity(userid, payload)
+        if self.settings.cache_seconds > 0 and epoch == self._verification_epoch:
+            # Each process owns its cache. Restarts and cache expiry require a
+            # fresh platform check; failed/unavailable checks are never cached.
+            for expired in [item for item, (expires, _) in self._verified_sessions.items() if expires <= now]:
+                self._verified_sessions.pop(expired, None)
+            if len(self._verified_sessions) >= 1024:
+                self._verified_sessions.pop(next(iter(self._verified_sessions)))
+            self._verified_sessions[key] = (time.monotonic() + self.settings.cache_seconds, user)
+        return user
 
     def _reject(self, request: Request) -> Response:
         if request.url.path.startswith("/api/"):
@@ -353,7 +381,13 @@ class PlatformAuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         if not self.settings.enabled:
             return await call_next(request)
-        if path in {"/api/health", "/favicon.ico", "/assets", "/static", "/logged-out", "/api/system/logout"} or path.startswith(("/assets/", "/static/")):
+        if path == "/api/system/logout":
+            # A validation started before logout must not refill its cache
+            # after the user has ended the application session.
+            self._verification_epoch += 1
+            self._verified_sessions.pop(self._session_key(request.cookies.get(COOKIE_USERID, ""), request.cookies.get(COOKIE_TOKEN, "")), None)
+            return await call_next(request)
+        if path in {"/api/health", "/favicon.ico", "/assets", "/static", "/logged-out"} or path.startswith(("/assets/", "/static/")):
             return await call_next(request)
         document_server = _SIGNED_EDITOR_SERVER_PATH.fullmatch(path)
         if document_server and (request.method, document_server.group(1)) in {("GET", "file"), ("POST", "callback")}:
@@ -383,28 +417,30 @@ class PlatformAuthMiddleware(BaseHTTPMiddleware):
                 "callback_token_present": bool(request.query_params.get("token")),
             })
         if application_session and matching_user:
-            username = unquote(request.cookies.get(COOKIE_USERNAME, "") or "")
-            request.state.current_user = _verified_identity(cookie_userid, {"data": {"sn": username}})
-            if any(key in request.query_params for key in ("userid", "token")):
-                response = RedirectResponse(clean_request_url(request, self.settings), status_code=307, headers=AUTH_RESPONSE_HEADERS)
-            else:
-                with model_user_scope(cookie_userid):
-                    response = await call_next(request)
-            if COOKIE_USERNAME not in request.cookies and time.time() >= self._backfill_cooldown_until:
-                try:
-                    user = await self._verify(cookie_userid, cookie_token)
-                except PlatformUnavailableError:
-                    user = None
-                if user is not None:
+            try:
+                user = await self._verify(cookie_userid, cookie_token)
+            except PlatformUnavailableError:
+                return JSONResponse({"error": "统一登录服务暂不可用，无法确认当前身份，请稍后重试。"},
+                                    status_code=503, headers=AUTH_RESPONSE_HEADERS)
+            if user is None and (path.startswith("/api/") or not (query_userid and request.query_params.get("token"))):
+                return self._reject(request)
+            if user is not None:
+                request.state.current_user = user
+                if any(key in request.query_params for key in ("userid", "token")):
+                    response = RedirectResponse(clean_request_url(request, self.settings), status_code=307, headers=AUTH_RESPONSE_HEADERS)
+                else:
+                    with model_user_scope(cookie_userid):
+                        response = await call_next(request)
+                if unquote(request.cookies.get(COOKIE_USERNAME, "")) != user["name"]:
                     response.set_cookie(
                         COOKIE_USERNAME, quote(user["name"]), httponly=True,
                         secure=external_origin(request, self.settings).startswith("https://"),
                         samesite="lax", path="/",
                     )
-                else:
-                    self._backfill_cooldown_until = time.time() + 60
-            response.headers.update(AUTH_RESPONSE_HEADERS)
-            return response
+                response.headers.update(AUTH_RESPONSE_HEADERS)
+                return response
+            # An expired cookie must not discard a new same-user OA callback.
+            # Fall through to independently verify the callback credential.
 
         if path == "/api/current-user" and not any(name in request.cookies for name in (*_COOKIE_NAMES, *_LEGACY_COOKIE_NAMES)):
             response = await call_next(request)

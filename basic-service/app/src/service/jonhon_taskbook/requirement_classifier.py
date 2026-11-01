@@ -211,9 +211,9 @@ def _apply_configured_heading_constraints(
     """Apply optional, externally configured source-title constraints.
 
     The mechanism is generic: product rule packs may declare strong semantic
-    title/parent-title signals.  Chapter numbers and source order are never
-    inspected.  The longest matching configured phrase wins so that a more
-    specific title is preferred over a broad one.
+    title/parent-title signals. Chapter numbers and source order are never
+    inspected. An explicitly atomic parent module owns its descendants;
+    otherwise the longest matching configured phrase wins.
     """
     constrained = dict(classifications)
     for chapter in chapters:
@@ -224,6 +224,7 @@ def _apply_configured_heading_constraints(
             if str(item).strip()
         ]
         matches: list[tuple[int, str, str]] = []
+        atomic_parent_matches: list[tuple[int, int, str, str]] = []
         for category, config in categories.items():
             if not isinstance(config, dict):
                 continue
@@ -231,14 +232,27 @@ def _apply_configured_heading_constraints(
                 phrase = str(keyword).strip()
                 if phrase and phrase in heading:
                     matches.append((len(phrase), category, phrase))
-            parent_text = " / ".join(parents)
+            atomic_phrases = config.get("atomic_source_heading_keywords", []) or []
+            if isinstance(atomic_phrases, str):
+                atomic_phrases = [atomic_phrases]
+            atomic_phrases = {str(value).strip() for value in atomic_phrases}
             for keyword in config.get("source_parent_heading_keywords", []) or []:
                 phrase = str(keyword).strip()
-                if phrase and phrase in parent_text:
-                    matches.append((len(phrase), category, phrase))
+                for depth, parent in enumerate(parents):
+                    if phrase and phrase in parent:
+                        matches.append((len(phrase), category, phrase))
+                        if phrase in atomic_phrases:
+                            atomic_parent_matches.append((depth, len(phrase), category, phrase))
         if not matches:
             continue
-        _, category, phrase = max(matches, key=lambda item: item[0])
+        if atomic_parent_matches:
+            # Only a rule that declares both inheritance and atomic ownership
+            # may override a typed child heading (e.g. a packaging dimension).
+            # The nearest declared module wins; ordinary parents retain the
+            # existing longest-phrase behavior and do not capture siblings.
+            _, _, category, phrase = max(atomic_parent_matches, key=lambda item: item[:2])
+        else:
+            _, category, phrase = max(matches, key=lambda item: item[0])
         current = constrained.get(chapter["id"], {})
         constrained[chapter["id"]] = {
             "source_id": chapter["id"],
@@ -427,6 +441,28 @@ def _exact_fragment_prompt(categories: dict[str, Any]) -> str:
     return template.replace("{{ category_definitions }}", definitions)
 
 
+def _has_independent_fragment_boundaries(fragments: list[dict[str, Any]]) -> bool:
+    """Lossless text is necessary, but not sufficient, for safe relocation.
+
+    A comma-delimited value can qualify the material, object or test condition
+    immediately before it. Moving that value to another chapter invents a new
+    association. Only complete sentences/semicolon clauses may be relocated;
+    a stand-alone figure cross-reference must remain with its source context.
+    """
+    for index, fragment in enumerate(fragments):
+        text = str(fragment.get("text", "")).strip()
+        if index < len(fragments) - 1 and not re.search(r"[。；;！？!?][”’\"'）)」』]*$", text):
+            return False
+        reference = text.strip("。；;！？!?，,（）() ”’\"'「」『』")
+        if re.fullmatch(
+            r"(?:(?:如|参见|详见|见|see)\s*)?(?:图|fig(?:ure)?\.?)\s*"
+            r"\d+(?:\s*[-－~～、,，及和]\s*(?:图\s*)?\d+)*\s*(?:所示|所表示)?",
+            reference, re.IGNORECASE,
+        ):
+            return False
+    return True
+
+
 def _partition_mixed_blocks_with_llm(
     blocks: list[dict[str, Any]],
     assignments: list[dict[str, Any]],
@@ -437,8 +473,8 @@ def _partition_mixed_blocks_with_llm(
     """Partition mixed paragraphs into exact, non-overlapping source spans.
 
     This is multi-label *segmentation*, not text generation.  Every accepted
-    partition is a lossless partition of an existing paragraph.  Invalid or
-    incomplete model output is ignored and the original atomic block remains.
+    partition is a lossless partition at complete-clause boundaries. Invalid,
+    dependent or incomplete fragments leave the original atomic block intact.
     """
     if not routing_config.get("enabled"):
         return blocks, assignments, []
@@ -541,6 +577,7 @@ def _partition_mixed_blocks_with_llm(
                 or len(cleaned) > max_fragments
                 or len({item["category"] for item in cleaned}) < 2
                 or "".join(item["text"] for item in cleaned) != original_text
+                or not _has_independent_fragment_boundaries(cleaned)
             ):
                 continue
             proposed[source_id] = cleaned
@@ -548,8 +585,8 @@ def _partition_mixed_blocks_with_llm(
     # Some OpenAI-compatible gateways occasionally return a valid chapter
     # classification but omit the lossless ``partitions`` array.  Do not fall
     # back to keywords or duplicate the whole paragraph.  Instead, split only
-    # on existing sentence/clause punctuation (the split is byte-for-byte
-    # lossless), ask the same LLM taxonomy to classify the exact clauses, and
+    # on existing sentence/semicolon punctuation (the split is byte-for-byte
+    # lossless), ask the same LLM taxonomy to classify the complete clauses, and
     # accept the partition only when at least two semantic categories are
     # present.  This keeps the behavior product- and chapter-number agnostic.
     unresolved = [block for block in candidates if str(block["id"]) not in proposed]
@@ -571,11 +608,9 @@ def _partition_mixed_blocks_with_llm(
     ) -> set[str]:
         """Try one punctuation granularity and return accepted parent ids.
 
-        Sentence punctuation is deliberately tried before comma punctuation.
-        This preserves complete clauses whenever the model can already
-        distinguish their semantics, while still allowing a second, finer
-        pass for long compound sentences.  Both passes remain byte-for-byte
-        partitions of the source paragraph.
+        Comma clauses may depend on the preceding object or test condition.
+        They are never offered independently, even when the model omitted a
+        direct partition. A failed split retains the source paragraph intact.
         """
         clause_blocks: list[dict[str, Any]] = []
         clause_groups: dict[str, list[dict[str, Any]]] = {}
@@ -640,20 +675,15 @@ def _partition_mixed_blocks_with_llm(
                 or len(cleaned) > max_fragments
                 or len({item["category"] for item in cleaned}) < 2
                 or "".join(item["text"] for item in cleaned) != original_text
+                or not _has_independent_fragment_boundaries(cleaned)
             ):
                 continue
             proposed[source_id] = cleaned
             accepted.add(source_id)
         return accepted
 
-    accepted = _classify_lossless_clauses(
-        unresolved, r"[。；;！？!?]+", "sentence"
-    )
-    fine_pending = [
-        block for block in unresolved if str(block["id"]) not in accepted
-    ]
     _classify_lossless_clauses(
-        fine_pending, r"[。；;！？!?，,]+", "clause"
+        unresolved, r"[。；;！？!?]+[”’\"'）)」』]*", "sentence"
     )
 
     # Exact-fragment routing uses the global taxonomy.  A model may therefore
@@ -782,6 +812,7 @@ def _partition_mixed_blocks_with_llm(
             "fragment_source_ids": fragment_ids,
             "categories": categories_used,
             "reconstructed_exactly": offset == len(str(block.get("text", ""))),
+            "complete_clause_boundaries": True,
         })
     return new_blocks, new_assignments, audit
 
@@ -979,6 +1010,7 @@ def build_requirement_classification(
             "llm_may_generate_text": False,
             "one_primary_category_per_source": True,
             "mixed_paragraph_policy": "exact_non_overlapping_fragment_partition",
+            "fragment_boundary_policy": "complete_clauses_with_source_context",
             "low_confidence_category": "other",
         },
         "mapping_file": str(Path(mapping_path).resolve()),

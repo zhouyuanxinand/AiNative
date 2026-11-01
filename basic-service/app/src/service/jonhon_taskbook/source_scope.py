@@ -190,6 +190,124 @@ def _physical_heading_levels(path: str, documents: dict) -> list[tuple[int, int]
     return result
 
 
+def _source_administrative_table_reason(source: dict, documents: dict) -> str:
+    """Recognize proven metadata tables, never infer a waiver from their title.
+
+    Read the original cell structure and require every field to be accounted
+    for. Unknown descriptions/specifications remain body evidence. This also
+    prevents stale source coordinates from suppressing a different table.
+    """
+    from docx import Document
+    from docx.opc.exceptions import PackageNotFoundError
+
+    if source.get("type") != "table":
+        return ""
+    path = str(source.get("source_path") or "")
+    try:
+        if path not in documents:
+            documents[path] = Document(path)
+        table = documents[path].element.body[source["body_index"]]
+        if table.tag != f"{W}tbl" or _text(table) != str(source.get("text") or ""):
+            return ""
+    except (OSError, ValueError, KeyError, IndexError, PackageNotFoundError):
+        return ""
+
+    def compact(value: str) -> str:
+        return re.sub(r"[\s.。：:]", "", value).casefold()
+
+    def has_media(element: Any) -> bool:
+        return bool(element.xpath('.//*[local-name()="drawing" or local-name()="pict" or '
+                                  'local-name()="object" or local-name()="imagedata" or local-name()="shape"]'))
+
+    row_elements = table.findall(f"{W}tr")
+    rows = [[_text(cell) for cell in row.findall(f"{W}tc")]
+            for row in row_elements]
+    approval_fields = {
+        "部件名称datasheetname": "name", "部件名称": "name", "datasheetname": "name",
+        "产品名称": "name", "productname": "name",
+        "制造商manufacturer": "manufacturer", "制造商": "manufacturer", "manufacturer": "manufacturer",
+        "制造商料号mpn": "part", "制造商料号": "part", "mpn": "part",
+        "iec料号": "part", "客户料号": "part", "partnumber": "part", "partno": "part",
+        "规格specification": "spec", "规格": "spec", "specification": "spec",
+        "版本": "version", "version": "version", "revision": "version",
+        "最终判定finalapproval": "approval", "最终判定": "approval", "finalapproval": "approval",
+    }
+    if any(row and approval_fields.get(compact(row[0])) == "approval" for row in rows):
+        # An empty text value can still contain the only dimensional drawing
+        # or specification screenshot. Do not waive any illustrated approval
+        # table based on its administrative-looking labels.
+        if has_media(table):
+            return ""
+        roles = set()
+        for row in rows:
+            if not any(row):
+                continue
+            if len(row) != 2 or compact(row[0]) not in approval_fields:
+                return ""
+            role, value = approval_fields[compact(row[0])], compact(row[1])
+            roles.add(role)
+            if role == "spec":
+                if value not in {"", "参见正文", "见正文", "详见正文", "seebody", "seemaintext"}:
+                    return ""
+            elif role == "approval":
+                clauses = [compact(_unnumbered(item)) for item in re.split(r"[。；;\n]+", row[1]) if item.strip()]
+                allowed = {
+                    "该部件规格经双方确认无误，达成一致，自双方签字或盖章之日起生效",
+                    "该部件的规格认定以此规格承认书为准",
+                    "approved", "accepted",
+                }
+                if any(clause not in allowed for clause in clauses):
+                    return ""
+            elif _REQUIREMENT.search(row[1]) or _STANDARD.search(row[1]) or _VALUE.search(row[1]):
+                return ""
+        if {"approval", "name", "version"}.issubset(roles):
+            return "source_approval_metadata"
+        return ""
+
+    records = [(element, row) for element, row in zip(row_elements, rows) if any(row) or has_media(element)]
+    nonempty = [row for _, row in records]
+    if nonempty and {"版本", "章条编号"}.issubset({compact(value) for value in nonempty[0]}):
+        labels = [compact(value) for value in nonempty[0]]
+        if not set(labels).issubset({"序号", "版本", "章条编号", "改前内容", "改后内容"}):
+            return ""
+        for element, row in records[1:]:
+            if len(row) != len(labels) or has_media(element):
+                return ""
+            for label, value in zip(labels, row):
+                if label in {"改前内容", "改后内容"}:
+                    if compact(value) not in {"", "初始版本", "新发", "首次发行"}:
+                        return ""
+                elif value and not re.fullmatch(r"[A-Za-z0-9._/\-]+", value.strip()):
+                    return ""
+        return "source_revision_metadata"
+
+    history_titles = {"revisionhistory", "修订记录", "修订历史", "变更历史"}
+    if not nonempty or {compact(value) for value in nonempty[0] if value} - history_titles:
+        return ""
+    headers = {"date": "date", "日期": "date", "revisionno": "version", "版本": "version",
+               "description": "description", "修改说明": "description", "修订说明": "description"}
+    if len(nonempty) < 2 or len(nonempty[1]) != 3:
+        return ""
+    roles = [headers.get(compact(value)) for value in nonempty[1]]
+    if set(roles) != {"date", "version", "description"}:
+        return ""
+    metadata_changes = {"", "初始版本", "首次发行", "新发", "initialrelease", "initialversion", "firstissue",
+                        "标签由更新为", "标签更新", "更新标签", "版式调整", "格式调整", "修正错别字"}
+    for element, row in records[2:]:
+        if len(row) != 3:
+            return ""
+        values = dict(zip(roles, row))
+        if values["date"] and not re.fullmatch(r"\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}日?", values["date"].strip()):
+            return ""
+        if values["version"] and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/\-]*", values["version"].strip()):
+            return ""
+        if compact(values["description"]) not in metadata_changes:
+            return ""
+        if has_media(element) and compact(values["description"]) not in {"标签由更新为", "标签更新", "更新标签"}:
+            return ""
+    return "source_revision_metadata"
+
+
 def review_reference_source_details(classification: dict | None) -> dict[str, dict]:
     """Determine review-only evidence from source scope, independent of category.
 
@@ -197,7 +315,8 @@ def review_reference_source_details(classification: dict | None) -> dict[str, di
     for converted DOCs whose appendix paragraphs retain stale chapter metadata.
     Within a results scope, raw tables/images and their unvalued labels are
     review evidence; formal clauses, criterion tables and requirement diagrams
-    stay eligible for the taskbook body. Every decision retains source position.
+    stay eligible for the taskbook body. Proven source approval/revision-only
+    tables are archived separately, with the same source-position evidence.
     """
     if not isinstance(classification, dict):
         return {}
@@ -275,8 +394,8 @@ def review_reference_source_details(classification: dict | None) -> dict[str, di
             image_only = source.get("has_drawing") and (
                 not text or bool(re.fullmatch(r"\[图片对象 body=\d+\]", text))
             )
-            reason = ""
-            if historical:
+            reason = _source_administrative_table_reason(source, documents)
+            if historical and not reason:
                 if is_appendix:
                     reason = "historical_report_heading"
                 elif source.get("type") == "table":
@@ -297,7 +416,8 @@ def review_reference_source_details(classification: dict | None) -> dict[str, di
                     "body_index": source["body_index"], "source_type": source.get("type"),
                     "reason": reason, "scope_heading": scope_heading,
                     "assigned_categories": sorted(categories.get(source_id, set())),
-                    "policy": "historical_test_artifacts_review_only",
+                    "policy": ("source_administrative_metadata_review_only"
+                               if reason.startswith("source_") else "historical_test_artifacts_review_only"),
                 }
             previous_context = context
             previous_position = source["body_index"]
@@ -331,8 +451,9 @@ def nontechnical_text_reason(text: str, *, kind: str = "paragraph") -> str | Non
     if kind == "table":
         if re.search(r"使用单位签[署字]|研制(?:或试制)?单位签[署字]|签字/盖章", compact) and not _TECHNICAL.search(compact.replace("研制", "")):
             return "signature_table"
-        if "版本" in compact and "章条编号" in compact:
-            return "change_record"
+        # Revision headers alone do not prove administrative content: a row
+        # may introduce a new material or limit in any language. Keep it for
+        # the physical-table audit in _source_administrative_table_reason.
         if "产品名称" in compact and any(word in compact for word in ("使用单位", "研制单位", "密级", "研制阶段")):
             return "cover_metadata"
     if compact == "部件规格承认书" or re.fullmatch(r"研\s*制\s*任\s*务\s*书|变更记录|中航光电(?:科技股份有限公司)?|JONHON|目\s*录|第\s*\d+\s*页", value, re.I):

@@ -1015,10 +1015,10 @@ def exclude_review_reference_sources(
     ledger: CoverageLedger,
     classification: dict | None,
 ) -> list[dict[str, Any]]:
-    """Keep raw historical test artifacts as review references, not requirements.
+    """Keep proven historical/admin artifacts as review references, not requirements.
 
     Only historical tables/images and unvalued result labels in an explicitly
-    identified test-results section qualify. Technical clauses and requirement
+    identified test-results section or proven approval/revision metadata qualify. Technical clauses and requirement
     tables elsewhere remain subject to exact-copy/indicator verification.
     File and position must match; neither similar text nor an LLM category
     alone can waive coverage.
@@ -1048,11 +1048,14 @@ def exclude_review_reference_sources(
         if not qualifies:
             kept.append(block)
             continue
+        administrative = all(review_details[str(source["id"])]["policy"] ==
+                             "source_administrative_metadata_review_only" for source in sources)
         references.append({
             **asdict(block),
             "action": "review_reference_only",
             "covered": False,
-            "rule_ref": "historical_test_artifacts_review_only",
+            "rule_ref": ("source_administrative_metadata_review_only" if administrative
+                         else "historical_test_artifacts_review_only"),
             "source_file": str(source_path),
             "semantic_source_ids": [str(source["id"]) for source in sources],
             "scope_decisions": [review_details[str(source["id"])] for source in sources],
@@ -1061,6 +1064,8 @@ def exclude_review_reference_sources(
                 str(sources[0].get("section") or block.source_section),
             ])),
             "reason": (
+                "来源签批与修订记录仅供审阅；保留原文、来源位置，不搬入任务书正文"
+                if administrative else
                 "历史测试资料引导段仅供审阅；质量报告保留来源引用，不作为任务书正文缺失"
                 if block.block_type == "paragraph" else
                 "历史测试图片及原始数据表仅供审阅；质量报告保留来源引用，不作为任务书正文缺失"

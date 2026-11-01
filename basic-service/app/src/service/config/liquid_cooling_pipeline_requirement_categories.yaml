@@ -191,7 +191,7 @@ categories:
     block_fallback_category: outline_dimension
   technical_support:
     label: 保障要求
-    definition: 条件保障、验收和交付要求，包括随产品提供的说明书、合格证、工具、备件、维修手册和技术资料等事实
+    definition: 条件保障、验收和交付要求，包括随产品提供的说明书、合格证、工具、备件、维修手册和技术资料，以及交付包装、防护和运输包装方案；包装部件的材料、尺寸与示意图保留在完整包装模块中
     source_heading_keywords:
     - 条件保障要求
     - 技术保障要求
@@ -199,8 +199,15 @@ categories:
     - 验收要求
     - 检验验收
     - 交付要求
+    - 包装方案
+    - 包装要求
+    atomic_source_heading_keywords:
+    - 包装方案
+    - 包装要求
     source_parent_heading_keywords:
     - 验收及交付要求
+    - 包装方案
+    - 包装要求
     source_content_patterns:
     - (?:随产品|随机|交付时)[^。；;\n]*(?:提供|配备)[^。；;\n]*(?:使用说明书|技术说明书|维修手册|合格证|工具|备件|技术资料)
     - (?:提供|配备)[^。；;\n]*(?:使用说明书|技术说明书|维修手册|随机工具|随机备件|接触件备件|合格证)
@@ -240,6 +247,20 @@ categories:
     source_heading_keywords:
     - 测试性要求
     - 测试性
+    - 出厂测试项目
+    - 出厂检验项目
+    - 测试设备及测试结果
+    - 试验设备及试验结果
+    source_parent_heading_keywords:
+    - 出厂测试项目
+    - 出厂检验项目
+    - 测试设备及测试结果
+    - 试验设备及试验结果
+    atomic_source_heading_keywords:
+    - 出厂测试项目
+    - 出厂检验项目
+    - 测试设备及测试结果
+    - 试验设备及试验结果
     target_heading_keywords:
     - 测试性要求
     target_heading_level: 2

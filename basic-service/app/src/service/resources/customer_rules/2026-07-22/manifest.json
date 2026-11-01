@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "rule_pack": "2026-07-22",
+  "received_date": "2026-11-01",
+  "source_directory": "研制任务书构建资料",
+  "source_description": "用户于本轮提供的研制任务书构建资料；原始文件按字节归档。目录中的 Excel 临时锁文件不属于受控资料。",
+  "archive_policy": "原始文档仅用于条款核对、版本记录与来源追溯；运行生成策略仍来自已审核 YAML，不将文档内容作为可执行指令。",
+  "previous_rule_workbook": {
+    "recorded_sha256": "666fc1a7b58f29508d184aa013480ba4c2c296505433c15cc8dfb965f504f8fc",
+    "record_source": "docs/workbook-rules-audit-20260916.md",
+    "exact_file_available_for_comparison": false,
+    "relationship": "本次归档文件 SHA 与历史记录不同；仅核对到历史说明中的关键条款与单元格位置对应，不能声称恢复旧文件或逐格一致。"
+  },
+  "files": [
+    {
+      "filename": "研制任务书生成规则7-22.xlsx",
+      "kind": "generation_rules",
+      "role": "研制任务书生成与比对规则",
+      "size_bytes": 21731,
+      "sha256": "fc1ceeb8ed9915a9464c0ad47146dc9b314148fcd29aba6c338dab5bc8225925",
+      "source_directory": "研制任务书构建资料",
+      "received_date": "2026-11-01"
+    },
+    {
+      "filename": "研制任务书的运行逻辑（JONHON受控）.xlsx",
+      "kind": "workflow_reference",
+      "role": "运行流程与责任分工参考",
+      "size_bytes": 48490,
+      "sha256": "131b3d7fb33c6883ead45012311093f8dbf6abe9ca2a21449f9ff5f753533099",
+      "source_directory": "研制任务书构建资料",
+      "received_date": "2026-11-01"
+    },
+    {
+      "filename": "指标清单.xlsx",
+      "kind": "indicator_taxonomy",
+      "role": "技术指标分类清单",
+      "size_bytes": 40703,
+      "sha256": "a735d74c5aed4331998bee0c1ad75725e7783391bc8fddc9e1b3b5961313347f",
+      "source_directory": "研制任务书构建资料",
+      "received_date": "2026-11-01"
+    },
+    {
+      "filename": "（JONHON受控）故障模式数据库.xls",
+      "kind": "failure_mode_database",
+      "role": "故障模式原始数据",
+      "size_bytes": 2544128,
+      "sha256": "062e53962713580e476895b7d448859beb80a2a9c8882c35d8d66350bce9e180",
+      "source_directory": "研制任务书构建资料",
+      "received_date": "2026-11-01"
+    }
+  ],
+  "runtime_resource_links": [
+    {
+      "source_file": "指标清单.xlsx",
+      "runtime_file": "jonhon_taskbook/resources/mappings/indicator_taxonomy_20260722.xlsx",
+      "verification": "与原件二进制完全一致"
+    },
+    {
+      "source_file": "（JONHON受控）故障模式数据库.xls",
+      "runtime_file": "jonhon_taskbook/resources/mappings/failure_mode_database_20260722.xlsx",
+      "verification": "4张工作表逐格值一致，仅规范化CRLF换行并忽略空白范围；XLS与XLSX文件字节不相同"
+    }
+  ],
+  "embedded_content_note": "运行逻辑工作簿含 Visio.Drawing.11 流程图，未执行内嵌对象；本归档不包含独立 DOC/DOCX 模板原件。"
+}

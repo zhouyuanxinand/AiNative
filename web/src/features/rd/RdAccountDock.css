@@ -1,0 +1,36 @@
+.rd-account-dock{position:relative;box-sizing:border-box;display:flex;align-items:center;flex-shrink:0;gap:8px;width:100%;min-width:0;min-height:64px;padding:16px 0 0;border-top:1px solid var(--color-border);color:var(--color-text-primary);font:12px/1.5 var(--font-family-sans)}
+.rd-account-dock-avatar{display:grid;place-items:center;flex:0 0 34px;width:34px;height:34px;border-radius:50%;background:var(--color-action-subtle);color:var(--color-action);font-size:16px;font-weight:600}
+.rd-account-dock-avatar svg{width:22px;height:22px}
+.rd-account-dock .rd-account-dock-expand{display:none;border:0;padding:0;cursor:pointer}
+.rd-account-dock-identity{flex:1;min-width:0}
+.rd-account-dock-heading{display:flex;align-items:center;gap:6px;min-width:0}
+.rd-account-dock-heading strong{display:block;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:13px;font-weight:600}
+.rd-account-dock-verified{flex-shrink:0;padding:0 4px;border-radius:3px;color:var(--color-success);background:var(--color-success-bg);font-size:9px;font-weight:600}
+.rd-account-dock-identity>span{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--color-text-secondary);font-size:11px}
+.rd-account-dock-account{font-family:var(--font-family-mono)}
+.rd-account-dock .rd-account-dock-link{display:inline-block;padding:0;margin:0;border:0;background:transparent;color:var(--color-action);font:inherit;font-size:11px;text-decoration:none;cursor:pointer}
+.rd-account-dock .rd-account-dock-link:hover{text-decoration:underline}
+.rd-account-dock-identity>.rd-account-dock-login-actions{display:flex;align-items:center;gap:3px;overflow:visible}
+.rd-account-dock .rd-account-dock-refresh{display:grid;place-items:center;width:22px;height:22px;padding:3px;border:0;border-radius:4px;color:var(--color-action);background:transparent;cursor:pointer}
+.rd-account-dock .rd-account-dock-refresh:hover{background:var(--color-action-subtle)}
+.rd-account-dock-refresh svg{width:14px;height:14px}
+.rd-account-dock-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.rd-account-dock-actions .sidebar-session-actions{display:contents}
+.rd-account-settings{display:grid;place-items:center;color:var(--color-text-secondary);background:var(--color-bg-surface);border:1px solid var(--color-border);border-radius:var(--radius-control)}
+.rd-account-settings:hover:not(:disabled),.rd-account-settings[aria-current=page]{color:var(--color-action);background:var(--color-action-subtle);border-color:var(--color-border-focus)}
+.rd-account-settings:active:not(:disabled){background:var(--color-bg-selected)}
+.rd-account-dock-actions .sidebar-logout,.rd-account-dock-actions .rd-account-settings{flex:0 0 34px;width:34px;height:34px;min-height:0;margin:0;padding:7px}
+.rd-account-dock-actions .sidebar-logout svg,.rd-account-dock-actions .rd-account-settings svg{width:19px;height:19px}
+.rd-account-dock .rd-account-dock-error,.rd-account-dock .sidebar-logout-error{position:absolute;left:0;right:0;bottom:calc(100% + 8px);box-sizing:border-box;max-height:120px;overflow:auto;margin:0;padding:10px 12px;border:1px solid var(--color-error-border);border-radius:var(--radius-control);background:var(--color-bg-surface);color:var(--color-error);font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.rd-account-dock :where(button,a):focus-visible{outline:2px solid var(--color-border-focus);outline-offset:3px}
+@media(min-width:701px){
+  .is-sidebar-collapsed .rd-account-dock{flex-direction:column;gap:10px;padding-top:16px}
+  .is-sidebar-collapsed .rd-account-dock>.rd-account-dock-avatar,.is-sidebar-collapsed .rd-account-dock-identity,.is-sidebar-collapsed .rd-account-dock-error{display:none}
+  .is-sidebar-collapsed .rd-account-dock>.rd-account-dock-expand{display:grid}
+  .is-sidebar-collapsed .rd-account-dock-actions{flex-direction:column;gap:8px}
+}
+@media(max-width:700px){
+  .rd-account-dock{min-height:54px;padding-top:12px;flex-wrap:wrap}
+  .rd-account-dock-actions{display:contents}
+  .rd-account-dock .rd-account-dock-error,.rd-account-dock .sidebar-logout-error{position:static;flex:0 0 100%;order:1}
+}

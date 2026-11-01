@@ -53,6 +53,7 @@ from src.controller.auth_settings_controller import router as auth_settings_rout
 from src.controller.service_credentials_controller import router as service_credentials_router  # noqa: E402
 from src.controller.review_controller import router as review_router  # noqa: E402
 from src.controller.review_editor_controller import router as review_editor_router  # noqa: E402
+from src.controller.rd_controller import router as rd_router, configure_rd, start_rd_worker  # noqa: E402
 from src.utils.config_loader import AppConfig, get_config  # noqa: E402
 
 logger = get_logger("src.main")
@@ -152,8 +153,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     """Application factory used by uvicorn and tests."""
     settings = config or get_config()
     application = FastAPI(
-        title="研制任务书受控生成服务",
-        description="研制任务书受控生成、LLM 语义路由、模板管理与交付门禁。",
+        title="研发管理平台",
+        description="研发案例、双路线决策、工作包编排与受控任务书生成。",
         version="1.0.0",
     )
     application.state.config = settings
@@ -161,6 +162,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     auth_settings = AuthSettings.from_env()
     application.state.auth_settings = auth_settings
     application.state.auth_settings_requires_admin = True
+    configure_rd(application, settings)
 
     allow_credentials = settings.cors_origins != ["*"]
     application.add_middleware(
@@ -177,6 +179,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     application.add_middleware(PlatformAuthMiddleware, settings=auth_settings)
 
     application.include_router(taskbook_router)
+    application.include_router(rd_router)
     application.include_router(auth_router)
     application.include_router(auth_settings_router)
     application.include_router(failure_database_router)
@@ -197,6 +200,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         web_dir = web_index.parent
 
         @application.get("/", response_class=HTMLResponse, include_in_schema=False)
+        @application.get("/rd", response_class=HTMLResponse, include_in_schema=False)
+        @application.get("/rd/projects/{project_id}", response_class=HTMLResponse, include_in_schema=False)
+        @application.get("/taskbook", response_class=HTMLResponse, include_in_schema=False)
         @application.get("/help/video", response_class=HTMLResponse, include_in_schema=False)
         @application.get("/help/manual", response_class=HTMLResponse, include_in_schema=False)
         @application.get("/review/{jid}", response_class=HTMLResponse, include_in_schema=False)
@@ -225,7 +231,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
-    settings = get_config()
+    settings = _app.state.config
     archive_store = _app.state.request_log_store
     # Only the single generation service owns recovery. Starting/restarting the
     # independent admin listener must never close active generation archives.
@@ -236,6 +242,7 @@ async def _lifespan(_app: FastAPI):
         archive_store=archive_store,
     )
     register_controller(_app, settings)
+    rd_worker = start_rd_worker(_app)
     logger.info(
         "service_starting",
         extra={
@@ -247,6 +254,7 @@ async def _lifespan(_app: FastAPI):
     try:
         yield
     finally:
+        rd_worker.stop()
         logger.info("service_stopping")
         shutdown_logging()
 

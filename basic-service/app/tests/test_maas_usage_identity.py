@@ -182,9 +182,9 @@ def test_same_account_and_verified_account_switch_update_model_attribution(outbo
             client.cookies.set(key, value, domain="127.0.0.1", path="/")
         assert client.get("/?userid=employee-A&token=synthetic-new-token").status_code == 307
         assert client.post("/api/complete").status_code == 200
-        assert verified == []
+        assert verified == [("employee-A", 9086)]
         assert client.get("/?userid=employee-B&token=synthetic-other-token").status_code == 307
-        assert verified == [("employee-B", 9086)]
+        assert verified == [("employee-A", 9086), ("employee-B", 9086)]
         assert client.post("/api/complete").status_code == 200
     assert [body["extra_parameters"]["user_id"] for _, body in outbound] == ["employee-A", "employee-B"]
     assert [body["extra_parameters"]["user_name"] for _, body in outbound] == ["employee-A", "employee-B"]

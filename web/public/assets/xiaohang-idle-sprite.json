@@ -1,0 +1,203 @@
+{
+  "image": "/assets/xiaohang-idle-sprite.png",
+  "width": 1254,
+  "height": 1254,
+  "columns": 4,
+  "rows": 4,
+  "frameCount": 16,
+  "frames": [
+    {
+      "rect": {
+        "x": 81,
+        "y": 30,
+        "width": 181,
+        "height": 274
+      },
+      "anchor": {
+        "x": 171.5,
+        "y": 299
+      }
+    },
+    {
+      "rect": {
+        "x": 383,
+        "y": 30,
+        "width": 180,
+        "height": 274
+      },
+      "anchor": {
+        "x": 472.5,
+        "y": 299
+      }
+    },
+    {
+      "rect": {
+        "x": 690,
+        "y": 30,
+        "width": 180,
+        "height": 275
+      },
+      "anchor": {
+        "x": 780.0,
+        "y": 300
+      }
+    },
+    {
+      "rect": {
+        "x": 1000,
+        "y": 30,
+        "width": 181,
+        "height": 274
+      },
+      "anchor": {
+        "x": 1090.0,
+        "y": 299
+      }
+    },
+    {
+      "rect": {
+        "x": 75,
+        "y": 337,
+        "width": 190,
+        "height": 278
+      },
+      "anchor": {
+        "x": 170.0,
+        "y": 610
+      }
+    },
+    {
+      "rect": {
+        "x": 381,
+        "y": 336,
+        "width": 187,
+        "height": 279
+      },
+      "anchor": {
+        "x": 474.5,
+        "y": 610
+      }
+    },
+    {
+      "rect": {
+        "x": 687,
+        "y": 336,
+        "width": 188,
+        "height": 279
+      },
+      "anchor": {
+        "x": 780.5,
+        "y": 610
+      }
+    },
+    {
+      "rect": {
+        "x": 1000,
+        "y": 336,
+        "width": 187,
+        "height": 279
+      },
+      "anchor": {
+        "x": 1092.0,
+        "y": 610
+      }
+    },
+    {
+      "rect": {
+        "x": 77,
+        "y": 645,
+        "width": 187,
+        "height": 277
+      },
+      "anchor": {
+        "x": 169.5,
+        "y": 917
+      }
+    },
+    {
+      "rect": {
+        "x": 382,
+        "y": 645,
+        "width": 188,
+        "height": 277
+      },
+      "anchor": {
+        "x": 475.0,
+        "y": 917
+      }
+    },
+    {
+      "rect": {
+        "x": 687,
+        "y": 645,
+        "width": 188,
+        "height": 277
+      },
+      "anchor": {
+        "x": 780.5,
+        "y": 917
+      }
+    },
+    {
+      "rect": {
+        "x": 1000,
+        "y": 645,
+        "width": 187,
+        "height": 277
+      },
+      "anchor": {
+        "x": 1092.5,
+        "y": 917
+      }
+    },
+    {
+      "rect": {
+        "x": 77,
+        "y": 950,
+        "width": 186,
+        "height": 276
+      },
+      "anchor": {
+        "x": 170.0,
+        "y": 1221
+      }
+    },
+    {
+      "rect": {
+        "x": 378,
+        "y": 949,
+        "width": 189,
+        "height": 277
+      },
+      "anchor": {
+        "x": 474.0,
+        "y": 1221
+      }
+    },
+    {
+      "rect": {
+        "x": 685,
+        "y": 952,
+        "width": 188,
+        "height": 275
+      },
+      "anchor": {
+        "x": 779.5,
+        "y": 1222
+      }
+    },
+    {
+      "rect": {
+        "x": 1000,
+        "y": 951,
+        "width": 187,
+        "height": 276
+      },
+      "anchor": {
+        "x": 1092.5,
+        "y": 1222
+      }
+    }
+  ],
+  "notes": "Raw imagegen atlas. Frame rect and foot anchor registration are supplied for canvas sampling; no image pixels were edited."
+}

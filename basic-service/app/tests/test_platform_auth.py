@@ -318,7 +318,7 @@ def test_direct_callback_checks_platform_and_exposes_compatible_identity(clients
 
 @pytest.mark.parametrize("payload,accepted", [
     ({"code": 401}, False), ({"code": "0"}, False),
-    ({"code": False}, True), ({"code": 0, "data": None}, True),
+    ({"code": False}, False), ({"code": 0.0}, False), ({"code": 0, "data": None}, True),
 ])
 def test_callback_uses_the_reference_business_success_code(clients, payload, accepted):
     client, platform, calls = clients()
@@ -352,13 +352,17 @@ def test_platform_name_aliases_are_supported_on_callback(clients, field, nested)
 
 
 @pytest.mark.parametrize("status", [200, 401, 403, 500])
-def test_callback_follows_reference_json_result_independently_of_http_status(clients, status):
+def test_callback_requires_successful_http_status_as_well_as_business_code(clients, status):
     client, platform, _ = clients()
     platform["status"] = status
     response = complete_callback(client, "/?userid=user-7&token=valid-secret")
     assert response.status_code == 307
-    assert response.headers["location"] == "https://taskbook.example/"
-    assert client.cookies.get("jtb_sv_userid") == "user-7"
+    if status == 200:
+        assert response.headers["location"] == "https://taskbook.example/"
+        assert client.cookies.get("jtb_sv_userid") == "user-7"
+    else:
+        assert urlsplit(response.headers["location"]).netloc == "oa.example"
+        assert not client.cookies.get("jtb_sv_userid")
 
 
 def test_platform_connection_failure_reenters_login_without_exposing_error(clients, caplog):

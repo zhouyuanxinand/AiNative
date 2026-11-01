@@ -31,6 +31,8 @@ basic-service/app/input_docs/
 basic-service/app/runtime/
 basic-service/app/data/uploads/
 basic-service/app/data/outputs/
+basic-service/app/data/rd_platform/
+runtime/
 runtime-*.log
 *.log
 *.stackdump

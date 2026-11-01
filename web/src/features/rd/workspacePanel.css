@@ -1,0 +1,28 @@
+/* Read-only browsing uses the full directory width; editing keeps its own panel. */
+.rd-workspace-page > .rd-notice { margin-bottom: 20px; }
+.rd-workspace-page .rd-workspace-layout.is-readonly { grid-template-columns: minmax(0, 1fr); }
+.rd-workspace-page .is-readonly .rd-resource-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.rd-workspace-page .is-readonly .rd-resource-list > article {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  overflow-wrap: anywhere;
+}
+.rd-workspace-page .is-readonly .rd-section-head > div { min-width: 0; }
+.rd-workspace-page .is-readonly .rd-section-head > .rd-badge { flex-shrink: 0; }
+.rd-workspace-page .is-readonly .rd-resource-list .rd-disclosure {
+  margin-top: auto;
+  padding-top: 16px;
+}
+@media (max-width: 1200px) {
+  .rd-workspace-page .is-readonly .rd-resource-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .rd-workspace-page .is-readonly .rd-resource-list { grid-template-columns: minmax(0, 1fr); }
+}

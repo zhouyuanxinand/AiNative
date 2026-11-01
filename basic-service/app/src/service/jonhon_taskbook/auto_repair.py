@@ -166,9 +166,10 @@ def propose_repairs(path, plan, classification, semantic_report):
 
     counts = {}
     with ZipFile(path) as package:
+        styles_root = etree.fromstring(package.read("word/styles.xml")) if "word/styles.xml" in package.namelist() else None
         for name in package.namelist():
             if name.startswith("word/") and name.endswith(".xml"):
-                _, stats = normalize_properties_xml(package.read(name))
+                _, stats = normalize_properties_xml(package.read(name), styles_root=styles_root)
                 for key, count in stats.items():
                     counts[key] = counts.get(key, 0) + count
     if any(counts.values()):
@@ -180,6 +181,8 @@ def _apply(path, actions, classification=None):
     """Modify a separate candidate, never the source document or prior round."""
     with ZipFile(path) as package:
         entries = [(item, package.read(item.filename)) for item in package.infolist()]
+    styles_xml = next((data for item, data in entries if item.filename == "word/styles.xml"), None)
+    styles_root = etree.fromstring(styles_xml) if styles_xml is not None else None
     document_xml = next(data for item, data in entries if item.filename == "word/document.xml")
     root = etree.fromstring(document_xml)
     body = root.find(qn("w:body"))
@@ -194,7 +197,7 @@ def _apply(path, actions, classification=None):
             if item.filename == "word/document.xml" and removals:
                 data = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
             if item.filename.startswith("word/") and item.filename.endswith(".xml"):
-                data, _ = normalize_properties_xml(data)
+                data, _ = normalize_properties_xml(data, styles_root=styles_root)
             package.writestr(item, data)
     if removals:
         from .figure_references import synchronize_figure_references

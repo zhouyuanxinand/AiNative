@@ -164,23 +164,28 @@ def _apply_env_values(values: dict[str, str]) -> None:
 def _load_local_env_once() -> None:
     """Load private local/shared dotenv files without exposing credentials.
 
-    Loading precedence is process environment > project ``.env`` > shared
-    dotenv. ``JTB_SHARED_ENV_FILE`` allows this service to consume the same
+    Loading precedence is process environment > legacy service ``.env`` >
+    service-root ``.env`` > shared dotenv. ``JTB_SHARED_ENV_FILE`` allows this service to consume the same
     deployment credentials as the automation input audit service while keeping
     the secret values in their original ignored file.
     """
-    env_path = Path(__file__).resolve().parents[1] / ".env"
-    local_values = _read_env_file(env_path)
-    _apply_env_values(local_values)
+    module_path = Path(__file__).resolve()
+    env_paths = (module_path.parents[1] / ".env", module_path.parents[5] / ".env")
+    shared_base = env_paths[0].parent
+    for env_path in env_paths:
+        local_values = _read_env_file(env_path)
+        if _SHARED_ENV_FILE_KEY not in os.environ and local_values.get(_SHARED_ENV_FILE_KEY):
+            shared_base = env_path.parent
+        _apply_env_values(local_values)
 
     shared_value = os.getenv(_SHARED_ENV_FILE_KEY, "").strip()
     if not shared_value:
         return
     shared_path = Path(os.path.expandvars(shared_value)).expanduser()
     if not shared_path.is_absolute():
-        shared_path = env_path.parent / shared_path
+        shared_path = shared_base / shared_path
     try:
-        if shared_path.resolve() == env_path.resolve():
+        if shared_path.resolve() in {path.resolve() for path in env_paths}:
             return
     except OSError:
         return
@@ -1431,9 +1436,16 @@ def chat(
     temperature: float = 0.2,
     max_tokens: int = 4096,
     retries: int = 3,
+    timeout_seconds: float | None = None,
 ) -> str:
     """单次受控对话，返回文本。"""
     config = _active_config()
+    if timeout_seconds is not None:
+        timeout = float(timeout_seconds)
+        if not 5 <= timeout <= 600:
+            raise ValueError("模型请求超时应为5至600秒")
+        if config is not None:
+            config = replace(config, timeout_seconds=timeout)
     return _request_with_retry(
         config,
         system,

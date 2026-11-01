@@ -10,6 +10,13 @@ export function caseArtifactRecords(researchCase: ResearchCase) {
   })));
 }
 
+export function latestTaskbookPackage(researchCase: ResearchCase) {
+  const packages = researchCase.workpackages.filter(item => item.definition_id === 'taskbook' && item.definition_version === '2'
+    && item.stage === 'planning' && !['draft', 'cancelled'].includes(item.status) && packageUsesCurrentInput(item, researchCase));
+  return packages.find(item => ['submitted', 'running'].includes(item.status))
+    ?? packages.sort((left, right) => String(right.snapshot?.submitted_at ?? '').localeCompare(String(left.snapshot?.submitted_at ?? '')))[0];
+}
+
 export function summarizeCaseOutcome(researchCase: ResearchCase) {
   const packages = researchCase.workpackages.filter(item => item.stage === researchCase.stage);
   const activePackages = packages.filter(item => item.status === 'draft' || packageUsesCurrentInput(item, researchCase));

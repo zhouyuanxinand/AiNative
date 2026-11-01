@@ -35,6 +35,12 @@ const scenarios: Record<string, ScenarioManifest> = { taskbook };
 export function scenarioManifest(id: string): ScenarioManifest | undefined { return scenarios[id]; }
 
 export function scenarioStage(researchCase: ResearchCase, manifest?: ScenarioManifest): ScenarioStage {
+  if (manifest?.id === 'taskbook' && researchCase.business_lifecycle?.policy_version === 'v2') {
+    if (researchCase.business_lifecycle.rd_activation_state === 'historical_unverified') return { ...manifest.stages[researchCase.stage], title: '历史记录待核对', guidance: '原阶段与成果继续保留，不能推断已取得研发启动或任务书范围批准。请在项目空间新建业务流程，按当前政策重新确认后续办。', edit: 'sources', editLabel: '核对历史来源' };
+    if (researchCase.stage === 'selection') return { ...manifest.stages.selection, title: '选型决定与研发启动', guidance: '核对固定选型报告并记录决定；改型与新研需再单独确认研发启动。' };
+    if (researchCase.stage === 'planning') return { title: '研发策划与任务书', guidance: '采用流程并固定输入，在本阶段编排任务书工作包；完成质量核验后办理范围批准。', outcomeTitle: '策划任务书与范围核对', outcome: 'artifacts', edit: 'preparation', editLabel: '核对流程与任务书输入', primaryArtifactKinds: ['taskbook', 'docx'] };
+    if (researchCase.stage === 'design') return { ...manifest.stages.design, title: '工程设计', guidance: '任务书范围已批准，按实际工程证据办理方案设计、详细设计与整合。', editLabel: '办理工程设计与查看工作包' };
+  }
   return manifest?.stages[researchCase.stage] ?? {
     title: STAGES.find(stage => stage.id === researchCase.stage)?.title ?? researchCase.stage,
     guidance: '查看已登记成果和项目记录；此场景尚未配置原生工作面。', outcomeTitle: '已登记成果',
@@ -43,7 +49,7 @@ export function scenarioStage(researchCase: ResearchCase, manifest?: ScenarioMan
 }
 
 export function nextCaseAction(researchCase: ResearchCase, manifest?: ScenarioManifest): { target: CaseSurface; label: string } | null {
-  if (!manifest || researchCase.status === 'completed') return null;
+  if (!manifest || researchCase.status === 'completed' || researchCase.business_lifecycle?.rd_activation_state === 'historical_unverified' && researchCase.business_lifecycle.policy_version === 'v2') return null;
   const stage = scenarioStage(researchCase, manifest);
   const state = summarizeCaseOutcome(researchCase);
   if (state.execution.kind === 'running') return { target: 'workpackages', label: '查看执行进展' };
@@ -56,6 +62,18 @@ export function nextCaseAction(researchCase: ResearchCase, manifest?: ScenarioMa
   const hasDeliverable = caseArtifactRecords(researchCase).some(item => item.current && item.workpackage.status === 'completed' && ['docx', 'taskbook'].includes(item.artifact.kind ?? ''));
   const analysis = researchCase.source_analysis;
   const adoptedAnalysis = analysis?.status === 'adopted' && analysis.adopted_input_revision === researchCase.input_revision;
+  if (researchCase.business_lifecycle?.policy_version === 'v2') {
+    if (['input', 'requirements'].includes(researchCase.stage)) return hasRequirements && !requiredClarifications
+      ? { target: 'decision', label: '确认需求并进入选型' } : { target: hasRequirements ? 'requirements' : 'sources', label: hasRequirements ? '处理需求与关键澄清' : '分析资料并确认采用' };
+    if (researchCase.stage === 'selection') return researchCase.product_route && researchCase.composition_route
+      ? { target: 'decision', label: researchCase.business_lifecycle.current_selection_decision_id ? '办理研发启动' : '核对选型报告与决定' }
+      : { target: 'routes', label: '核对逐项证据与选型路线' };
+    if (researchCase.stage === 'planning') {
+      const binding = researchCase.taskbook_binding;
+      if (!binding || binding.status !== 'current' || binding.invalidated_at || binding.input_revision !== researchCase.input_revision) return { target: 'preparation', label: '采用流程并固定任务书输入' };
+      return hasDeliverable && state.verification.kind === 'passed' ? { target: 'decision', label: '核对并批准任务书范围' } : { target: 'workpackages', label: '编排与执行任务书工作包' };
+    }
+  }
   const ready = researchCase.stage === 'input' ? ['tech', 'spec'].every(role => sources.some(source => source.role === role)) && (adoptedAnalysis || !analysis && hasRequirements)
     : researchCase.stage === 'requirements' ? hasRequirements && !requiredClarifications
       : researchCase.stage === 'planning' ? researchCase.product_route?.value === 'direct' || !!researchCase.taskbook_binding && researchCase.taskbook_binding.status === 'current' && !researchCase.taskbook_binding.invalidated_at && researchCase.taskbook_binding.input_revision === researchCase.input_revision

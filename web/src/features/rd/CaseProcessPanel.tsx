@@ -51,11 +51,14 @@ export function CaseProcessPanel({ researchCase, catalog, busy, command, onOpenW
   const high = times.length ? Math.max(...times) + 86400000 : null;
   const bar = (start: number, end: number): CSSProperties => ({ left: `${(start - low!) / (high! - low!) * 100}%`, width: `${Math.max(0.7, (Math.max(start, end) - start + 3600000) / (high! - low!) * 100)}%` });
   const tick = (time: number) => new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit' }).format(time);
-  return <section className="rd-process-panel"><div className="rd-surface-title"><div><h3>项目流程</h3><p>八阶段业务过程与阶段内工作包同源显示。工作包完成后，仍需记录实际阶段决定。</p></div></div>
+  return <section className="rd-process-panel"><div className="rd-surface-title"><div><h3>项目流程</h3><p>业务阶段与工作包进展分别显示。需求确认、选型决定、研发启动和任务书范围批准各自保留依据。</p></div></div>
     <ol className="rd-process-stages" aria-label="案例八阶段业务流程">{STAGES.map((stage, index) => {
-      const approved = researchCase.decisions.some(decision => decision.kind !== 'route' && decision.stage === stage.id && decision.verdict === 'approved' && !decision.invalidated_at);
+      const lifecycle = researchCase.business_lifecycle;
+      const approved = lifecycle?.policy_version === 'v2' && lifecycle.rd_activation_state !== 'historical_unverified' && ['input', 'requirements', 'selection', 'planning'].includes(stage.id)
+        ? stage.id === 'input' || stage.id === 'requirements' ? !!lifecycle.current_requirement_baseline_id : stage.id === 'selection' ? lifecycle.rd_activation_state === 'active' || researchCase.product_route?.value === 'direct' && !!lifecycle.current_selection_decision_id : researchCase.decisions.some(item => item.id === lifecycle.current_taskbook_scope_decision_id && item.verdict === 'approved' && !item.invalidated_at)
+        : researchCase.decisions.some(decision => decision.kind !== 'route' && decision.stage === stage.id && decision.verdict === 'approved' && !decision.invalidated_at);
       const count = packages.filter(workpackage => workpackage.stage === stage.id).length;
-      return <li key={stage.id} className={stage.id === researchCase.stage ? 'current' : approved ? 'done' : ''} aria-current={stage.id === researchCase.stage ? 'step' : undefined}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{stage.short}</strong><small>{stage.id === researchCase.stage ? researchCase.status === 'completed' ? '已完成阶段决定' : '当前阶段' : approved ? '已记录通过' : '尚无有效通过'}{count ? ` · ${count} 个工作包` : ''}</small></div></li>;
+      return <li key={stage.id} className={stage.id === researchCase.stage ? 'current' : approved ? 'done' : ''} aria-current={stage.id === researchCase.stage ? 'step' : undefined}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{researchCase.business_lifecycle?.policy_version === 'v2' ? ({ input: '资料与需求', requirements: '需求确认', selection: '选型与启动', planning: '策划任务书', design: '工程设计', verification: '成果核验', delivery: '交付反馈', knowledge: '知识整理' }[stage.id]) : stage.short}</strong><small>{stage.id === researchCase.stage ? researchCase.status === 'completed' ? '已完成阶段决定' : '当前阶段' : approved ? '已记录通过' : '尚无有效通过'}{count ? ` · ${count} 个工作包` : ''}</small></div></li>;
     })}</ol>
     <ExecutionPreview packages={packages} catalog={catalog} onOpenWorkpackage={onOpenWorkpackage} />
     <section className="rd-section"><div className="rd-section-head"><div><h3>计划与实际</h3><p>蓝色为日期计划；实际仅按已登记的开始、完成或结束时间显示。未登记的时间保持空白。</p></div><div className="rd-plan-legend"><span>计划</span><span>实际完成</span><span>受阻 / 取消</span></div></div>

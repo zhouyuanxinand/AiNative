@@ -175,6 +175,9 @@ async def project(pid: str, request: Request):
 @router.post("/projects/{pid}/commands")
 async def command(pid: str, payload: Command, request: Request):
     key = _key(request)
+    from src.service.rd_platform.review_records import ReviewRecords
+    if get_auth_settings(request).enabled and payload.command in ReviewRecords.DECISION_COMMANDS:
+        raise RdError(403, "OA部署尚未配置企业工程决定政策，不能用本地演练记录代替正式审签。")
     return await asyncio.to_thread(_store(request).command, _actor(request), pid,
         payload.expected_version, key, payload.command, payload.data)
 
@@ -286,7 +289,8 @@ async def contracts():
 
 def configure_rd(application, config):
     root = Path(os.environ.get("JTB_RD_DATA_DIR") or config.logs_dir.parent / "data" / "rd_platform")
-    application.state.rd_store = Store(root / "rd.sqlite3", root / "assets")
+    local_review = os.environ.get("JTB_RD_LOCAL_REVIEW") == "1" and getattr(getattr(application.state, "auth_settings", None), "enabled", True) is False
+    application.state.rd_store = Store(root / "rd.sqlite3", root / "assets", local_review_enabled=local_review)
 
 
 def start_rd_worker(application):

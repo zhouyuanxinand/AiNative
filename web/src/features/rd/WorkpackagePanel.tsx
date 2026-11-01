@@ -4,6 +4,7 @@ import { StyledSelect } from '../../components/ui/StyledSelect';
 import { artifactUrl } from './api';
 import { isCurrentSource, readable, stageTitle, statusTitle } from './presentation';
 import type { Catalog, PlanNode, Project, ResearchCase } from './types';
+import { scenarioManifest, scenarioStage } from './scenarioManifest';
 import { WorkflowCanvas } from './WorkflowCanvas';
 
 export type CommandRunner = (command: string, data: unknown, onSuccess?: () => void) => Promise<boolean>;
@@ -22,13 +23,13 @@ export function WorkpackagePanel({ project, researchCase, catalog, busy, error, 
   const [switchTo, setSwitchTo] = useState<string | null>(null);
   const currentNode = nodes.find(node => node.id === nodeId) ?? nodes[0];
   const editable = workpackage?.status === 'draft';
-  const definition = catalog?.workpackage_definitions.find(item => item.id === workpackage?.definition_id);
+  const definition = catalog?.workpackage_definitions.find(item => item.id === workpackage?.definition_id && String(item.version ?? '1') === String(workpackage?.definition_version ?? '1'));
   const optionalActions = (catalog?.actions ?? []).filter(action => definition?.optional_actions?.includes(action.id));
   const previousCount = useRef(researchCase.workpackages.length);
   const [definitionId, setDefinitionId] = useState('');
   const definitions = (catalog?.workpackage_definitions ?? []).filter(definition => {
     const stages = definition.allowed_stages ?? definition.stages ?? (definition.stage ? [definition.stage] : []);
-    return researchCase.status !== 'completed' && (stages.length ? stages.includes(researchCase.stage) : false);
+    return researchCase.status !== 'completed' && (definition.id !== 'taskbook' || String(definition.version ?? '1') === (researchCase.business_lifecycle?.policy_version === 'v2' ? '2' : '1')) && (stages.length ? stages.includes(researchCase.stage) : false);
   });
   const runnable = workpackage?.stage === researchCase.stage;
   useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
@@ -73,7 +74,7 @@ export function WorkpackagePanel({ project, researchCase, catalog, busy, error, 
 
   return <section className="rd-section" aria-labelledby="rd-workpackage-title">
     <div className="rd-section-head"><div><span className="rd-eyebrow">阶段内部 · 工作包</span><h3 id="rd-workpackage-title">工作包计划与执行</h3><p>工作包完成只代表局部任务完成；案例阶段由实际业务决定推进。</p></div></div>
-    <div className="rd-pull-workpackage"><div className="rd-field"><label id="rd-definition-label">当前阶段可拉取的工作包 · {stageTitle(researchCase.stage)}</label><StyledSelect aria-labelledby="rd-definition-label" value={definitionId} options={[{ value: '', label: definitions.length ? '选择工作包定义' : '当前阶段暂无可执行工作包' }, ...definitions.map(definition => ({ value: definition.id, label: definition.title ?? definition.name ?? definition.id }))]} disabled={busy || !definitions.length} onChange={setDefinitionId} /></div><button className="rd-button primary" disabled={busy || !definitions.some(item => item.id === definitionId) || !catalog || dirty} onClick={() => void command('pull_workpackage', { definition_id: definitionId })}>拉取工作包</button></div>
+    <div className="rd-pull-workpackage"><div className="rd-field"><label id="rd-definition-label">当前阶段可拉取的工作包 · {scenarioStage(researchCase, scenarioManifest(researchCase.scenario_id)).title}</label><StyledSelect aria-labelledby="rd-definition-label" value={definitionId} options={[{ value: '', label: definitions.length ? '选择工作包定义' : '当前阶段暂无可执行工作包' }, ...definitions.map(definition => ({ value: `${definition.id}@${definition.version ?? '1'}`, label: `${definition.title ?? definition.name ?? definition.id} · V${definition.version ?? '1'}` }))]} disabled={busy || !definitions.length} onChange={setDefinitionId} /></div><button className="rd-button primary" disabled={busy || !definitions.some(item => `${item.id}@${item.version ?? '1'}` === definitionId) || !catalog || dirty} onClick={() => { const selected = definitions.find(item => `${item.id}@${item.version ?? '1'}` === definitionId); if (selected) void command('pull_workpackage', { definition_id: selected.id, definition_version: selected.version ?? '1' }); }}>拉取工作包</button></div>
     {!workpackage ? <div className="rd-empty"><strong>此案例尚无工作包</strong><p>选择当前阶段可用的工作包。资料检查、参数澄清与任务书装配分别承担局部任务。</p></div> : <>
       <div className="rd-field"><label id="rd-wp-select-label">案例工作包记录</label><StyledSelect aria-labelledby="rd-wp-select-label" value={workpackage.id} options={researchCase.workpackages.map(item => ({ value: item.id, label: `${item.title} · ${statusTitle(item.status)} · ${item.id.slice(-8)}` }))} disabled={busy} onChange={id => { if (dirty) setSwitchTo(id); else setSelectedId(id); }} /></div>
       {!runnable && <p className="rd-notice">这是其他阶段的工作包记录。可查看固定成果与证据，提交仅在所属阶段开放。</p>}

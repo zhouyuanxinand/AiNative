@@ -20,8 +20,14 @@ def issue(store, project, command, data=None, key=None):
 
 
 def case_project(store):
+    """Load an explicit historical fixture for the existing v1 regression suite."""
     project = store.create_project("owner", "连接器研发", {})
-    return issue(store, project, "create_case", {"scenario_id": "taskbook", "title": "研制任务书案例"})
+    project = issue(store, project, "create_case", {"scenario_id": "taskbook", "title": "研制任务书案例"})
+    with store._connection() as db:
+        payload = json.loads(db.execute("SELECT payload FROM projects WHERE id=?", (project["id"],)).fetchone()[0])
+        payload["cases"][0].pop("business_lifecycle", None)
+        db.execute("UPDATE projects SET payload=? WHERE id=?", (json.dumps(payload, ensure_ascii=False), project["id"]))
+    return store.get_project("owner", project["id"])
 
 
 def fixture_comparison(store, project, axis):

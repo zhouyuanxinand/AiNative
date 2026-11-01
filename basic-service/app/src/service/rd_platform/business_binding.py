@@ -55,6 +55,12 @@ def verify_binding(snapshot):
     validate_sources(snapshot)
     if binding.get('fingerprint') != business_fingerprint(binding):
         raise EvidenceBlocked('任务书业务绑定指纹不一致')
+    if binding.get('lifecycle_refs'):
+        refs = binding['lifecycle_refs']
+        if snapshot.get('lifecycle_refs') != refs or refs.get('policy_version') != 'v2' or any(not refs.get(key) for key in (
+                'requirement_baseline_id', 'requirement_baseline_digest', 'selection_decision_id',
+                'selection_bundle_id', 'selection_bundle_digest', 'activation_id')):
+            raise EvidenceBlocked('任务书业务确认、选型决定与研发启动引用不一致')
     for key, expected in [('context', context_of(snapshot)), ('requirements_snapshot', snapshot.get('requirements', [])),
                           ('product_route', snapshot.get('product_route')), ('composition_route', snapshot.get('composition_route'))]:
         if binding.get(key) != expected:

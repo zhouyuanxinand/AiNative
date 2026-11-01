@@ -13,12 +13,12 @@ import type { Catalog, Project, ResearchCase } from './types';
 interface ScenarioWorkspaceProps {
   project: Project; researchCase: ResearchCase; catalog: Catalog | null; activeSurface: CaseSurface;
   busy: boolean; error: string; command: CommandRunner;
-  onAnalyze: (caseId: string) => Promise<boolean>; onOpenSources: () => void;
+  onNavigate: (surface: CaseSurface) => void; onAnalyze: (caseId: string) => Promise<boolean>; onOpenSources: () => void;
   onUpload: (caseId: string, file: File, role: string, success: () => void) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void; workpackageFocus?: { id: string; serial: number };
 }
 
-function TaskbookWorkspace({ project, researchCase, catalog, activeSurface, busy, error, command, onAnalyze, onOpenSources, onUpload, onDirtyChange, workpackageFocus }: ScenarioWorkspaceProps) {
+function TaskbookWorkspace({ project, researchCase, catalog, activeSurface, busy, error, command, onNavigate, onAnalyze, onOpenSources, onUpload, onDirtyChange, workpackageFocus }: ScenarioWorkspaceProps) {
   const [parts, setParts] = useState<Record<string, boolean>>({});
   const setPart = useCallback((part: string, dirty: boolean) => setParts(current => current[part] === dirty ? current : { ...current, [part]: dirty }), []);
   const inputDirty = useCallback((value: boolean) => setPart('input', value), [setPart]);
@@ -38,7 +38,7 @@ function TaskbookWorkspace({ project, researchCase, catalog, activeSurface, busy
   const decisionPanel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (activeSurface === 'decision') {
-      const details = decisionPanel.current?.querySelector('details');
+      const details = decisionPanel.current?.querySelector<HTMLDetailsElement>('.rd-decision-disclosure');
       if (details) details.open = true;
     }
   }, [activeSurface]);
@@ -47,8 +47,8 @@ function TaskbookWorkspace({ project, researchCase, catalog, activeSurface, busy
     <div hidden={activeSurface !== 'sources'}><p className="rd-scenario-scope">上传资料后分析产品信息和原文需求，核对并采用识别结果；研制分类与模板由后续流程形成。</p><CaseInputForm project={project} researchCase={researchCase} busy={busy} error={error} command={command} onAnalyze={onAnalyze} onUpload={onUpload} onDirtyChange={inputDirty} /></div>
     <div hidden={activeSurface !== 'requirements'}><CaseRequirementsForm researchCase={researchCase} busy={busy} command={command} onOpenSources={onOpenSources} onDirtyChange={requirementDirty} /><CaseRecords kind="clarifications" project={project} researchCase={researchCase} busy={busy} error={error} command={command} onDirtyChange={clarificationDirty} /></div>
     <div hidden={activeSurface !== 'routes'}><CaseRecords kind="comparisons" project={project} researchCase={researchCase} busy={busy} error={error} command={command} onDirtyChange={comparisonDirty} /><section className="rd-section"><h3>产品研制分类与任务书编制策略</h3><p className="rd-muted">同一业务流程中的两个独立决策项，分别保留理由与证据。</p><div className="rd-route-grid"><RouteEditor axis="product" researchCase={researchCase} busy={busy} command={command} onDirtyChange={productDirty} /><RouteEditor axis="composition" researchCase={researchCase} busy={busy} command={command} onDirtyChange={compositionDirty} /></div></section></div>
-    <div hidden={activeSurface !== 'preparation'}><TaskbookPreparation researchCase={researchCase} catalog={catalog} busy={busy} command={command} onDirtyChange={preparationDirty} /></div>
-    <div hidden={activeSurface !== 'workpackages'}><p className="rd-notice">任务书是本项目研发流程中的成果节点。工作包提交后包内动作自主执行；完成编制不会自动完成后续专业设计、业务审签或交付。</p><WorkpackagePanel project={project} researchCase={researchCase} catalog={catalog} busy={busy} error={error} command={command} onDirtyChange={packageDirty} focusRequest={workpackageFocus} /><EngineeringProgress project={project} researchCase={researchCase} busy={busy} command={command} onUpload={onUpload} onDirtyChange={engineeringDirty} /></div>
+    <div hidden={activeSurface !== 'preparation'}><TaskbookPreparation researchCase={researchCase} catalog={catalog} busy={busy} command={command} onDirtyChange={preparationDirty} onOpenWorkpackages={() => onNavigate('workpackages')} /></div>
+    <div hidden={activeSurface !== 'workpackages'}><p className="rd-notice">任务书是本项目研发流程中的成果节点。工作包提交后包内动作自主执行；完成编制不会自动完成后续专业设计、业务审签或交付。</p><WorkpackagePanel project={project} researchCase={researchCase} catalog={catalog} busy={busy} error={error} command={command} onDirtyChange={packageDirty} focusRequest={workpackageFocus} />{(researchCase.business_lifecycle?.policy_version !== 'v2' || ['design', 'verification', 'delivery', 'knowledge'].includes(researchCase.stage)) && <EngineeringProgress project={project} researchCase={researchCase} busy={busy} command={command} onUpload={onUpload} onDirtyChange={engineeringDirty} />}</div>
     <div hidden={activeSurface !== 'delivery'}><div className="rd-field"><label htmlFor="rd-receipt-upload">上传实际交付回执或反馈资料</label><input id="rd-receipt-upload" type="file" disabled={busy || researchCase.stage !== 'delivery'} onChange={event => { const field = event.currentTarget; const file = field.files?.[0]; if (file) void onUpload(researchCase.id, file, 'reference', () => { field.value = ''; }); }} /></div><CaseRecords kind="delivery" project={project} researchCase={researchCase} busy={busy} error={error} command={command} onDirtyChange={deliveryDirty} /></div>
     <div hidden={activeSurface !== 'reuse'}><CaseRecords kind="reuse" project={project} researchCase={researchCase} busy={busy} error={error} command={command} onDirtyChange={reuseDirty} /></div>
     <div hidden={activeSurface !== 'decision'} ref={decisionPanel}><CaseDecisionForm project={project} researchCase={researchCase} busy={busy} error={error} command={command} onDirtyChange={decisionDirty} /></div>

@@ -55,14 +55,19 @@ try {
     if (path.endsWith('/commands')) {
       const body = request.postDataJSON(); commands.push({ key: request.headers()['idempotency-key'], body });
       assert.equal(body.command, 'adopt_source_analysis');
-      assert.equal(body.data.analysis_id, proposal.id);
+      assert.equal(body.data.analysis_id, project.cases[0].source_analysis.id);
       assert.equal(body.data.case_id, 'case-fixture');
       if (failAdopt) { failAdopt = false; return route.fulfill({ status: 503, json: { error: '采用服务暂不可用，请重试。' } }); }
       project.version += 1; project.cases[0].input_revision += 1;
       const analysis = project.cases[0].source_analysis;
       analysis.status = 'adopted'; analysis.adopted_input_revision = project.cases[0].input_revision;
-      for (const [key, item] of Object.entries(analysis.context)) if (item.value) project.cases[0].context[key] = item.value;
-      project.cases[0].requirements = analysis.requirements.map((item, index) => ({ ...item, id: `requirement-${index}` }));
+      for (const [key, item] of Object.entries(analysis.context)) if (item.status === 'proposed' && item.value) {
+        project.cases[0].context[key] = item.value;
+        project.cases[0].context_provenance ??= {};
+        project.cases[0].context_provenance[key] = { kind: 'source_analysis', evidence: structuredClone(item.evidence), reason: item.reason, source_refs: item.source_refs ?? [] };
+        if (project.cases[0].parameter_facts?.[key]) Object.assign(project.cases[0].parameter_facts[key], { status: 'adopted', evidence_status: 'current', source_refs: item.source_refs ?? [] });
+      }
+      if (analysis.requirements.length) project.cases[0].requirements = analysis.requirements.map((item, index) => ({ ...item, id: `requirement-${index}` }));
       return route.fulfill({ json: project });
     }
     return route.fulfill({ json: path.endsWith('/session') ? { ok: true } : {} });
@@ -73,7 +78,7 @@ try {
   await panel.waitFor();
   assert.equal(await page.locator('input[id^="rd-context-"]').count(), 0, 'business context is not a manual input form');
   assert.equal(await panel.locator('dt').count(), 6);
-  assert.equal(await panel.getByText('待流程确认', { exact: true }).count(), 5);
+  assert.equal(await panel.getByText('资料未明确', { exact: true }).count(), 5);
   const analyze = panel.getByRole('button', { name: '分析上传资料', exact: true });
   await analyze.evaluate(element => { element.click(); element.click(); });
   await page.getByRole('alert').filter({ hasText: '模型服务暂不可用' }).first().waitFor();
@@ -128,10 +133,43 @@ try {
   await panel.evaluate(element => { const shell = document.querySelector('.rd-application-shell'); shell.scrollTop += element.getBoundingClientRect().top - 16; });
   assert(await page.locator('.rd-application-shell').evaluate(element => element.scrollWidth <= element.clientWidth + 1), 'narrow layout has no horizontal page overflow');
   if (output) await page.screenshot({ path: join(output, 'source-analysis-narrow.png') });
+
+  const researchCase = project.cases[0];
+  const previousEvidence = structuredClone(researchCase.context_provenance.product_type);
+  const replacementSource = { ...sources[0], id: 'tech-replacement', version: 2, sha256: 'replacement-tech-sha' };
+  const replacementQuote = '产品类型：液冷管路。新版资料明确沿用原产品类型。';
+  const replacementRefs = [{ source_id: replacementSource.id, version: replacementSource.version, sha256: replacementSource.sha256, location: { line: 1 } }];
+  researchCase.sources.push(replacementSource); researchCase.source_selection.tech = replacementSource.id;
+  researchCase.input_revision++; project.version++;
+  researchCase.parameter_facts = { product_type: { field: 'product_type', value: researchCase.context.product_type, status: 'unresolved', evidence_status: 'stale', source_refs: [], decision_ref: null, rule_refs: [], reason: '旧来源已失效，等待核对。', candidates: [] } };
+  researchCase.source_analysis = { ...structuredClone(proposal), id: 'analysis-refresh', input_revision: researchCase.input_revision,
+    source_hashes: { 'tech-replacement': replacementSource.sha256, spec: 'spec' }, requirements: [], warnings: [],
+    context: Object.fromEntries(Object.entries(researchCase.context).map(([key, value]) => [key, { value, status: value ? 'already_confirmed' : 'unresolved', reason: '保留原采用值。', evidence: [] }])) };
+  researchCase.source_analysis.context.product_type = { value: researchCase.context.product_type, status: 'proposed', adoption_kind: 'refresh_source_refs',
+    reason: '新版明确支持原参数值，等待明确采用新的来源依据。', evidence: [{ source_id: replacementSource.id, quote: replacementQuote }], source_refs: replacementRefs };
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.reload();
+  await page.getByRole('button', { name: '分析资料并确认采用 →', exact: true }).first().click();
+  const refreshedField = panel.locator('.rd-analysis-context-item').filter({ hasText: '同值新来源，待确认采用' });
+  await refreshedField.waitFor();
+  await refreshedField.getByText('查看原文依据', { exact: true }).click();
+  await refreshedField.getByRole('blockquote').filter({ hasText: replacementQuote }).waitFor();
+  assert.equal(await refreshedField.getByText('本组件为液冷管路。', { exact: true }).count(), 0, 'refresh preview quotes the new source, not old provenance');
+  assert.equal(await panel.locator('.rd-analysis-requirements article').count(), 0);
+  assert.equal(await panel.getByRole('button', { name: '确认采用', exact: true }).isEnabled(), true, 'supported parameter refresh is adoptable without requirement rows');
+  assert.deepEqual(researchCase.context_provenance.product_type, previousEvidence, 'preview preserves the previously adopted evidence');
+  if (output) await page.screenshot({ path: join(output, 'source-analysis-same-value-refresh.png') });
+  await panel.getByRole('button', { name: '确认采用', exact: true }).click();
+  await panel.getByText('已采用', { exact: true }).waitFor();
+  assert.equal(commands.at(-1).body.data.analysis_id, 'analysis-refresh');
+  assert.equal(researchCase.context.product_type, 'liquid_cooling_pipeline');
+  assert.deepEqual(researchCase.context_provenance.product_type.source_refs, replacementRefs);
+  assert.equal(researchCase.requirements.length, 8, 'parameter-only adoption preserves prior requirements');
+  assert.equal(await panel.getByText('同值新来源，待确认采用', { exact: true }).count(), 0, 'successful adoption no longer claims the new source is pending');
   project.cases[0].sources = []; project.cases[0].source_selection = {}; project.cases[0].requirements = []; delete project.cases[0].source_analysis;
   await page.reload();
   await page.getByRole('button', { name: '分析资料并确认采用 →', exact: true }).first().click();
   assert.equal(await panel.getByRole('button', { name: '分析上传资料', exact: true }).isDisabled(), true, 'empty sources cannot invoke the model');
   assert.deepEqual(errors, []);
-  console.log('Source analysis browser checks passed: readonly context, preview, provenance, paging, failure/retry, adoption, stale input, narrow layout.');
+  console.log('Source analysis browser checks passed: readonly context, preview, provenance, paging, failure/retry, adoption, stale input, same-value source refresh without requirements, narrow layout.');
 } finally { await browser.close(); }

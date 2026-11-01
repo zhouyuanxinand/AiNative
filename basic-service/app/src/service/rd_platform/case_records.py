@@ -198,6 +198,8 @@ class CaseRecords:
         if not affected:
             return []
         from .store import Store
+        from .lifecycle import Lifecycle
+        Lifecycle.invalidate(case, "已采用的逐项比对形成新修订。", requirements=False)
         Store._stale_taskbook_binding(case, "已采用的逐项比对形成新修订。")
         invalidated = []
         for decision in case["decisions"]:

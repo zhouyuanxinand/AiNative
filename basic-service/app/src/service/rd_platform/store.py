@@ -127,8 +127,13 @@ def _reject_raw_credentials(value):
 
 
 class Store:
-    def __init__(self, path: Path, asset_root: Path):
+    def __init__(self, path: Path, asset_root: Path, *, local_review_enabled=False):
         from .case_records import CaseRecords
+        from .lifecycle import Lifecycle
+        from .review_records import ReviewRecords
+        self.local_review_enabled = local_review_enabled is True
+        self.lifecycle = Lifecycle(self)
+        self.reviews = ReviewRecords(self)
         self.records = CaseRecords(self)
         self.path, self.asset_root = Path(path).resolve(), Path(asset_root).resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -199,6 +204,7 @@ class Store:
             case.setdefault("source_analysis", None)
             case.setdefault("source_analysis_history", [])
             self.records.initialize(case)
+            self.lifecycle.initialize(case)
             self._warnings(case)
             for package in case["workpackages"]:
                 for key, default in (("planned_start", None), ("planned_end", None), ("plan_note", ""), ("schedule_revision", 0),
@@ -253,8 +259,20 @@ class Store:
         return _public(project)
 
     def get_project(self, actor, pid):
+        actor = _actor(actor)
         with self._connection() as db:
-            return _public(self._load(db, pid, _actor(actor)))
+            return self._project_public(self._load(db, pid, actor), actor)
+
+    def _project_public(self, project, actor):
+        result = _public(project)
+        if result["cases"]:
+            from .analysis import parameter_facts
+            for case in result["cases"]:
+                case["parameter_facts"] = parameter_facts(case)
+                case["business_lifecycle"]["can_confirm_requirements"] = actor == project["owner_id"]
+                case["business_lifecycle"]["can_record_decision"] = bool(self.local_review_enabled and actor == project["owner_id"]
+                    and case["business_lifecycle"]["policy_version"] == "v2")
+        return result
 
     def list_projects(self, actor):
         actor = _actor(actor)
@@ -264,8 +282,9 @@ class Store:
         for project in visible:
             _project_profile_defaults(project)
             for case in project["cases"]:
+                self.lifecycle.initialize(case)
                 self._warnings(case)
-        return [_public(project) for project in visible]
+        return [self._project_public(project, actor) for project in visible]
 
     def _receipt(self, db, actor, pid, key, intent):
         key = _text(key, "Idempotency-Key", 200, True)
@@ -285,9 +304,8 @@ class Store:
         if isinstance(expected_version, bool) or not isinstance(expected_version, int) or expected_version != project["version"]:
             raise RdError(409, "项目已更新，请刷新后重试。")
 
-    @staticmethod
-    def _save_receipt(db, actor, project, key, fingerprint):
-        public = _public(project)
+    def _save_receipt(self, db, actor, project, key, fingerprint):
+        public = self._project_public(project, actor)
         db.execute("INSERT INTO receipts VALUES(?,?,?,?,?)", (actor, project["id"], key, fingerprint, _json(public)))
         return public
 
@@ -332,8 +350,17 @@ class Store:
                     event_extra = self._select_source(case, data)
                 elif command == "save_requirement":
                     event_extra = self._save_requirement(case, data, actor)
+                elif command == "confirm_requirements":
+                    event_extra = self.lifecycle.confirm_requirements(project, case, data, actor)
+                elif command in self.reviews.COMMANDS:
+                    event_extra = self.reviews.command(project, case, command, data, actor)
                 elif command in self.records.COMMANDS:
+                    from .lifecycle import LifecyclePolicy
+                    engineering_qualification = (self.reviews._qualification(project, actor)
+                        if command == "record_engineering_node" and LifecyclePolicy.resolve(case).version == "v2" else None)
                     event_extra = self.records.command(case, command, data, actor)
+                    if engineering_qualification:
+                        case["engineering_records"][-1].update(engineering_qualification)
                 elif command == "record_route_decision":
                     self._route_decision(case, data, actor)
                 elif command == "adopt_taskbook_flow":
@@ -346,7 +373,7 @@ class Store:
                     package = self._package(case, data.get("workpackage_id"))
                     if package["status"] != "draft":
                         raise RdError(409, "提交后的计划不可修改；请建立新的工作包修订。")
-                    package["nodes"] = self._validate_plan(db, package["definition_id"], data.get("nodes"))
+                    package["nodes"] = self._validate_plan(db, package["definition_id"], data.get("nodes"), package["definition_version"])
                     package["plan_revision"] += 1
                 elif command == "save_schedule":
                     event_extra = self._save_schedule(case, data, actor)
@@ -362,6 +389,8 @@ class Store:
             return self._save_receipt(db, actor, project, key, fingerprint)
 
     def _create_case(self, project, data, actor):
+        if set(data) - {"scenario_id", "title"}:
+            raise RdError(422, "案例政策由服务端固定，创建只接受场景与名称。")
         scenario = definitions.scenario(data.get("scenario_id"))
         if scenario is None:
             raise RdError(422, "未知的案例场景。")
@@ -376,6 +405,7 @@ class Store:
             "taskbook_binding": None, "taskbook_binding_history": [], "engineering_records": [],
             "source_analysis": None, "source_analysis_history": [],
             "business_context": self._business_context(project)})
+        self.lifecycle.initialize(project["cases"][-1], new=True)
 
     @staticmethod
     def _active_sources(case):
@@ -392,6 +422,7 @@ class Store:
         return [source for source in case["sources"] if source["role"] == "reference" or source["id"] in selected]
 
     def _invalidate_inputs(self, case, reason):
+        self.lifecycle.invalidate(case, reason)
         case["input_revision"] = case.get("input_revision", 1) + 1
         if case.get("source_analysis"):
             case["source_analysis"].update(status="stale", invalidated_reason=reason)
@@ -532,14 +563,21 @@ class Store:
             raise RdError(409, "来源已变化，请重新分析。")
         for source in sources:
             self._checked_path(source)
+        from .analysis import parameter_facts
+        confirmed_facts = parameter_facts(case)
         changed = []
         for field, item in proposal["context"].items():
-            if item["status"] != "proposed" or not item["value"] or case["context"].get(field):
+            if item["status"] != "proposed" or not item["value"]:
+                continue
+            existing = case["context"].get(field)
+            if existing and not (item.get("adoption_kind") == "refresh_source_refs" and existing == item["value"]
+                                 and confirmed_facts[field]["evidence_status"] == "stale" and item.get("source_refs")):
                 continue
             case["context"][field] = item["value"]
             case["context_provenance"][field] = {"kind": "source_analysis", "actor": actor, "created_at": _now(),
                 "analysis_id": proposal["id"], "source_ids": [e["source_id"] for e in item["evidence"] if e["source_id"] in proposal["source_hashes"]],
-                "evidence": deepcopy(item["evidence"]), "reason": item["reason"]}
+                "evidence": deepcopy(item["evidence"]), "reason": item["reason"],
+                **{key: deepcopy(item.get(key)) for key in ("source_refs", "decision_ref", "rule_refs") if key in item}}
             changed.append(field)
         invalidated = self._invalidate_inputs(case, "用户明确采用来源分析参数，需要按新基线确认。") if changed else []
         requirements = []
@@ -549,6 +587,8 @@ class Store:
             for version in [requirement, *requirement.get("history", [])]
         ]
         for candidate in proposal["requirements"]:
+            if candidate.get("status") == "rejected":
+                continue
             # Re-reading an original source must not resurrect a requirement that
             # a later clarification replaced. Additional confirmation sources do
             # not turn the same quoted requirement into a new engineering fact;
@@ -585,6 +625,10 @@ class Store:
                     "source_ids": list(dict.fromkeys(data["source_ids"])), "actor": actor, "created_at": _now(), "input_revision": case["input_revision"], **binding}
         if case.get(f"{axis}_route") != decision:
             self._stale_taskbook_binding(case, "研发路线决定已变化。")
+            self.lifecycle.invalidate(case, "研发路线决定已变化。", requirements=False)
+            from .lifecycle import LifecyclePolicy
+            if LifecyclePolicy.resolve(case).version == "v2":
+                case["stage"] = "selection"
         case[f"{axis}_route"] = decision
         case["decisions"].append({"id": _id(), "kind": "route", "stage": case["stage"], "axis": axis, **deepcopy(decision)})
         self._warnings(case)
@@ -596,9 +640,12 @@ class Store:
             binding.update(status="stale", invalidated_at=_now(), invalidated_reason=reason)
 
     def _current_taskbook_binding(self, case):
+        from .lifecycle import LifecyclePolicy
         binding = case.get("taskbook_binding")
         if not binding or binding["status"] != "current" or binding["input_revision"] != case["input_revision"]:
             raise RdError(422, "请在研发策划阶段采用当前需求对应的研发流程与任务书模板。")
+        if LifecyclePolicy.resolve(case).version == "v2" and binding.get("lifecycle_refs") != self.lifecycle.execution_refs(case):
+            raise RdError(409, "任务书绑定的需求确认、选型决定或研发启动已变化。")
         for key, current in (("context", case["context"]), ("requirements_snapshot", case["requirements"]),
                              ("product_route", case["product_route"]), ("composition_route", case["composition_route"]),
                              ("business_context", case["business_context"])):
@@ -618,11 +665,19 @@ class Store:
 
     def _adopt_taskbook_flow(self, case, data, actor):
         from .business_binding import document_template, business_fingerprint
+        from .lifecycle import LifecyclePolicy
         allowed = {"case_id", "workflow_id", "workflow_version", "scope", "rationale"}
         if set(data) - allowed:
             raise RdError(422, "模板采用只接受目录版本、范围及依据，不接受客户端业务快照。")
         if case["stage"] != "planning":
             raise RdError(422, "请在研发策划阶段采用研发流程模板。")
+        lifecycle_refs = self.lifecycle.execution_refs(case) if LifecyclePolicy.resolve(case).version == "v2" else None
+        if lifecycle_refs is not None:
+            from .analysis import parameter_facts
+            facts = parameter_facts(case)
+            for field, fact in facts.items():
+                if fact["status"] != "adopted" or fact["evidence_status"] == "stale" or not (fact["source_refs"] or fact["decision_ref"]):
+                    raise RdError(422, f"参数 {field} 缺少当前有效来源或明确确认，无法固定任务书模板；请核对来源、冲突或关键澄清。")
         workflow = next((item for item in definitions.RESEARCH_WORKFLOW_TEMPLATES
                          if item["id"] == data.get("workflow_id") and item["version"] == data.get("workflow_version")
                          and item["status"] == "published"), None)
@@ -666,12 +721,17 @@ class Store:
             "scope": _text(data.get("scope"), "研发范围", 4000, True),
             "rationale": _text(data.get("rationale"), "采用依据", 4000, True),
             "adopted_by": actor, "adopted_at": _now(), "status": "current"}
+        if lifecycle_refs is not None:
+            binding["lifecycle_refs"] = lifecycle_refs
         binding["fingerprint"] = business_fingerprint(binding)
         case["taskbook_binding"] = binding
         case["taskbook_binding_history"].append(deepcopy(binding))
         return {"taskbook_binding_id": binding["id"], "taskbook_binding_revision": binding["revision"], "fingerprint": binding["fingerprint"]}
 
-    def _advance_stage(self, case, data, actor):
+    def _advance_stage(self, case, data, actor, *, lifecycle_checked=False):
+        from .lifecycle import LifecyclePolicy
+        if LifecyclePolicy.resolve(case).version == "v2" and not lifecycle_checked:
+            raise RdError(422, "新版业务流程须使用需求确认、选型决定、研发启动和任务书范围决定，不能通用推进阶段。")
         stage = data.get("stage")
         if stage != case["stage"] or case["status"] == "completed":
             raise RdError(422, "只能记录当前活动阶段的决定。")
@@ -733,15 +793,22 @@ class Store:
                 case["stage"] = definitions.STAGE_IDS[definitions.STAGE_IDS.index(stage) + 1]
 
     def _pull_package(self, case, data):
-        definition = definitions.definition(data.get("definition_id"))
+        from .lifecycle import LifecyclePolicy
+        version = "2" if LifecyclePolicy.resolve(case).version == "v2" and data.get("definition_id") == "taskbook" else "1"
+        if data.get("definition_version", version) != version:
+            raise RdError(422, "工作包版本与当前业务政策不匹配，不能采用旧版绕过业务关口。")
+        definition = definitions.definition(data.get("definition_id"), version)
         if not definition or case["stage"] not in definition["stages"] or case["status"] == "completed":
             raise RdError(422, "当前案例阶段不支持这个工作包。")
+        if version == "2":
+            self._current_taskbook_binding(case)
         case["workpackages"].append({"id": _id(), "definition_id": definition["id"], "definition_version": definition["version"],
             "required": definition["required"],
+            **({"business_node_id": definition["business_node_id"]} if "business_node_id" in definition else {}),
             "title": definition["title"], "stage": case["stage"], "status": "draft", "plan_revision": 1,
             "planned_start": None, "planned_end": None, "plan_note": "", "schedule_revision": 0, "schedule_history": [],
             "started_at": None, "completed_at": None, "ended_at": None,
-            "nodes": definitions.default_nodes(definition["id"]), "snapshot": None, "run_id": None, "artifacts": [], "obligations": [],
+            "nodes": definitions.default_nodes(definition["id"], version), "snapshot": None, "run_id": None, "artifacts": [], "obligations": [],
             "blocked_reasons": [], "request_ref": _text(data.get("request_ref", ""), "请求引用", 200)})
 
     def _save_schedule(self, case, data, actor):
@@ -761,6 +828,13 @@ class Store:
 
     @staticmethod
     def _same_inputs(snapshot, case):
+        if snapshot.get("lifecycle_refs"):
+            refs = snapshot["lifecycle_refs"]
+            lifecycle = case.get("business_lifecycle", {})
+            if lifecycle.get("rd_activation_state") != "active" or any(refs.get(key) != lifecycle.get(current) for key, current in (
+                ("requirement_baseline_id", "current_requirement_baseline_id"), ("selection_decision_id", "current_selection_decision_id"),
+                ("activation_id", "current_activation_id"))):
+                return False
         if snapshot.get("business_context") != case.get("business_context"):
             return False
         if not all(snapshot.get(key) == case.get(key) for key in (
@@ -787,14 +861,19 @@ class Store:
         if not self._same_inputs(upstream["snapshot"], case):
             raise RdError(422, "当前资料、需求、参数、研制分类或编制策略已变更，请重新生成任务书后校验。")
         return {"upstream_workpackage_id": upstream["id"], "upstream_artifacts": deepcopy(upstream["artifacts"]),
+                **({"lifecycle_refs": deepcopy(upstream["snapshot"]["lifecycle_refs"]),
+                    "business_node_id": upstream["snapshot"].get("business_node_id")}
+                   if upstream["snapshot"].get("lifecycle_refs") else {}),
                 "sources": deepcopy(upstream["snapshot"]["sources"]),
                 "source_selection": deepcopy(upstream["snapshot"]["source_selection"]),
                 "taskbook_binding": deepcopy(upstream["snapshot"].get("taskbook_binding")),
                 "business_context": deepcopy(upstream["snapshot"].get("business_context")),
                 "upstream_results": {node["action_id"]: deepcopy(node["result"]) for node in upstream["nodes"] if node["status"] == "completed"}}
 
-    def _validate_plan(self, db, definition_id, nodes):
-        definition = definitions.definition(definition_id)
+    def _validate_plan(self, db, definition_id, nodes, definition_version="1"):
+        definition = definitions.definition(definition_id, definition_version)
+        if definition is None:
+            raise RdError(422, "工作包固定定义版本不存在。")
         if not isinstance(nodes, list) or not nodes or len(nodes) > 32:
             raise RdError(422, "计划应包含1至32个动作。")
         result, identifiers = [], set()
@@ -858,7 +937,10 @@ class Store:
         package = self._package(case, data.get("workpackage_id"))
         if package["status"] != "draft" or package["stage"] != case["stage"]:
             raise RdError(409, "只能提交可执行的草稿工作包。")
-        package["nodes"] = self._validate_plan(db, package["definition_id"], package["nodes"])
+        from .lifecycle import LifecyclePolicy
+        if package["definition_id"] == "taskbook" and LifecyclePolicy.resolve(case).version == "v2" and package["definition_version"] != "2":
+            raise RdError(422, "历史任务书草稿须明确采用新版策划工作包，不能原地改版提交。")
+        package["nodes"] = self._validate_plan(db, package["definition_id"], package["nodes"], package["definition_version"])
         binding = self._current_taskbook_binding(case) if package["definition_id"] == "taskbook" else None
         actions = []
         for node in package["nodes"]:
@@ -881,6 +963,9 @@ class Store:
         if binding is not None:
             snapshot["taskbook_binding"] = deepcopy(binding)
             snapshot["sources"] = deepcopy(binding["source_snapshots"])
+            if binding.get("lifecycle_refs"):
+                snapshot["lifecycle_refs"] = deepcopy(binding["lifecycle_refs"])
+                snapshot["business_node_id"] = package["business_node_id"]
         snapshot.update(self._fixed_upstream(case, package))
         snapshot["rule_assets"] = [{"name": path.name, "path": str(path.resolve()), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
                                    for path in sorted(_RULE_ROOT.glob("*.yaml"))]

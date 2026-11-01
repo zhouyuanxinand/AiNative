@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param()
+param([switch]$LocalReview)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -38,6 +38,7 @@ function Import-DotEnv {
 }
 
 Import-DotEnv (Join-Path $serviceRoot ".env")
+if ($LocalReview) { $env:JTB_RD_LOCAL_REVIEW = "1" }
 if (-not $env:APP_ENV) { $env:APP_ENV = "development" }
 if (-not $env:JTB_HOST) { $env:JTB_HOST = "127.0.0.1" }
 if (-not $env:JTB_FEEDBACK_HOST) { $env:JTB_FEEDBACK_HOST = "127.0.0.1" }

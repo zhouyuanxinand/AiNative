@@ -30,6 +30,10 @@ WORKPACKAGE_DEFINITIONS = [
     {"id": "quality_check", "version": "1", "title": "已有成果校验", "name": "已有成果校验", "scenario_id": "taskbook", "stages": list(STAGE_IDS), "required": False,
      "required_actions": ["verify"], "optional_actions": ["consistency"]},
 ]
+WORKPACKAGE_DEFINITIONS.append({**deepcopy(WORKPACKAGE_DEFINITIONS[0]), "version": "2", "stages": ["planning"],
+                               "business_node_id": "taskbook_planning", "policy_version": "v2"})
+SELECTION_WORKFLOW_TEMPLATES = [{"id": "taskbook-selection-v2", "version": "2", "title": "需求确认与选型办理", "status": "published",
+                               "policy_version": "v2", "nodes": ["input", "confirm_requirements", "comparison", "selection_decision", "rd_start"]}]
 RESEARCH_WORKFLOW_TEMPLATES = [
     {"id": "taskbook-" + route + "-v1", "version": "1", "title": title, "status": "published",
      "product_route": route, "nodes": ["taskbook", "scheme", "detail", "integration", "verification", "delivery"]}
@@ -40,9 +44,10 @@ RULE_VERSIONS = {"case_lifecycle": "2", "taskbook_delegation": "1", "evidence_is
 
 
 def get_catalog():
-    definitions = [{**item, "nodes": default_nodes(item["id"])} for item in WORKPACKAGE_DEFINITIONS]
+    definitions = [{**item, "nodes": default_nodes(item["id"], item["version"])} for item in WORKPACKAGE_DEFINITIONS]
     return deepcopy({"stages": STAGES, "scenarios": [item for item in SCENARIOS if item["status"] == "published"],
-                     "workpackage_definitions": definitions, "actions": ACTIONS, "research_workflow_templates": RESEARCH_WORKFLOW_TEMPLATES})
+                     "workpackage_definitions": definitions, "actions": ACTIONS, "research_workflow_templates": RESEARCH_WORKFLOW_TEMPLATES,
+                     "selection_workflow_templates": SELECTION_WORKFLOW_TEMPLATES})
 
 
 def catalog():
@@ -54,13 +59,13 @@ def scenario(scenario_id):
     return next((deepcopy(item) for item in SCENARIOS if item["id"] == scenario_id and item["status"] == "published"), None)
 
 
-def definition(definition_id):
-    return next((deepcopy(item) for item in WORKPACKAGE_DEFINITIONS if item["id"] == definition_id), None)
+def definition(definition_id, version="1"):
+    return next((deepcopy(item) for item in WORKPACKAGE_DEFINITIONS if item["id"] == definition_id and item["version"] == version), None)
 
 
-def default_nodes(definition_id):
+def default_nodes(definition_id, version="1"):
     nodes = []
-    for action_id in definition(definition_id)["required_actions"]:
+    for action_id in definition(definition_id, version)["required_actions"]:
         nodes.append({"id": action_id, "action_id": action_id, "action_version": "1", "depends_on": [nodes[-1]["id"]] if nodes else [],
                       "required": True, "status": "draft", "result": None, "attempt": 0,
                       "started_at": None, "completed_at": None, "ended_at": None})

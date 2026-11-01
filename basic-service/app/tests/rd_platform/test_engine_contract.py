@@ -1,6 +1,9 @@
 """The RD adapter preserves the original engine's labels and condition contract."""
 from contextlib import nullcontext
 from copy import deepcopy
+import hashlib
+import json
+from pathlib import Path
 
 import pytest
 from docx import Document
@@ -46,6 +49,90 @@ def engine_calls(monkeypatch):
     monkeypatch.setattr(llm_client, 'get_model_status', lambda *a:{'configured':True})
     monkeypatch.setattr(llm_client, 'model_scope', lambda *a:nullcontext())
     return seen
+
+
+def test_bound_pipeline_receives_exact_context_and_assets(tmp_path, monkeypatch):
+    """Pin the liquid-pipeline boundary; a stub output is not document QA."""
+    from jonhon_taskbook import llm_client
+    from jonhon_taskbook.template_registry import PROJECT_ROOT, resolve_template_selection
+    from src.service.rd_platform.business_binding import document_template, business_fingerprint
+
+    context = {
+        'product_type': 'liquid_cooling_pipeline', 'product_domain': 'military',
+        'development_process': '改型II', 'cover_phase': 'S', 'product_series': 'YLZJ',
+        'organization_scope': 'non_central_research',
+    }
+    # Reverse input order so accidentally using positional sources cannot pass.
+    spec = source(tmp_path, '产品规范：工作压力0.3MPa。', role='spec', sid='spec')
+    tech = source(tmp_path, '技术要求：液冷管路工作压力0.3MPa。', sid='tech')
+    snap = snapshot([spec, tech], context)
+    snap.update(actor_id='local:contract-test', product_route={'value': 'modification'},
+                model_selection={'provider': 'contract-provider', 'name': 'contract-model', 'id': 'fixed-model-id'})
+    binding = {
+        'id': 'liquid-pipeline-binding', 'status': 'current', 'context': deepcopy(context),
+        'requirements_snapshot': [], 'source_snapshots': deepcopy(snap['sources']),
+        'product_route': deepcopy(snap['product_route']), 'composition_route': deepcopy(snap['composition_route']),
+        'workflow': {'id': 'flow', 'version': 1, 'nodes': ['taskbook'], 'product_route': 'modification'},
+        'document_template': document_template(context),
+    }
+    binding['fingerprint'] = business_fingerprint(binding)
+    snap['taskbook_binding'] = binding
+    plan, done = plan_and_completion(snap, tmp_path)
+    seen = engine_calls(monkeypatch)
+    model_status_calls, model_scope_calls = [], []
+
+    def model_status(*args):
+        model_status_calls.append(args)
+        return {'configured': True}
+
+    def model_scope(*args):
+        model_scope_calls.append(args)
+        return nullcontext()
+
+    monkeypatch.setattr(llm_client, 'get_model_status', model_status)
+    monkeypatch.setattr(llm_client, 'model_scope', model_scope)
+    result = run('generate', snap, tmp_path, {'template_plan': plan, 'content_completion': done})
+    assert len(seen) == 1
+    call = seen[0]
+    assert {key: call[key] for key in (
+        'selected_product_type', 'selected_product_domain', 'development_process',
+        'cover_phase', 'product_series', 'organization_scope',
+    )} == {
+        'selected_product_type': context['product_type'], 'selected_product_domain': context['product_domain'],
+        **{key: context[key] for key in ('development_process', 'cover_phase', 'product_series', 'organization_scope')},
+    }
+    selected = resolve_template_selection('liquid_cooling_pipeline', 'military')
+    assert call['selected_product_type_label'] == selected.product_type_label
+    for role, original in [('tech', tech), ('spec', spec)]:
+        assert Path(call[role + '_path']).read_bytes() == Path(original['path']).read_bytes()
+    for kind, argument in [('template', 'tpl_path'), ('profile', 'profile_path'), ('mapping', 'category_mapping_path')]:
+        asset = plan['assets'][kind]
+        assert call[argument] == asset['path']
+        assert Path(call[argument]).is_relative_to(tmp_path / 'work')
+        assert hashlib.sha256(Path(call[argument]).read_bytes()).hexdigest() == binding['document_template']['assets'][kind]['sha256']
+    rules = {'rule_' + path.stem: path for path in (PROJECT_ROOT / 'config').glob('*.yaml')}
+    assert {kind for kind in plan['assets'] if kind.startswith('rule_')} == set(rules)
+    for kind, original in rules.items():
+        assert plan['assets'][kind]['sha256'] == hashlib.sha256(original.read_bytes()).hexdigest()
+        assert Path(plan['assets'][kind]['path']).read_bytes() == original.read_bytes()
+    assert call['use_llm'] is True
+    assert call['preserve_unfilled_template'] is True
+    assert call['formal_output'] is True
+    assert callable(call['cb'])
+    assert call['indicator_clarifications'] == {}
+    expected_model = ('contract-provider', 'contract-model', 'fixed-model-id')
+    assert model_status_calls == [expected_model]
+    assert model_scope_calls == [expected_model]
+    receipt = json.loads(Path(result['result']['receipt']['path']).read_text(encoding='utf-8'))
+    assert receipt['context'] == context
+    assert receipt['binding_id'] == binding['id']
+    assert receipt['business_fingerprint'] == binding['fingerprint']
+    assert receipt['source_hashes'] == {item['id']: item['sha256'] for item in snap['sources']}
+    assert {kind: item['sha256'] for kind, item in receipt['assets'].items()} == {
+        kind: item['sha256'] for kind, item in plan['assets'].items()
+    }
+    assert result['status'] == 'blocked'
+    assert result['result']['ok'] is False
 
 
 def test_bound_template_plan_and_pipeline_keep_product_label_separate_from_domain(tmp_path, monkeypatch):

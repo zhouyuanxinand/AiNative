@@ -1,5 +1,5 @@
 export interface LauncherPoint { x: number; y: number }
-export interface LauncherAnchor { edge: 'left' | 'right'; y: number }
+export interface LauncherAnchor { edge: 'left' | 'right'; y: number; hidden?: boolean }
 export interface LauncherGeometry {
   viewport: { width: number; height: number };
   /** Visual bounds relative to the button, including the character above it. */
@@ -34,11 +34,18 @@ export function crossedLauncherDragThreshold(dx: number, dy: number): boolean {
   return Math.hypot(dx, dy) >= 6;
 }
 
+/** Docking is explicit: normal snap-to-side placement does not hide the pet. */
+export function launcherDockEdge(pointerX: number, viewportWidth: number): LauncherAnchor['edge'] | null {
+  if (pointerX <= 24) return 'left';
+  if (pointerX >= viewportWidth - 24) return 'right';
+  return null;
+}
+
 export function parseLauncherAnchor(value: string | null): LauncherAnchor | null {
   if (!value) return null;
   try {
     const anchor = JSON.parse(value) as Partial<LauncherAnchor> | null;
-    if (anchor && (anchor.edge === 'left' || anchor.edge === 'right') && typeof anchor.y === 'number' && Number.isFinite(anchor.y) && anchor.y >= 0 && anchor.y <= 1) return { edge: anchor.edge, y: anchor.y };
+    if (anchor && (anchor.edge === 'left' || anchor.edge === 'right') && typeof anchor.y === 'number' && Number.isFinite(anchor.y) && anchor.y >= 0 && anchor.y <= 1) return { edge: anchor.edge, y: anchor.y, ...(anchor.hidden === true ? { hidden: true } : {}) };
   } catch { /* Invalid UI preferences use the default corner. */ }
   return null;
 }

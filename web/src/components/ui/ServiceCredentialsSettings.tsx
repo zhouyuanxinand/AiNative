@@ -1,3 +1,4 @@
+import { PlatformButton } from './PlatformButton';
 /** Service settings follow the sister platforms' dialog, defaults and persistence behavior. */
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
@@ -6,6 +7,7 @@ import {
   type CredentialValues, type ServiceCredentialsResponse,
 } from '../../api/serviceCredentials';
 import { ModelConnectionTest } from './ModelConnectionTest';
+import { DefaultModelSettings } from './DefaultModelSettings';
 import { StyledSelect } from './StyledSelect';
 import { PlatformAuthSettings } from './PlatformAuthSettings';
 import { useDialogBackdrop } from '../../hooks/useDialogBackdrop';
@@ -15,8 +17,8 @@ interface Field { key: string; label: string; url?: boolean; secret?: boolean }
 const baseUrl: Field = { key: 'base_url', label: '服务地址（Base URL）', url: true };
 const apiKey: Field = { key: 'api_key', label: 'API Key', secret: true };
 const groups: { key: CredentialGroup; label: string; description: string; fields: Field[] }[] = [
-  { key: 'model', label: '模型', description: '用于模型目录、需求语义分类与路由。模型名称仍以服务真实返回为准。',
-    fields: [baseUrl, { key: 'app_id', label: '应用 ID（App ID）' }, apiKey, { key: 'tenant_id', label: '租户 ID（Tenant ID）' }] },
+  { key: 'model', label: '模型', description: '连接模型服务，供小航对话、资料分析与任务编制使用。',
+    fields: [baseUrl, { key: 'app_id', label: '应用 ID（App ID）' }, { key: 'tenant_id', label: '租户 ID（Tenant ID）' }, apiKey] },
 ];
 const emptyValues = (): CredentialValues => ({ model: {} });
 const payloadFor = (draft: CredentialValues, overridden: CredentialGroup[]): CredentialOverrides => ({
@@ -63,7 +65,10 @@ function CredentialsDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
   const [baseline, setBaseline] = useState('');
   const [loading, setLoading] = useState(true);
   const [pendingAction, setPendingAction] = useState<'save' | 'activate' | 'delete' | null>(null);
-  const saving = pendingAction !== null;
+  const [defaultModelSaving, setDefaultModelSaving] = useState(false);
+  const [defaultModelDirty, setDefaultModelDirty] = useState(false);
+  const [credentialVersion, setCredentialVersion] = useState(0);
+  const saving = pendingAction !== null || defaultModelSaving;
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -74,10 +79,13 @@ function CredentialsDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
   const [probeVersion, setProbeVersion] = useState(0);
   const selectedHistory = history.find(item => item.id === selectedHistoryId);
   const busy = loading || saving;
-  const dirty = loaded && JSON.stringify(payloadFor(draft, overridden)) !== baseline;
+  const credentialsDirty = loaded && JSON.stringify(payloadFor(draft, overridden)) !== baseline;
+  const dirty = credentialsDirty || defaultModelDirty;
   const group = groups.find(item => item.key === active)!;
 
   function accept(result: ServiceCredentialsResponse) {
+    setCredentialVersion(value => value + 1);
+    setDefaultModelDirty(false);
     setProbeVersion(value => value + 1);
     setDefaults(result.defaults);
     setDraft(result.effective);
@@ -166,7 +174,7 @@ function CredentialsDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
   }
 
   async function save() {
-    if (busy || mutationPending.current || !dirty) return;
+    if (busy || mutationPending.current || !credentialsDirty) return;
     setProbeVersion(value => value + 1);
     const outgoing = payloadFor(draft, overridden);
     for (const item of groups) {
@@ -255,7 +263,7 @@ function CredentialsDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
     onCancel={event => { event.preventDefault(); event.stopPropagation(); close(); }}>
     <form className="credentials-form" noValidate onSubmit={event => { event.preventDefault(); void save(); }}>
       <header className="credentials-header">
-        <div><h2 id="credentials-title">服务凭证设置</h2><p id="credentials-scope">对当前平台生效，保存后自动刷新模型列表。</p></div>
+        <div><h2 id="credentials-title">服务凭证设置</h2><p id="credentials-scope">管理模型连接与默认选择，对当前平台生效。</p></div>
         <button className="credentials-close" type="button" aria-label="关闭凭证设置" disabled={saving} onClick={close}>
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
         </button>
@@ -274,6 +282,8 @@ function CredentialsDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
         {success && <p className="credentials-success" role="status">{success}</p>}
         {loaded && !loading && <section id={`credentials-panel-${active}`} role="tabpanel"
           aria-labelledby={`credentials-tab-${active}`} tabIndex={0}>
+          <DefaultModelSettings key={credentialVersion} disabled={busy || credentialsDirty} credentialsDirty={credentialsDirty}
+            onDirty={setDefaultModelDirty} onBusy={setDefaultModelSaving} onSaved={onSaved} />
           <section className="credentials-history" aria-labelledby="credentials-history-title">
             <h3 id="credentials-history-title">历史凭证</h3>
             {history.length > 0 ? <>
@@ -283,7 +293,8 @@ function CredentialsDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
                 value={selectedHistoryId} disabled={saving}
                 aria-labelledby="credentials-history-picker-label"
                 options={history.map(item => {
-                  const label = `${item.name} · ${historyHost(item.base_url)}${item.active ? '（当前使用）' : ''}`;
+                  const host = historyHost(item.base_url);
+                  const label = `${item.name}${item.name.includes(host) ? '' : ` · ${host}`}${item.active ? '（当前使用）' : ''}`;
                   return { value: item.id, label, title: label };
                 })}
                 onChange={value => {
@@ -351,7 +362,7 @@ function CredentialsDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
       </div>
       <footer className="credentials-footer"><span aria-live="polite">{dirty ? '有未保存的修改' : '保存不执行研制任务书生成'}</span>
         <div><button type="button" disabled={saving} onClick={close}>{dirty ? '取消' : '关闭'}</button>
-          <button className="credentials-save" type="submit" disabled={busy || !loaded || !dirty}>{pendingAction === 'save' ? '正在保存…' : '保存凭证'}</button>
+          <PlatformButton className="credentials-save" type="submit" disabled={busy || !loaded || !credentialsDirty}>{pendingAction === 'save' ? '正在保存…' : '保存凭证'}</PlatformButton>
         </div>
       </footer>
     </form>

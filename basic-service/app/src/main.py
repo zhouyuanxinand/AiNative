@@ -54,6 +54,8 @@ from src.controller.service_credentials_controller import router as service_cred
 from src.controller.review_controller import router as review_router  # noqa: E402
 from src.controller.review_editor_controller import router as review_editor_router  # noqa: E402
 from src.controller.rd_controller import router as rd_router, configure_rd, start_rd_worker  # noqa: E402
+from src.controller.rd_derivation_controller import router as rd_derivation_router  # noqa: E402
+from src.controller.rd_weather_controller import router as rd_weather_router  # noqa: E402
 from src.utils.config_loader import AppConfig, get_config  # noqa: E402
 
 logger = get_logger("src.main")
@@ -180,6 +182,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     application.include_router(taskbook_router)
     application.include_router(rd_router)
+    application.include_router(rd_derivation_router)
+    application.include_router(rd_weather_router)
     application.include_router(auth_router)
     application.include_router(auth_settings_router)
     application.include_router(failure_database_router)

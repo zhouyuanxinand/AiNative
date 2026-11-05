@@ -2,7 +2,7 @@
 .auth-settings-trigger:hover{background:var(--color-action-subtle);border-color:var(--color-action)}
 .auth-settings-trigger:focus-visible{outline:2px solid var(--color-border-focus);outline-offset:3px}
 .auth-settings-trigger:disabled{opacity:.5;cursor:not-allowed}
-.auth-settings-entry{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px;padding-bottom:18px;border-bottom:1px solid var(--color-border)}
+.auth-settings-entry{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--color-border)}
 .auth-settings-entry p{margin:0;color:var(--color-text-secondary);font-size:var(--font-size-xs);line-height:1.6}
 .auth-settings-dialog{width:min(640px,calc(100vw - 32px))}
 .auth-settings-dialog .credentials-body{scroll-padding-block:12px}
@@ -11,7 +11,7 @@
 .auth-settings-active strong{font-weight:600}
 .auth-settings-active p{margin:6px 0 0;color:var(--color-text-secondary)}
 .auth-settings-readonly{margin:0 0 20px;padding:12px;color:var(--color-warning);background:var(--color-warning-bg);border-radius:var(--radius-sm);font-size:var(--font-size-sm);line-height:1.65}
-.auth-settings-fields{display:grid;gap:18px;min-width:0;margin:0;padding:0;border:0}
+.auth-settings-fields{display:grid;gap:14px;min-width:0;margin:0;padding:0;border:0}
 .auth-settings-fields legend{margin-bottom:16px;padding:0;font-size:var(--font-size-control);font-weight:600}
 .auth-settings-toggle{display:flex;align-items:center;gap:9px;min-height:32px;font-size:var(--font-size-control);font-weight:600;cursor:pointer}
 .auth-settings-toggle input{width:17px;height:17px;margin:0;accent-color:var(--color-action)}

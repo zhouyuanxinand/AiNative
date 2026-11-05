@@ -34,6 +34,8 @@ WORKPACKAGE_DEFINITIONS.append({**deepcopy(WORKPACKAGE_DEFINITIONS[0]), "version
                                "business_node_id": "taskbook_planning", "policy_version": "v2"})
 SELECTION_WORKFLOW_TEMPLATES = [{"id": "taskbook-selection-v2", "version": "2", "title": "需求确认与选型办理", "status": "published",
                                "policy_version": "v2", "nodes": ["input", "confirm_requirements", "comparison", "selection_decision", "rd_start"]}]
+PROJECT_WORKFLOW_TEMPLATES = [{"id": "taskbook-generation", "version": "1", "title": "研制任务书生成流程", "status": "published",
+                               "policy_version": "v2", "nodes": ["input", "confirm_requirements", "comparison", "selection_decision", "rd_start", "taskbook"]}]
 RESEARCH_WORKFLOW_TEMPLATES = [
     {"id": "taskbook-" + route + "-v1", "version": "1", "title": title, "status": "published",
      "product_route": route, "nodes": ["taskbook", "scheme", "detail", "integration", "verification", "delivery"]}
@@ -43,11 +45,30 @@ RESEARCH_WORKFLOW_TEMPLATES = [
 RULE_VERSIONS = {"case_lifecycle": "2", "taskbook_delegation": "1", "evidence_isolation": "1"}
 
 
+def builtin_teams():
+    """Published local teams wrap the unchanged six Skill identities."""
+    values = []
+    for rid, title, aids in (("taskbook-authoring-team", "任务书编制专家团", WORKPACKAGE_DEFINITIONS[0]["required_actions"]),
+                             ("consistency-team", "资料一致性专家团", ["consistency"]),
+                             ("context-team", "上下文解析专家团", ["resolve_context"]),
+                             ("quality-team", "成果校验专家团", ["verify"])):
+        nodes = [{"id": aid, "resource_id": aid, "resource_version": 1} for aid in aids]
+        edges = [{"id": "e-" + a + "-" + b, "source": a, "target": b} for a, b in zip(aids, aids[1:])]
+        values.append({"id": rid, "version": 1, "kind": "team", "name": title,
+            "description": "固定本地Skill图，由现有Worker串行执行；不替代业务审签。",
+            "configuration": {"members": [{"resource_id": aid, "resource_version": 1} for aid in aids],
+                "inputs": ["固定来源与业务决定"], "outputs": ["节点结果与受控成果"],
+                "execution_graph": {"nodes": nodes, "edges": edges}},
+            "execution_mode": "local_real", "status": "published", "executable": True})
+    return values
+
+
 def get_catalog():
     definitions = [{**item, "nodes": default_nodes(item["id"], item["version"])} for item in WORKPACKAGE_DEFINITIONS]
     return deepcopy({"stages": STAGES, "scenarios": [item for item in SCENARIOS if item["status"] == "published"],
                      "workpackage_definitions": definitions, "actions": ACTIONS, "research_workflow_templates": RESEARCH_WORKFLOW_TEMPLATES,
-                     "selection_workflow_templates": SELECTION_WORKFLOW_TEMPLATES})
+                     "selection_workflow_templates": SELECTION_WORKFLOW_TEMPLATES,
+                     "project_workflow_templates": PROJECT_WORKFLOW_TEMPLATES})
 
 
 def catalog():

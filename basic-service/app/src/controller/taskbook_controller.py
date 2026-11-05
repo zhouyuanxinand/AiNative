@@ -25,7 +25,7 @@ from functools import wraps
 from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
@@ -2030,6 +2030,7 @@ async def list_templates():
 
 @router.post("/api/templates/versions")
 async def upload_template_version(
+    request: Request,
     template: UploadFile = File(...),
     product_type: str = Form(...),
     product_domain: str = Form(...),
@@ -2038,10 +2039,12 @@ async def upload_template_version(
     actor: str = Form("web-user"),
 ):
     """Replacement keeps the selected product's existing mapping and Profile."""
+    from src.controller.rd_controller import _require_governance
+    verified_actor = _require_governance(request, "can_prepare_templates")
     try:
         product_type = _safe_management_field(product_type, "产品类型", 80)
         product_domain = _safe_management_field(product_domain, "质量管理体系", 80)
-        actor = _safe_management_field(actor, "操作人", 120)
+        actor = verified_actor
         if len(version) > 80 or len(note) > 500:
             raise ValueError("版本名称限 80 字，更新说明限 500 字。")
         filename = _safe_management_field(template.filename or "", "文件名", 255)
@@ -2058,7 +2061,9 @@ async def upload_template_version(
 
 
 @router.get("/api/templates/{product_type}/{product_domain}/versions")
-async def template_version_history(product_type: str, product_domain: str):
+async def template_version_history(product_type: str, product_domain: str, request: Request):
+    from src.controller.rd_derivation_controller import _read_permission
+    _read_permission(request)
     try:
         return JSONResponse(_STATE.template_versions.history(product_type, product_domain))
     except Exception as exc:
@@ -2066,7 +2071,9 @@ async def template_version_history(product_type: str, product_domain: str):
 
 
 @router.get("/api/templates/versions/{version_id}/download")
-async def download_template_version(version_id: str):
+async def download_template_version(version_id: str, request: Request):
+    from src.controller.rd_derivation_controller import _read_permission
+    _read_permission(request)
     try:
         path, filename = _STATE.template_versions.file(version_id)
         return FileResponse(path, filename=filename, media_type=_DOCX_CONTENT_TYPE,
@@ -2087,11 +2094,13 @@ async def download_current_template(product_type: str, product_domain: str):
 
 @router.post("/api/templates/versions/{version_id}/activate")
 async def activate_template_version(
-    version_id: str, expected_revision: str = Form(...),
+    version_id: str, request: Request, expected_revision: str = Form(...),
     actor: str = Form("web-user"), note: str = Form(""),
 ):
+    from src.controller.rd_controller import _require_governance
+    verified_actor = _require_governance(request, "can_publish_templates")
     try:
-        actor = _safe_management_field(actor, "操作人", 120)
+        actor = verified_actor
         if len(note) > 500:
             raise ValueError("更新说明限 500 字。")
         result = await asyncio.to_thread(
@@ -2193,13 +2202,17 @@ async def _read_rule_request(request: Request) -> dict:
 
 
 @router.get("/api/rules")
-async def list_editable_rules():
+async def list_editable_rules(request: Request):
+    from src.controller.rd_derivation_controller import _read_permission
+    _read_permission(request)
     with _STATE.rules_lock:
         return JSONResponse({**_rule_editor().list_rules(), **_rule_edit_availability()})
 
 
 @router.get("/api/rules/{rule_id}")
-async def editable_rule_detail(rule_id: str):
+async def editable_rule_detail(rule_id: str, request: Request):
+    from src.controller.rd_derivation_controller import _read_permission
+    _read_permission(request)
     try:
         with _STATE.rules_lock:
             return JSONResponse({**_rule_editor().get_rule(rule_id), **_rule_edit_availability()})
@@ -2208,7 +2221,9 @@ async def editable_rule_detail(rule_id: str):
 
 
 @router.get("/api/rules/{rule_id}/history")
-async def editable_rule_history(rule_id: str):
+async def editable_rule_history(rule_id: str, request: Request):
+    from src.controller.rd_derivation_controller import _read_permission
+    _read_permission(request)
     try:
         with _STATE.rules_lock:
             return JSONResponse({"items": _rule_editor().list_history(rule_id)})
@@ -2218,6 +2233,8 @@ async def editable_rule_history(rule_id: str):
 
 @router.post("/api/rules/{rule_id}/validate")
 async def validate_editable_rule(rule_id: str, request: Request):
+    from src.controller.rd_derivation_controller import _read_permission
+    _read_permission(request)
     try:
         data = await _read_rule_request(request)
         with _STATE.rules_lock:
@@ -2230,6 +2247,8 @@ async def validate_editable_rule(rule_id: str, request: Request):
 
 @router.put("/api/rules/{rule_id}")
 async def save_editable_rule(rule_id: str, request: Request):
+    from src.controller.rd_controller import _require_governance
+    _require_governance(request, "can_publish_templates")
     try:
         data = await _read_rule_request(request)
         with _STATE.rules_lock:
@@ -2247,6 +2266,8 @@ async def save_editable_rule(rule_id: str, request: Request):
 
 @router.post("/api/rules/{rule_id}/restore")
 async def restore_editable_rule(rule_id: str, request: Request):
+    from src.controller.rd_controller import _require_governance
+    _require_governance(request, "can_publish_templates")
     try:
         data = await _read_rule_request(request)
         if not isinstance(data.get("revision"), str) or not data["revision"]:
@@ -2326,6 +2347,7 @@ def _safe_management_field(value: str, field_name: str, max_length: int = 120) -
 
 @router.post("/api/templates/onboard")
 async def onboard_template_candidate(
+    request: Request,
     template: UploadFile = File(...),
     product_type: str = Form(...),
     product_label: str = Form(...),
@@ -2335,6 +2357,8 @@ async def onboard_template_candidate(
     biz_id: str = Form(""),
     user_id: str = Form(""),
 ):
+    from src.controller.rd_controller import _require_governance
+    verified_actor = _require_governance(request, "can_prepare_templates")
     payload, error = await _read_validated_upload(template)
     if error:
         return JSONResponse({"error": error}, status_code=400)
@@ -2348,7 +2372,7 @@ async def onboard_template_candidate(
             "version": _safe_management_field(version, "version", 40),
         }
         audit_biz = _safe_management_field(biz_id or "anonymous", "biz_id", 120)
-        audit_user = _safe_management_field(user_id or "anonymous", "user_id", 120)
+        audit_user = verified_actor
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
 
@@ -2400,6 +2424,11 @@ async def onboard_template_candidate(
 
 
 def _lifecycle_error(exc: Exception) -> JSONResponse:
+    if isinstance(exc, HTTPException):
+        raise exc
+    from src.service.rd_platform.store import RdError
+    if isinstance(exc, RdError):
+        return JSONResponse({"error": str(exc.detail)}, status_code=exc.status)
     status = 404 if isinstance(exc, FileNotFoundError) else 409
     if isinstance(exc, (ValueError, FileExistsError)):
         status = 400
@@ -2407,16 +2436,30 @@ def _lifecycle_error(exc: Exception) -> JSONResponse:
 
 
 @router.get("/api/templates/candidates")
-async def list_template_candidates():
+async def list_template_candidates(request: Request):
+    from src.controller.rd_derivation_controller import _read_permission, _candidate
+    _read_permission(request)
     try:
-        return JSONResponse(_STATE.asset_lifecycle.list_candidates())
+        from src.service.rd_platform.store import RdError
+        visible = []
+        for item in _STATE.asset_lifecycle.list_candidates():
+            try:
+                _candidate(request, item["candidate_id"])
+                visible.append(item)
+            except RdError as exc:
+                if exc.status not in {403, 404}:
+                    raise
+        return JSONResponse(visible)
     except Exception as exc:
         return _lifecycle_error(exc)
 
 
 @router.get("/api/templates/candidates/{candidate_id}")
-async def get_template_candidate(candidate_id: str):
+async def get_template_candidate(candidate_id: str, request: Request):
+    from src.controller.rd_derivation_controller import _read_permission, _candidate
+    _read_permission(request)
     try:
+        _candidate(request, candidate_id)
         return JSONResponse(_STATE.asset_lifecycle.describe(candidate_id))
     except Exception as exc:
         return _lifecycle_error(exc)
@@ -2425,6 +2468,7 @@ async def get_template_candidate(candidate_id: str):
 @router.post("/api/templates/candidates/{candidate_id}/review")
 async def review_template_candidate(
     candidate_id: str,
+    request: Request,
     approved: bool = Form(...),
     reviewer: str = Form(...),
     reason: str = Form(...),
@@ -2432,18 +2476,30 @@ async def review_template_candidate(
     visual_review_passed: bool = Form(False),
     biz_id: str = Form(""),
     user_id: str = Form(""),
+    expected_manifest_digest: str = Form(""),
 ):
+    from src.controller.rd_controller import _require_governance
+    from src.controller.rd_derivation_controller import _mutate, _candidate, _validate_live_sources
+    verified_actor = _require_governance(request, "can_review_templates")
     try:
-        reviewer = _safe_management_field(reviewer, "reviewer", 120)
+        reviewer = verified_actor
         reason = _safe_management_field(reason, "reason", 500)
-        result = _STATE.asset_lifecycle.review(
+        from jonhon_taskbook.template_derivation import candidate_file, file_hash
+        candidate = _candidate(request, candidate_id)
+        if approved:
+            _validate_live_sources(request, candidate)
+        evidence = {key: {"file": filename, "sha256": file_hash(candidate_file(candidate, filename))}
+                    for key, filename in (("regression", "regression_evidence.json"), ("visual", "visual_evidence.json"))} if approved else None
+        result = await _mutate(request, {"approved": approved, "reason": reason, "expected_manifest_digest": expected_manifest_digest}, lambda: _STATE.asset_lifecycle.review(
             candidate_id,
             approved=approved,
             reviewer=reviewer,
             reason=reason,
             regression_passed=regression_passed,
             visual_review_passed=visual_review_passed,
-        )
+            evidence_manifest=evidence,
+            expected_manifest_digest=expected_manifest_digest,
+        ))
         print(
             json.dumps(
                 {
@@ -2462,19 +2518,29 @@ async def review_template_candidate(
 
 
 @router.post("/api/templates/candidates/{candidate_id}/publish")
-async def publish_template_candidate(candidate_id: str, publisher: str = Form(...)):
+async def publish_template_candidate(candidate_id: str, request: Request, publisher: str = Form(""), expected_target_digest: str = Form("")):
+    from src.controller.rd_controller import _require_governance
+    from src.controller.rd_derivation_controller import _mutate, _candidate, _validate_live_sources
+    verified_actor = _require_governance(request, "can_publish_templates")
     try:
-        return JSONResponse(_STATE.asset_lifecycle.publish(candidate_id, publisher=publisher))
+        _validate_live_sources(request, _candidate(request, candidate_id))
+        return JSONResponse(await _mutate(request, {"expected_target_digest": expected_target_digest},
+            lambda: _STATE.asset_lifecycle.publish(candidate_id, publisher=verified_actor, expected_target_digest=expected_target_digest)))
     except Exception as exc:
         return _lifecycle_error(exc)
 
 
 @router.post("/api/templates/candidates/{candidate_id}/rollback")
 async def rollback_template_candidate(
-    candidate_id: str, actor: str = Form(...), reason: str = Form(...)
+    candidate_id: str, request: Request, actor: str = Form(""), reason: str = Form(...)
 ):
+    from src.controller.rd_controller import _require_governance
+    from src.controller.rd_derivation_controller import _mutate, _candidate
+    verified_actor = _require_governance(request, "can_publish_templates")
     try:
-        return JSONResponse(_STATE.asset_lifecycle.rollback(candidate_id, actor=actor, reason=reason))
+        _candidate(request, candidate_id)
+        return JSONResponse(await _mutate(request, {"reason": reason},
+            lambda: _STATE.asset_lifecycle.rollback(candidate_id, actor=verified_actor, reason=reason)))
     except Exception as exc:
         return _lifecycle_error(exc)
 

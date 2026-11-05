@@ -54,7 +54,8 @@ function pdfBytes() {
 }
 
 async function choose(page, id, label) {
-  await page.locator(`#${id}`).click();
+  await page.locator(`#${id}`).focus();
+  await page.locator(`#${id}`).press('ArrowDown');
   await page.getByRole('listbox').getByRole('option', { name: label, exact: true }).click();
 }
 async function assertNoPageOverflow(page, label) {
@@ -136,6 +137,9 @@ try {
       const item = items.find(entry => entry.id === path.split('/').at(-2));
       return route.fulfill({ contentType: item?.preview_type === 'video' ? 'video/webm' : 'application/pdf', body: item?.preview_type === 'video' ? videoBytes : pdfBody });
     }
+    if (path === '/api/rd/session') return route.fulfill({ json: { authenticated: true } });
+    if (path === '/api/rd/projects') return route.fulfill({ json: { projects: [] } });
+    if (path === '/api/rd/catalog') return route.fulfill({ json: { stages: [], scenarios: [{ id: 'taskbook', title: '研制任务书生成', status: 'published' }], actions: [], workpackage_definitions: [] } });
     if (path === '/api/current-user') return route.fulfill({ json: { auth_enabled: true, authenticated: true, user: { userid: 'fixture-engineer', display_name: '测试工程师', name: '测试工程师', source: 'smartvision', verified: true } } });
     if (path === '/api/product_catalog') return route.fulfill({ json: { product_types: [{ value: 'rf_connector', label: '射频连接器', enabled: true,
       configured_enabled: true, integration_status: 'available', template_label: '射频连接器研制任务书', domains: [{ value: 'military', label: '军品' }] }] } });
@@ -366,17 +370,23 @@ try {
   await help.getByRole('img', { name: '操作步骤示意图', exact: true }).scrollIntoViewIfNeeded();
   await assertNoPageOverflow(help, 'help mobile document'); await shot(help, 'help-mobile-preview.png');
   const home = await context.newPage(); await home.setViewportSize({ width: 1990, height: 1080 }); await home.goto(`${base}/`);
-  await home.locator('#workspace-shell').waitFor();
-  const homeLinks = home.getByRole('navigation', { name: '使用帮助', exact: true });
-  await homeLinks.getByRole('link', { name: '操作视频（在新标签页打开）', exact: true }).waitFor();
-  await home.locator('.sidebar-user-row').getByText('测试工程师', { exact: true }).waitFor();
-  await home.locator('#product-type').getByText('射频连接器', { exact: true }).waitFor();
-  await home.locator('#llm-model').getByText('测试网关 · 工程测试模型', { exact: true }).waitFor();
-  await home.locator('.toast.show').waitFor({ state: 'hidden' });
-  assert.equal(await homeLinks.getByRole('link', { name: '操作视频（在新标签页打开）', exact: true }).getAttribute('href'), '/help/video');
-  assert.equal(await homeLinks.getByRole('link', { name: '操作手册（在新标签页打开）', exact: true }).getAttribute('href'), '/help/manual');
-  assert.equal(await homeLinks.getByRole('link', { name: '操作手册（在新标签页打开）', exact: true }).getAttribute('target'), '_blank');
+  await home.locator('.rd-application-shell').waitFor();
+  const homeLinks = home.locator('.rd-topbar-help');
+  await homeLinks.getByRole('link', { name: '操作视频', exact: true }).waitFor();
+  await home.getByRole('region', { name: '当前账号与设置', exact: true }).getByText('测试工程师', { exact: true }).waitFor();
+  await home.getByRole('heading', { name: '我的工作', exact: true }).waitFor();
+  await home.getByText('暂无项目记录', { exact: true }).waitFor();
+  assert.equal(await homeLinks.getByRole('link', { name: '操作视频', exact: true }).getAttribute('href'), '/help/video');
+  assert.equal(await homeLinks.getByRole('link', { name: '操作手册', exact: true }).getAttribute('href'), '/help/manual');
   await assertNoPageOverflow(home, 'user 1990'); await shot(home, 'user1990.png');
+  for (const [label, path] of [['操作视频', '/help/video'], ['操作手册', '/help/manual']]) {
+    await homeLinks.getByRole('link', { name: label, exact: true }).click();
+    await home.getByRole('heading', { name: label, exact: true }).first().waitFor();
+    assert.equal(new URL(home.url()).pathname, path, 'topbar help link opens the selected help page');
+    await home.getByRole('link', { name: '返回平台', exact: true }).click();
+    await home.locator('.rd-application-shell').waitFor();
+    await home.getByRole('region', { name: '当前账号与设置', exact: true }).getByText('测试工程师', { exact: true }).waitFor();
+  }
   assert.deepEqual(errors, [], 'no unhandled browser errors');
   assert.deepEqual(unexpected, [], 'all API traffic stayed inside explicit fixtures');
   console.log('Help resources browser passed: ordinary administrator CRUD, upload progress, link/file validation, error and navigation draft preservation, cancel/delete/retry, reader refresh, playable video, PDF, Word table/image projection, empty/error recovery, mobile and 1990px overflow checks.');

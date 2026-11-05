@@ -10,6 +10,7 @@ import pytest
 from jonhon_taskbook import llm_client
 from jonhon_taskbook.usage_context import model_user_id_var
 from service.rd_platform.store import Store
+from designer_fixture import adopt_plan
 
 REAL_CHAT = llm_client.chat
 
@@ -135,6 +136,7 @@ def test_real_blockers_and_navigation_without_business_writes(tmp_path):
     project = store.command("oa-user", project["id"], project["version"], "pull", "pull_workpackage",
                             {"case_id": cid, "definition_id": "input_check"})
     wid = project["cases"][0]["workpackages"][0]["id"]
+    project = adopt_plan(store, project, wid, actor="oa-user")
     project = store.command("oa-user", project["id"], project["version"], "submit", "submit_workpackage",
                             {"case_id": cid, "workpackage_id": wid})
     claim = store.claim_node()
@@ -278,6 +280,7 @@ def test_old_workpackage_blockers_are_marked_historical_after_inputs_change(tmp_
     project = store.command("oa-user", project["id"], project["version"], "pull", "pull_workpackage",
                             {"case_id": cid, "definition_id": "input_check"})
     wid = project["cases"][0]["workpackages"][0]["id"]
+    project = adopt_plan(store, project, wid, actor="oa-user")
     store.command("oa-user", project["id"], project["version"], "submit", "submit_workpackage",
                   {"case_id": cid, "workpackage_id": wid})
     store.complete_node(store.claim_node(), {"status": "blocked", "result": {}, "blocked_reasons": ["旧版规范缺失"], "artifacts": [], "obligations": []})

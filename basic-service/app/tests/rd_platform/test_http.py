@@ -56,7 +56,8 @@ def test_create_case_requires_key_and_preserves_dual_routes(tmp_path):
 
 def test_forged_workspace_manager_is_rejected(tmp_path):
     client = make_client(tmp_path)
-    assert client.get("/api/rd/workspace/resources").json()["can_manage"] is False
+    assert client.get("/api/rd/workspace/session").json()["can_publish_resources"] is False
+    assert client.get("/api/rd/workspace/resources").status_code == 403
     response = client.post("/api/rd/workspace/resources", json={"operation": "publish",
        "kind": "team", "name": "伪造权限", "can_manage": True},
        headers={"X-User": "wangxue"})

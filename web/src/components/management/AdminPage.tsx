@@ -1,3 +1,4 @@
+import { PlatformButton } from '../ui/PlatformButton';
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { FeedbackAdminPage } from '../feedback/FeedbackAdminPage';
 import { PlatformAuthSettings } from '../ui/PlatformAuthSettings';
@@ -118,7 +119,7 @@ export function AdminPage() {
           {denied && failure?.username && <p className="admin-access-account">当前 OA 账号：<strong>{failure.username}</strong></p>}
           <p className="admin-access-hint">{denied ? '请联系 wangxue 将您的 OA 登录账号加入管理员名单；需要切换账号时，请先在 OA／问学退出当前账号。' : '使用 OA／问学账号登录，通过身份验证且在管理员名单内，才能查看反馈、运行日志和管理操作资料。'}</p>
           <div className="admin-access-actions">{canLogin && <a className="feedback-button primary" href="/admin/auth/login">{denied ? '重新进行 OA 登录' : '使用 OA／问学登录'}</a>}
-            <button type="button" className="feedback-button" onClick={() => void check()}>重新验证</button></div>
+            <PlatformButton type="button" className="feedback-button" onClick={() => void check()}>重新验证</PlatformButton></div>
         </>}
       </section>
     </main>;
@@ -197,7 +198,7 @@ function AdminWorkspace({ session, logoutPending, logoutError, onLogout }: { ses
           {session.can_manage_admins && <PlatformAuthSettings admin disabled={logoutPending} />}
           <a className="feedback-button" href="/admin/home" aria-disabled={logoutPending || undefined}
             onClick={event => { if (logoutPending) event.preventDefault(); }}>返回主页</a>
-          <button type="button" className="feedback-button" disabled={logoutPending} onClick={onLogout}>{logoutPending ? '正在退出…' : '退出登录'}</button></div>
+          <PlatformButton type="button" className="feedback-button" disabled={logoutPending} onClick={onLogout}>{logoutPending ? '正在退出…' : '退出登录'}</PlatformButton></div>
       </header>
       <main className="admin-main">
         {logoutError && <p role="alert" className="feedback-error">{logoutError}</p>}

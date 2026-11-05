@@ -1,42 +1,57 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react';
-import { useDialogBackdrop } from '../../hooks/useDialogBackdrop';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { Button, Modal } from 'antd';
+import '../ui/antdControls.css';
 
-/** Native modal lifecycle follows the existing service-settings and document-review dialogs. */
 export function FeedbackDialog({ title, children, className = '', visible = true, onCancel }: {
   title: string; children: ReactNode; className?: string; visible?: boolean; onCancel: () => void;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
+  const anchor = useRef<HTMLSpanElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
-  const titleId = useId();
-  const backdrop = useDialogBackdrop(onCancel);
-  useEffect(() => {
+  const [container, setContainer] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    setContainer(anchor.current?.closest('dialog') ?? document.body);
+  }, []);
+  useLayoutEffect(() => {
     if (!visible) return;
-    const element = ref.current!;
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    element.showModal();
-    return () => {
-      element.close();
-      if (trigger?.isConnected) trigger.focus();
-      else document.getElementById('feedback-list-title')?.focus();
-    };
+    // Callers unmount these dialogs on close. rc-dialog's animated afterClose cannot run then.
+    // Restore here once; Ant Design remains the sole owner of focus trapping and keyboard handling.
+    return () => queueMicrotask(() => {
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+      else if (!document.activeElement || document.activeElement === document.body) document.getElementById('feedback-list-title')?.focus({ preventScroll: true });
+    });
   }, [visible]);
   useEffect(() => {
-    if (visible) heading.current?.focus();
-  }, [title, visible]);
-  return <dialog ref={ref} className={`feedback-dialog ${className}`} aria-labelledby={titleId} {...backdrop}
-    onCancel={event => { event.preventDefault(); event.stopPropagation(); onCancel(); }}>
-    <h2 ref={heading} tabIndex={-1} id={titleId} className="feedback-dialog-title">{title}</h2>{children}
-  </dialog>;
+    if (visible) heading.current?.focus({ preventScroll: true });
+  }, [title, visible, container]);
+  const width = className.includes('feedback-confirm-dialog') ? 460 : className.includes('rd-create-dialog') ? 620 : 860;
+  return <><span ref={anchor} hidden />{container && <Modal
+    open={visible}
+    title={<h2 ref={heading} tabIndex={-1} className="feedback-dialog-title">{title}</h2>}
+    className={`feedback-dialog platform-feedback-modal ${className}`.trim()}
+    rootClassName="platform-feedback-modal-root"
+    getContainer={container}
+    width={width}
+    centered
+    footer={null}
+    closable={false}
+    maskClosable
+    keyboard
+    focusTriggerAfterClose={false}
+    onCancel={event => { event.stopPropagation(); onCancel(); }}
+  >{children}</Modal>}</>;
 }
 
-export function FeedbackConfirmDialog({ title, children, confirm, cancel = '取消', pending = false, error, danger = false, visible = true, onCancel, onConfirm }: {
+export function FeedbackConfirmDialog({ title, children, confirm, cancel = '取消', pending = false, confirmDisabled = false, error, danger = false, visible = true, onCancel, onConfirm }: {
   title: string; children: ReactNode; confirm: string; cancel?: string; pending?: boolean; error?: string;
-  danger?: boolean; visible?: boolean; onCancel: () => void; onConfirm: () => void;
+  danger?: boolean; visible?: boolean; confirmDisabled?: boolean; onCancel: () => void; onConfirm: () => void;
 }) {
   return <FeedbackDialog title={title} visible={visible} className="feedback-confirm-dialog" onCancel={() => { if (!pending) onCancel(); }}>
     <div className="feedback-confirm-message">{children}</div>
     {error && <p className="feedback-error" role="alert">{error}</p>}
-    <div className="feedback-dialog-actions"><button type="button" className="feedback-button" disabled={pending} onClick={onCancel}>{cancel}</button>
-      <button type="button" className={`feedback-button ${danger ? 'danger' : 'primary'}`} disabled={pending} onClick={onConfirm}>{pending ? '正在处理…' : confirm}</button></div>
+    <div className="feedback-dialog-actions">
+      <Button autoInsertSpace={false} disabled={pending} onClick={onCancel}>{cancel}</Button>
+      <Button type="primary" autoInsertSpace={false} aria-label={pending ? '正在处理…' : confirm} danger={danger} disabled={pending || confirmDisabled} loading={pending} onClick={onConfirm}>{pending ? '正在处理…' : confirm}</Button>
+    </div>
   </FeedbackDialog>;
 }

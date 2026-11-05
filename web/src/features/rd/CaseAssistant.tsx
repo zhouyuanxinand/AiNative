@@ -1,3 +1,4 @@
+import { PlatformButton } from '../../components/ui/PlatformButton';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useApplicationLeaveGuard } from '../../hooks/useApplicationLeaveGuard';
 import { makeRequestKey, rdAskAssistant, rdAssistant } from './api';
@@ -89,9 +90,9 @@ export function CaseAssistant({ project, researchCase, visible, onClose, onNavig
     <header><span className="rd-assistant-mini-avatar" aria-hidden="true">航</span><div><strong>小航<span className="rd-assistant-title-note">研发助手</span></strong><small title={researchCase.title}>{researchCase.title}</small></div><button type="button" className="rd-floating-close" aria-label="收起小航助手" title="收起（Esc）" onClick={onClose}>×</button></header>
     <details className="rd-assistant-context-details"><summary><span>{stageTitle(researchCase.stage)}</span><span>记录说明</span></summary><div><p>可查询当前案例、定位办理事项。业务修改仍在工作面完成。</p><p>输入修订 {researchCase.input_revision ?? '—'} · 项目版本 {project.version}</p>{data?.history?.notice && <p>{data.history.notice}</p>}</div></details>
     <div className="rd-assistant-log" ref={log} role="log" aria-live="polite" aria-relevant="additions text">
-      {data?.history?.has_more && <button type="button" className="rd-assistant-earlier rd-link-button" disabled={loadingOlder || loading || sending} onClick={() => void loadEarlier()}>{loadingOlder ? '正在加载…' : '加载更早记录'}</button>}
+      {data?.history?.has_more && <PlatformButton type="button" className="rd-assistant-earlier rd-link-button" disabled={loadingOlder || loading || sending} onClick={() => void loadEarlier()}>{loadingOlder ? '正在加载…' : '加载更早记录'}</PlatformButton>}
       {data?.history && data.history.total > 0 && <p className="rd-assistant-history-note">已载入 {data.messages.length} / {data.history.total} 条</p>}
-      {olderError && <p className="rd-error" role="alert">{olderError} <button type="button" className="rd-link-button" onClick={() => void loadEarlier()} disabled={loadingOlder}>重试加载</button></p>}
+      {olderError && <p className="rd-error" role="alert">{olderError} <PlatformButton type="button" className="rd-link-button" onClick={() => void loadEarlier()} disabled={loadingOlder}>重试加载</PlatformButton></p>}
       {loading && !data && <p className="rd-muted" role="status">正在读取助手记录…</p>}
       {data && !data.messages.length && <div className="rd-assistant-empty"><h3>这项工作，我们从哪里开始？</h3><p>可以问我缺少哪些资料，或查看当前进度。</p></div>}
       {data?.messages.map(message => {
@@ -101,7 +102,7 @@ export function CaseAssistant({ project, researchCase, visible, onClose, onNavig
       {sending && <p className="rd-assistant-pending" role="status"><span aria-hidden="true"><i /><i /><i /></span>小航正在回复…</p>}
     </div>
     {stale && <p className="rd-assistant-hint">案例已更新，旧回复仅供追溯。</p>}
-    {(sendError || error) && <div className="rd-error rd-assistant-error" role="alert"><p>{sendError || error}</p>{sendError ? <p>填写内容已保留，可再次发送重试。</p> : <button type="button" className="rd-link-button" disabled={sending || loading} onClick={() => setRevision(value => value + 1)}>重试读取记录</button>}</div>}
+    {(sendError || error) && <div className="rd-error rd-assistant-error" role="alert"><p>{sendError || error}</p>{sendError ? <p>填写内容已保留，可再次发送重试。</p> : <PlatformButton type="button" className="rd-link-button" disabled={sending || loading} onClick={() => setRevision(value => value + 1)}>重试读取记录</PlatformButton>}</div>}
     {!!data?.suggestions.length && <div className="rd-assistant-suggestions" aria-label="当前案例建议">{data.suggestions.slice(0, 3).map(suggestion => <button type="button" key={suggestion.id} onClick={() => onNavigate(suggestion.target)}>{suggestion.label}<span aria-hidden="true">↗</span></button>)}</div>}
     <form noValidate onSubmit={event => void send(event)}><label className="rd-assistant-input-label" htmlFor={`rd-assistant-message-${researchCase.id}`}>询问当前案例</label><textarea ref={input} id={`rd-assistant-message-${researchCase.id}`} className="resize-none" rows={2} maxLength={2000} value={draft} onChange={event => setDraft(event.target.value)} placeholder="问问小航…" disabled={sending} onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !composing.current && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} /><div><small>{draft.length > 1800 ? `${draft.length} / 2000` : 'Enter 发送 · Shift + Enter 换行'}</small><button type="submit" className="rd-floating-primary" disabled={sending || !draft.trim()} aria-label="发送给小航">{sending ? '回复中…' : '发送'}<span aria-hidden="true">↑</span></button></div></form>
   </aside>;

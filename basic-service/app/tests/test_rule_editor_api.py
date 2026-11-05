@@ -38,6 +38,13 @@ def rule_api(tmp_path, monkeypatch):
     )
     controller._invalidate_rule_caches()
     app = FastAPI()
+    from src.common.platform_auth import AuthSettings
+    app.state.auth_settings = AuthSettings(enabled=True)
+    monkeypatch.setenv("JTB_RD_TEMPLATE_PUBLISHERS", "verified-rule-publisher")
+    @app.middleware("http")
+    async def verified_identity(request, call_next):
+        request.state.current_user = {"userid": "verified-rule-publisher", "username": "Test publisher"}
+        return await call_next(request)
     app.include_router(controller.router)
     with TestClient(app) as client:
         yield client, state, config

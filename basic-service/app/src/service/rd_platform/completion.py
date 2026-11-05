@@ -357,6 +357,7 @@ def build_completion_ledger(template_path, context, blocks, *, profile=None, req
                         entry = _entry(current, kind, {"body_index": body_index, "row": row_index, "cell": cell_index}, text, blocks, label)
                         column = table.rows[0].cells[cell_index].text.strip()
                         entry["column_label"] = column
+                        entry["column_count"] = len(row.cells)
                         if body_index in history_tables:
                             _defer_to_generation(entry, "change_record", "原引擎删除模板历史版本并建立本次新发记录；历史行空格不是本项目工程事实缺口")
                         elif not marker and body_index == indicator_table:

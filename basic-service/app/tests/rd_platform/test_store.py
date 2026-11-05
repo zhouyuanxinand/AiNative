@@ -81,6 +81,77 @@ def test_project_permissions_and_facts_survive_restart(tmp_path):
     assert error.value.status == 404
 
 
+@pytest.mark.parametrize("project_flow", [False, True], ids=["scenario", "project-workflow"])
+def test_first_case_retains_full_project_context_and_explicit_confirmation(tmp_path, project_flow):
+    store = new_store(tmp_path)
+    initial = {"product_type": "low_frequency_rectangular", "product_domain": "military",
+               "development_process": "全新", "cover_phase": "S", "product_series": "PROJECT-A",
+               "organization_scope": "non_central_research"}
+    project = store.create_project("owner", "预置分类项目", initial)
+    data = {"scenario_id": "taskbook", "title": "首个案例"}
+    if project_flow:
+        template = store.workflow_templates.detail("owner", "taskbook-generation", "1")
+        data["workflow_template"] = {key: template[key] for key in ("id", "version", "digest")}
+    project = issue(store, project, "create_case", data)
+    case = project["cases"][0]
+    assert case["context"] == initial
+    assert set(case["context_provenance"]) == set(initial)
+    for field in initial:
+        provenance = case["context_provenance"][field]
+        assert provenance["kind"] == "user" and provenance["actor"] == "owner"
+        assert provenance["source_ids"] == [] and provenance["created_at"]
+        fact = case["parameter_facts"][field]
+        assert fact["value"] == initial[field] and fact["status"] == "adopted"
+        assert fact["decision_ref"]["kind"] == "user_confirmation"
+        assert fact["decision_ref"]["actor"] == "owner"
+    assert new_store(tmp_path).get_project("owner", project["id"])["cases"][0]["context"] == initial
+
+
+@pytest.mark.parametrize("project_flow", [False, True], ids=["scenario", "project-workflow"])
+def test_later_cases_inherit_only_project_classification_not_previous_case_changes(tmp_path, project_flow):
+    store = new_store(tmp_path)
+    initial = {"product_type": "low_frequency_rectangular", "product_domain": "military",
+               "development_process": "全新", "cover_phase": "S", "product_series": "PROJECT-A",
+               "organization_scope": "non_central_research"}
+    project = store.create_project("owner", "预置分类项目", initial)
+    data = {"scenario_id": "taskbook", "title": "独立案例"}
+    if project_flow:
+        template = store.workflow_templates.detail("owner", "taskbook-generation", "1")
+        data["workflow_template"] = {key: template[key] for key in ("id", "version", "digest")}
+    project = issue(store, project, "create_case", data)
+    for _ in range(2):
+        previous_id = project["cases"][-1]["id"]
+        project = issue(store, project, "save_context", {"case_id": previous_id, "context": {
+            "product_type": "liquid_cooling_pipeline", "product_domain": "civilian", "product_series": "CASE-CHANGE"}})
+        store = new_store(tmp_path)
+        project = issue(store, project, "create_case", data)
+        case = project["cases"][-1]
+        assert case["context"] == {"product_type": "low_frequency_rectangular", "product_domain": "military",
+                                  "cover_phase": "S", "organization_scope": "non_central_research"}
+        assert set(case["context_provenance"]) == {"product_type", "product_domain", "cover_phase", "organization_scope"}
+        for field in ("product_type", "product_domain", "cover_phase", "organization_scope"):
+            assert case["context_provenance"][field]["kind"] == "user"
+            assert case["context_provenance"][field]["actor"] == "owner"
+            fact = case["parameter_facts"][field]
+            assert fact["value"] == initial[field] and fact["status"] == "adopted"
+            assert fact["decision_ref"]["kind"] == "user_confirmation"
+        assert case["parameter_facts"]["product_series"]["value"] == ""
+        assert case["parameter_facts"]["product_series"]["status"] == "unresolved"
+        assert case["requirements"] == [] and case["product_route"] is None and case["composition_route"] is None
+
+
+def test_later_cases_do_not_invent_project_classification(tmp_path):
+    store = new_store(tmp_path)
+    project = store.create_project("owner", "未预置分类项目", {"product_series": "FIRST-CASE-ONLY"})
+    data = {"scenario_id": "taskbook", "title": "独立案例"}
+    project = issue(store, project, "create_case", data)
+    project = issue(store, project, "save_context", {"context": {
+        "product_type": "low_frequency_rectangular", "product_domain": "military"}})
+    project = issue(store, project, "create_case", data)
+    assert project["cases"][-1]["context"] == {}
+    assert project["cases"][-1]["context_provenance"] == {}
+
+
 def test_idempotency_precedes_cas_and_changed_intent_is_rejected(tmp_path):
     store = new_store(tmp_path)
     project = case_project(store)
@@ -236,8 +307,10 @@ def test_workspace_revision_history_and_permission(tmp_path):
     first = store.save_resource("manager", payload, can_manage=True)
     second = store.save_resource("manager", {**payload, "id": first["id"], "expected_version": 1, "operation": "publish"}, can_manage=True)
     assert first["version"] == 1 and first["status"] == "draft"
-    assert second["version"] == 2 and second["status"] == "published"
-    assert new_store(tmp_path).get_resource(first["id"], 1) == first
+    assert second["version"] == 1 and second["status"] == "published"
+    assert second["content_digest"] == first["content_digest"]
+    assert new_store(tmp_path).get_resource(first["id"], 1) == second
+    store.save_resource("manager", {**payload, "id": first["id"], "expected_version": 1}, can_manage=True)
     with pytest.raises(Exception) as error:
         store.save_resource("manager", {**payload, "id": first["id"], "expected_version": 1}, can_manage=True)
     assert error.value.status == 409

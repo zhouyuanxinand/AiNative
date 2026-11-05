@@ -1,0 +1,21 @@
+.rd-project-case-card{display:flex;flex-direction:column;gap:16px;min-width:0;padding:22px;border:1px solid var(--color-border);border-radius:var(--radius-card);background:var(--color-bg-surface)}
+.rd-project-case-card-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0}
+.rd-project-case-card-heading>div{min-width:0}
+.rd-project-case-card-heading p{margin:0 0 7px;font-size:12px;line-height:1.6;color:var(--color-text-secondary);overflow-wrap:anywhere}
+.rd-project-case-card-heading h2{margin:0;font-size:18px;line-height:1.5;font-weight:600;color:var(--color-text-primary);overflow-wrap:anywhere}
+.rd-project-case-card-heading>.rd-badge{flex-shrink:0;max-width:38%;white-space:normal;text-align:center}
+.rd-project-case-card-step{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding-top:14px;border-top:1px solid var(--color-border)}
+.rd-project-case-card-step>span,.rd-project-case-card-next>span{font-size:12px;color:var(--color-text-secondary)}
+.rd-project-case-card-step>strong{font-size:15px;font-weight:600;color:var(--color-action)}
+.rd-project-case-card-progress p{margin:0;font-size:12px;line-height:1.6;color:var(--color-text-secondary)}
+.rd-project-case-card-progress .ant-progress{margin:6px 0 0;line-height:1}
+.rd-project-case-card-next{padding:10px 12px;border-left:3px solid var(--color-action);background:var(--color-bg-subtle);border-radius:0 var(--radius-sm) var(--radius-sm) 0}
+.rd-project-case-card-next.is-attention{border-color:var(--color-warning);background:var(--color-warning-bg)}
+.rd-project-case-card-next p{margin:3px 0 0;font-size:13px;line-height:1.65;color:var(--color-text-primary);overflow-wrap:anywhere}
+.rd-project-case-card-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 16px;margin:0;font-size:12px;line-height:1.65}
+.rd-project-case-card-facts>div{min-width:0}
+.rd-project-case-card-facts dt{color:var(--color-text-secondary)}
+.rd-project-case-card-facts dd{margin:3px 0 0;color:var(--color-text-primary);overflow-wrap:anywhere}
+.rd-project-case-card-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:auto;padding-top:16px;border-top:1px solid var(--color-border)}
+.rd-project-case-card-actions>.ant-btn:last-child{margin-left:auto}
+@media(max-width:700px){.rd-project-case-card{padding:18px;gap:14px}.rd-project-case-card-heading{gap:8px}.rd-project-case-card-heading h2{font-size:17px}.rd-project-case-card-facts{gap:12px}.rd-project-case-card-actions{gap:6px}}

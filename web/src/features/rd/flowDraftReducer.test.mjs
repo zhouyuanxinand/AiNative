@@ -1,0 +1,37 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+const require = createRequire(new URL('../../../package.json', import.meta.url));
+const ts = require('typescript');
+const source = await readFile(new URL('./flowDraftReducer.ts', import.meta.url), 'utf8');
+const {outputText} = ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2021}});
+const {draftReducer,applyOperations,confirmedConflicts,autoLayoutOperations} = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
+const graph = {nodes:[{id:'a',title:'专家团',resource_id:'team',resource_version:1,position:{x:0,y:0}},{id:'b',title:'核验',position:{x:240,y:0}}],edges:[{id:'ab',source:'a',target:'b'}]};
+const initial = {graph,operations:[],past:[],future:[]};
+test('graph and form operations form one undoable draft without mutating saved graph',()=>{let state=draftReducer(initial,{type:'apply',operations:[{op:'set_node',node_id:'a',properties:{title:'新标题'}}]});state=draftReducer(state,{type:'apply',operations:[{op:'move_node',node_id:'a',position:{x:60,y:30}}]});assert.equal(state.graph.nodes[0].title,'新标题');assert.deepEqual(state.graph.nodes[0].position,{x:60,y:30});assert.equal(graph.nodes[0].title,'专家团');const undone=draftReducer(state,{type:'undo'});assert.deepEqual(undone.graph.nodes[0].position,{x:0,y:0});assert.equal(undone.operations.length,1);assert.deepEqual(draftReducer(undone,{type:'redo'}).graph,state.graph);});
+test('removing a node removes incident edges and undo restores both',()=>{const state=draftReducer(initial,{type:'apply',operations:[{op:'remove_node',node_id:'a'}]});assert.equal(state.graph.edges.length,0);assert.deepEqual(draftReducer(state,{type:'undo'}).graph,graph);});
+test('editing after undo discards the redo branch',()=>{let state=draftReducer(initial,{type:'apply',operations:[{op:'remove_edge',edge_id:'ab'}]});state=draftReducer(state,{type:'undo'});state=draftReducer(state,{type:'apply',operations:[{op:'set_node',node_id:'a',properties:{role:'设计工程师'}}]});assert.equal(state.future.length,0);});
+test('assistant cannot silently overwrite confirmed fields or remove protected nodes',()=>{const confirmed=[{node_id:'a',field:'role'}];assert.deepEqual(confirmedConflicts([{op:'set_node',node_id:'a',properties:{role:'其他角色'}}],confirmed),['a.role']);assert.deepEqual(confirmedConflicts([{op:'remove_node',node_id:'a'}],confirmed),['a.role']);assert.deepEqual(confirmedConflicts([{op:'move_node',node_id:'a',position:{x:20,y:20}}],confirmed),[]);});
+test('clearing a business action survives JSON transport and undo restores its fixed reference',()=>{
+  const bound={nodes:[{id:'custom',title:'资料检查',action_resource:{resource_id:'team',resource_version:2},workpackage_definition_id:'input_check'}],edges:[]};
+  const operations=JSON.parse(JSON.stringify([{op:'set_node',node_id:'custom',properties:{action_resource:null,workpackage_definition_id:null}}]));
+  const state=draftReducer({graph:bound,operations:[],past:[],future:[]},{type:'apply',operations});
+  assert.equal('action_resource' in state.graph.nodes[0],false);
+  assert.equal('workpackage_definition_id' in state.graph.nodes[0],false);
+  assert.deepEqual(draftReducer(state,{type:'undo'}).graph,bound);
+  assert.deepEqual(draftReducer(draftReducer(state,{type:'undo'}),{type:'redo'}).graph,state.graph);
+});
+test('automatic layout preserves all nodes, business properties and dependency semantics',()=>{
+  const source={nodes:[{id:'end',title:'批准',gate:'approval'},{id:'start',title:'受理'},{id:'left',title:'并行核对一'},{id:'right',title:'并行核对二'}],edges:[{id:'sl',source:'start',target:'left'},{id:'sr',source:'start',target:'right'},{id:'le',source:'left',target:'end'},{id:'re',source:'right',target:'end'}]};
+  const operations=autoLayoutOperations(source), next=applyOperations(source,operations);
+  const nodes=Object.fromEntries(next.nodes.map(node=>[node.id,node]));
+  assert(operations.every(operation=>operation.op==='move_node'));
+  assert.deepEqual(next.edges,source.edges);
+  assert.equal(nodes.end.gate,'approval');
+  assert(nodes.start.position.x<nodes.left.position.x);
+  assert(nodes.left.position.x<nodes.end.position.x);
+  assert.notDeepEqual(nodes.left.position,nodes.right.position);
+  assert.equal(autoLayoutOperations(next).length,0);
+  assert.deepEqual(source.nodes[0],{id:'end',title:'批准',gate:'approval'});
+});

@@ -60,6 +60,11 @@ def test_modification_http_replays_submission_and_fences_cancelled_result(tmp_pa
     project = command(client, project, "adopt_taskbook_flow", workflow_id="taskbook-modification-v1", workflow_version="1", scope="改型任务书", rationale="固定原模板与当前输入")
     project = command(client, project, "pull_workpackage", definition_id="taskbook")
     wid = project["cases"][0]["workpackages"][-1]["id"]
+    project = command(client, project, "create_flow_draft", workpackage_id=wid)
+    draft = project["cases"][0]["flow_drafts"][-1]
+    project = command(client, project, "prepare_execution_bundle", draft_id=draft["id"])
+    candidate = project["cases"][0]["execution_candidates"][-1]
+    project = command(client, project, "adopt_execution_bundle", candidate_id=candidate["id"], candidate_digest=candidate["digest"])
     before = project
     submitted = command(client, before, "submit_workpackage", key="lost-submit-response", workpackage_id=wid)
     assert command(client, before, "submit_workpackage", key="lost-submit-response", workpackage_id=wid) == submitted

@@ -1,3 +1,4 @@
+import { PlatformButton } from '../../components/ui/PlatformButton';
 import { useEffect, useState, type FormEvent } from 'react';
 import { StyledSelect } from '../../components/ui/StyledSelect';
 import { formatTime, isCurrentSource } from './presentation';
@@ -44,7 +45,7 @@ export function RouteEditor({ axis, researchCase, busy, command, onDirtyChange }
     <div className="rd-field"><label id={`rd-route-${axis}-comparison-label`}>采用的当前逐项比对（必选）</label><StyledSelect id={`rd-route-${axis}-comparison`} required invalid={!!validation && !comparisonId} aria-labelledby={`rd-route-${axis}-comparison-label`} value={comparisonId} disabled={busy || !enabled} onChange={setComparisonId} options={[{ value: '', label: '先保存对应比对，再选择' }, ...(researchCase.comparisons ?? []).filter(record => record.kind === (axis === 'product' ? 'product' : 'document') && !record.invalidated_at && record.input_revision === researchCase.input_revision).map(record => ({ value: record.id, label: `${record.title} · v${record.revision} · 满足 ${record.statistics.matches}/${record.statistics.total}` }))]} /><small>先在上方完成并保存产品或文档的逐项比对。决定固定比对编号、版本与哈希；产品直接选用需全部满足。</small></div>
     {validation && <p id={`rd-route-${axis}-error`} className="rd-error" role="alert">{validation}</p>}
     {saved && <p className="rd-muted">决定人 {saved.actor} · {formatTime(saved.created_at)}</p>}
-    <button className="rd-button primary" disabled={busy || !enabled || !dirty} type="submit">保存{axis === 'product' ? '产品分类' : '编制策略'}决定</button>
+    <PlatformButton className="rd-button primary" disabled={busy || !enabled || !dirty} type="submit">保存{axis === 'product' ? '产品分类' : '编制策略'}决定</PlatformButton>
     {!enabled && <p className="rd-muted">分类与策略决定在“选型决策”或“分类决定落实”阶段记录；其他阶段只读。</p>}
   </form>;
 }

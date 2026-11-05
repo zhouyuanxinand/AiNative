@@ -1,3 +1,4 @@
+import { PlatformButton } from './PlatformButton';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { AuthSettingsApiError, getAuthSettings, saveAuthSettings, type AuthSettingsResponse, type PlatformAuthConfig } from '../../api/authSettings';
@@ -15,7 +16,7 @@ export function PlatformAuthSettings({ disabled = false, admin = false }: { disa
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   return <>
-    <button ref={trigger} type="button" className="auth-settings-trigger" disabled={disabled} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>统一登录设置</button>
+    <PlatformButton ref={trigger} type="button" className="auth-settings-trigger" disabled={disabled} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>统一登录设置</PlatformButton>
     {open && createPortal(<AuthSettingsDialog admin={admin} onClose={() => {
       setOpen(false); requestAnimationFrame(() => trigger.current?.focus());
     }} />, document.body)}
@@ -215,7 +216,7 @@ function AuthSettingsDialog({ onClose, admin }: { onClose: () => void; admin: bo
       </div>
       <footer className="credentials-footer"><span aria-live="polite">{dirty ? '有未保存的统一登录配置' : '保存后需重启平台生效'}</span><div>
         <button type="button" disabled={saving} onClick={close}>{dirty ? '取消' : '关闭'}</button>
-        <button type="submit" className="credentials-save" disabled={busy || !editable || !dirty}>{saving ? '正在保存…' : '保存登录配置'}</button>
+        <PlatformButton type="submit" className="credentials-save" disabled={busy || !editable || !dirty}>{saving ? '正在保存…' : '保存登录配置'}</PlatformButton>
       </div></footer>
     </form>
   </dialog>;

@@ -1,3 +1,4 @@
+import { PlatformButton } from '../ui/PlatformButton';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { FeedbackApiError, getFeedback, saveFeedback, type FeedbackFields, type FeedbackIdentity, type FeedbackRating, type FeedbackRecord, type FeedbackSnapshot, type FeedbackStatus } from '../../api/feedback';
 import { StyledSelect } from '../ui/StyledSelect';
@@ -113,8 +114,8 @@ export function FeedbackRecordDialog({ id, initialMode, visible = true, onClose,
       {loading ? <div className="feedback-empty" role="status">正在读取反馈详情…</div> : <>
         {error && <div ref={errorPanel} tabIndex={-1} className="feedback-error" id="feedback-editor-error" role="alert"><p>{error}</p>
           {conflict ? <><p>您的修改已保留。请复制需要保留的内容，再读取最新版本后重新编辑。</p>
-            <button type="button" className="feedback-link" disabled={saving} onClick={() => requestLeave('reload')}>读取最新版本</button></>
-            : id !== null && !record && <button type="button" className="feedback-link" onClick={() => void load()}>重试加载</button>}
+            <PlatformButton type="button" className="feedback-link" disabled={saving} onClick={() => requestLeave('reload')}>读取最新版本</PlatformButton></>
+            : id !== null && !record && <PlatformButton type="button" className="feedback-link" onClick={() => void load()}>重试加载</PlatformButton>}
         </div>}
         {mode === 'view' && record ? <>
           <dl className="feedback-detail-grid"><div><dt>反馈用户名</dt><dd>{record.username}</dd></div>
@@ -126,8 +127,8 @@ export function FeedbackRecordDialog({ id, initialMode, visible = true, onClose,
           <section className="feedback-detail-section"><h3>意见与建议</h3><p className="feedback-full-text">{record.comment || '未填写意见。'}</p></section>
           <section className="feedback-detail-section"><h3>处理说明</h3><p className="feedback-full-text">{record.handling_note || '尚未填写处理说明。'}</p></section>
           <FeedbackSnapshotDetail snapshot={record.snapshot} />
-          <div className="feedback-dialog-actions"><button type="button" className="feedback-button danger" onClick={() => onDelete(record)}>删除反馈</button>
-            <button type="button" className="feedback-button primary" onClick={() => { setMode('edit'); setError(''); }}>编辑反馈</button></div>
+          <div className="feedback-dialog-actions"><PlatformButton type="button" className="feedback-button danger" onClick={() => onDelete(record)}>删除反馈</PlatformButton>
+            <PlatformButton type="button" className="feedback-button primary" onClick={() => { setMode('edit'); setError(''); }}>编辑反馈</PlatformButton></div>
         </> : (mode === 'create' || record) && <form className="feedback-editor" noValidate onSubmit={submit} aria-label="维护反馈记录">
           <fieldset disabled={saving}>
             {mode === 'create' ? <label className="feedback-editor-wide" htmlFor="feedback-editor-jid">关联任务 ID <span className="feedback-required">*</span>
@@ -152,8 +153,8 @@ export function FeedbackRecordDialog({ id, initialMode, visible = true, onClose,
               <textarea className="feedback-textarea resize-none" id="feedback-editor-note" rows={3} maxLength={4000} value={draft.handling_note} placeholder="记录问题核查情况与处理结果" onChange={event => change('handling_note', event.target.value)} /></label>
           </fieldset>
           {record && <><FeedbackIdentityDetail identity={record.identity} /><FeedbackSnapshotDetail snapshot={record.snapshot} /></>}
-          <div className="feedback-dialog-actions"><button type="button" className="feedback-button" disabled={saving} onClick={() => requestLeave(record ? 'view' : 'close')}>{record ? '取消编辑' : '取消'}</button>
-            <button type="submit" className="feedback-button primary" disabled={saving}>{saving ? '正在保存…' : '保存反馈'}</button></div>
+          <div className="feedback-dialog-actions"><PlatformButton type="button" className="feedback-button" disabled={saving} onClick={() => requestLeave(record ? 'view' : 'close')}>{record ? '取消编辑' : '取消'}</PlatformButton>
+            <PlatformButton type="submit" className="feedback-button primary" disabled={saving}>{saving ? '正在保存…' : '保存反馈'}</PlatformButton></div>
         </form>}
       </>}
     </FeedbackDialog>

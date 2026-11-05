@@ -1,0 +1,63 @@
+.rd-req-head, .rd-req-review-tools, .rd-req-head>div, .rd-req-review-tools>div:first-child {
+  display:flex;align-items:center;gap:12px;min-width:0;
+}
+.rd-req-head {justify-content:space-between;flex-wrap:wrap;margin-bottom:8px}
+.rd-req-head h4 {margin:0;font-size:17px}
+.rd-req-head span:not(.anticon), .rd-req-muted, .rd-req-review-tools>div:first-child {
+  color:var(--color-text-secondary);
+}
+.rd-req-head>div>span {font-size:13px;font-variant-numeric:tabular-nums}
+.rd-req-lookup {font-size:12px;margin:0 0 12px;color:var(--color-text-secondary)}
+.rd-req-lookup summary,.rd-req-source summary,.rd-req-history summary {width:fit-content;cursor:pointer;color:var(--color-action)}
+.rd-req-lookup p {margin:8px 0;line-height:1.7;max-width:86ch}
+.rd-req-table {min-width:0}
+.rd-req-table .ant-table-thead>tr>th {background:var(--color-bg-subtle);color:var(--color-text-secondary);font-weight:600}
+.rd-req-table .ant-table-tbody>tr>td {vertical-align:top;overflow-wrap:anywhere}
+.rd-req-table .ant-table-cell {padding:12px!important;line-height:1.55}
+.rd-req-metric {display:flex;align-items:baseline;gap:8px}
+.rd-req-metric>span {flex:none;color:var(--color-text-secondary);font-size:12px;font-variant-numeric:tabular-nums}
+.rd-req-original,.rd-req-record p {white-space:pre-wrap;margin:0}
+.rd-req-source,.rd-req-history {margin-top:5px;font-size:12px}
+.rd-req-state {font-size:12px;width:fit-content;border-radius:4px;background:var(--color-bg-subtle);padding:0 5px}
+.rd-req-state.answered {background:#fff4d8;color:#805300}
+.rd-req-state.adopted {background:#e9f6ee;color:#286342}
+.rd-req-record {display:grid;gap:4px}
+.rd-req-record+.rd-req-record {margin-top:8px}
+.rd-req-record small {display:block;color:var(--color-text-secondary)}
+.rd-req-link.ant-btn {padding:0;display:block;white-space:normal}
+.rd-req-files {list-style:none;padding:0;margin:0;color:var(--color-text-secondary);font-size:13px}
+.rd-req-actions {display:flex;flex-wrap:wrap;gap:4px 12px}
+.rd-req-actions>.ant-btn {padding:0}
+.rd-req-review-modal .ant-modal-wrap {overflow:hidden}
+.rd-req-review-modal .ant-modal {top:0;margin:0;padding:0;max-width:none}
+.rd-req-review-modal .ant-modal-content {height:100vh;height:100dvh;display:flex;flex-direction:column;padding:0;border-radius:0;overflow:hidden}
+.rd-req-review-modal .ant-modal-header {margin:0;padding:18px 24px 4px}
+.rd-req-review-modal .ant-modal-title {font-size:20px}
+.rd-req-review-modal .ant-modal-body {min-height:0;flex:1;display:flex;flex-direction:column;overflow:hidden}
+.rd-req-review-tools {padding:8px 24px 14px;flex-wrap:wrap;flex:none}
+.rd-req-review-tools>div:first-child {font-size:13px;margin-right:auto;flex-wrap:wrap}
+.rd-req-review-tools .ant-input-affix-wrapper {width:min(340px,100%)}
+.rd-req-warning {color:#805300}
+.rd-req-review-modal .rd-req-lookup {margin:0 24px 12px}
+.rd-req-review-scroll {min-height:0;flex:1;overflow:auto;overscroll-behavior:contain;padding:0 24px 24px}
+.rd-req-review-scroll .ant-table-thead>tr>th {position:sticky;top:0;z-index:1}
+@media(max-width:700px) {
+  .rd-req-review-modal .ant-modal-header {padding:14px 12px 4px}
+  .rd-req-review-tools {padding:6px 12px 10px;gap:8px}
+  .rd-req-review-tools .ant-input-affix-wrapper {width:auto;order:3;flex:1 0 100%}
+  .rd-req-review-modal .rd-req-lookup {margin:0 12px 10px}
+  .rd-req-review-scroll {padding:0 12px 16px}
+  .rd-req-table .ant-table-thead {position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  .rd-req-table table,.rd-req-table tbody,.rd-req-table tr,.rd-req-table td {display:block;width:100%}
+  .rd-req-table colgroup {display:none}
+  .rd-req-table .ant-table-tbody>tr[data-row-key] {border:1px solid var(--color-border);border-radius:6px;margin-bottom:10px}
+  .rd-req-table .ant-table-tbody>tr[data-row-key]>td {padding:6px 10px!important;border:0}
+  .rd-req-table .ant-table-tbody>tr[data-row-key]>td:first-child {background:var(--color-bg-subtle);border-radius:6px 6px 0 0}
+  .rd-req-table .ant-table-tbody>tr[data-row-key]>td:nth-child(n+2)::before {display:block;color:var(--color-text-secondary);font-size:12px}
+  .rd-req-table td:nth-child(2)::before {content:'原文指标'}
+  .rd-req-table td:nth-child(3)::before {content:'公司自有组件指标'}
+  .rd-req-table td:nth-child(4)::before {content:'需求澄清'}
+  .rd-requirement-list td:nth-child(2)::before {content:'当前需求'}
+  .rd-requirement-list td:nth-child(3)::before {content:'来源文件'}
+  .rd-requirement-list td:nth-child(4)::before {content:'办理'}
+}

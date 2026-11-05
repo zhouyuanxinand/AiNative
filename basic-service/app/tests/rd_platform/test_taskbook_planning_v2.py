@@ -6,6 +6,7 @@ import pytest
 from service.rd_platform import catalog
 from test_selection_activation import local_store, activated_project, selection_project, prepare, decide
 from test_store import issue
+from designer_fixture import adopt_plan
 from test_runtime import finish_taskbook_with_document, submitted
 
 
@@ -17,6 +18,7 @@ def adopted_project(store):
 def submitted_v2(store):
     project = adopted_project(store)
     project = issue(store, project, "pull_workpackage", {"definition_id": "taskbook"})
+    project = adopt_plan(store, project, project["cases"][0]["workpackages"][-1]["id"])
     return issue(store, project, "submit_workpackage", {"workpackage_id": project["cases"][0]["workpackages"][-1]["id"]})
 
 
@@ -145,6 +147,7 @@ def test_scope_review_cannot_choose_old_result_while_replacement_is_running(tmp_
     finish_taskbook_with_document(store)
     project = store.get_project("owner", project["id"])
     project = issue(store, project, "pull_workpackage", {"definition_id": "taskbook"})
+    project = adopt_plan(store, project, project["cases"][0]["workpackages"][-1]["id"])
     project = issue(store, project, "submit_workpackage", {"workpackage_id": project["cases"][0]["workpackages"][-1]["id"]})
     with pytest.raises(Exception) as error:
         issue(store, project, "prepare_taskbook_scope_review", {"workpackage_id": first_id})
@@ -176,6 +179,7 @@ def test_followup_quality_check_preserves_v2_business_binding_references(tmp_pat
     finish_taskbook_with_document(store)
     project = store.get_project("owner", project["id"])
     project = issue(store, project, "pull_workpackage", {"definition_id": "quality_check"})
+    project = adopt_plan(store, project, project["cases"][0]["workpackages"][-1]["id"])
     project = issue(store, project, "submit_workpackage", {"workpackage_id": project["cases"][0]["workpackages"][-1]["id"]})
     snapshot = store.claim_node()["snapshot"]
     assert verify_binding(snapshot)["id"] == project["cases"][0]["taskbook_binding"]["id"]
@@ -205,9 +209,11 @@ def test_scope_review_uses_submission_order_when_older_draft_runs_later(tmp_path
     first_draft = project["cases"][0]["workpackages"][-1]["id"]
     project = issue(store, project, "pull_workpackage", {"definition_id": "taskbook"})
     second_draft = project["cases"][0]["workpackages"][-1]["id"]
+    project = adopt_plan(store, project, second_draft)
     project = issue(store, project, "submit_workpackage", {"workpackage_id": second_draft})
     finish_taskbook_with_document(store)
     project = store.get_project("owner", project["id"])
+    project = adopt_plan(store, project, first_draft)
     project = issue(store, project, "submit_workpackage", {"workpackage_id": first_draft})
     with pytest.raises(Exception) as error:
         issue(store, project, "prepare_taskbook_scope_review", {"workpackage_id": second_draft})

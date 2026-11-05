@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -15,10 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.common.admin_access_store import get_admin_access_store
-from src.common.admin_auth import ADMIN_COOKIE, admin_auth_settings
 from src.common.platform_auth import external_origin, get_auth_settings, get_current_user
-from src.service.rd_platform.catalog import get_catalog
 from src.service.rd_platform.store import RdError, Store
 
 logger = logging.getLogger(__name__)
@@ -113,6 +111,26 @@ class SourceAnalysisRequest(BaseModel):
     expected_version: int = Field(ge=1)
 
 
+class SourceClassificationFile(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=255)
+
+
+class SourceClassificationModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    provider: str = Field(max_length=200)
+    name: str = Field(max_length=200)
+    id: str = Field(max_length=200)
+
+
+class SourceClassificationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    files: list[SourceClassificationFile] = Field(min_length=1, max_length=50)
+    model_selection: SourceClassificationModel | None = None
+    use_model: bool = False
+
+
 def _store(request: Request) -> Store:
     return request.app.state.rd_store
 
@@ -124,30 +142,154 @@ def _key(request: Request) -> str:
     return key
 
 
-async def _workspace_manager(request: Request) -> str | None:
-    # Local resource editing requires an explicit development switch. OA modes
-    # always use the existing opaque admin session, never the displayed name.
+def _workspace_permissions(request: Request) -> dict:
+    """Capability roles use verified actor IDs, independently of RD admin roles."""
+    actor = _actor(request)
     settings = get_auth_settings(request)
-    if (not settings.enabled and os.getenv("JTB_RD_LOCAL_WORKSPACE_ADMIN") == "1"
-            and request.client and request.client.host in {"127.0.0.1", "::1"}):
-        return _actor(request)
-    token = request.cookies.get(ADMIN_COOKIE, "")
-    if not token:
-        return None
-    admin_settings = admin_auth_settings(settings)
+    local_bootstrap = bool(not settings.enabled and os.getenv("JTB_RD_LOCAL_WORKSPACE_ADMIN") == "1"
+                           and request.client and request.client.host in {"127.0.0.1", "::1"})
+    def has_role(name):
+        return actor in {entry.strip() for entry in os.getenv(name, "").split(",") if entry.strip()}
+    publisher = local_bootstrap or has_role("JTB_RD_WORKSPACE_PUBLISHERS")
+    return {"application_id": _store(request).workspace.application_id,
+            "can_edit_resources": publisher, "can_publish_resources": publisher,
+            "can_manage_application_grants": local_bootstrap or has_role("JTB_RD_WORKSPACE_GRANT_MANAGERS"),
+            "local_bootstrap": local_bootstrap}
+
+
+async def _workspace_payload(request: Request) -> dict:
     try:
-        origin = external_origin(request, admin_settings)
-        access = get_admin_access_store(request.app.state.config.logs_dir.parent / "runtime")
-        user = await asyncio.to_thread(access.lookup_session, token,
-            app_id=admin_settings.app_id, base_url=admin_settings.platform_base_url, origin=origin)
+        payload = await request.json()
     except ValueError:
-        return None
-    return str(user["userid"]) if user is not None else None
+        raise HTTPException(400, "资源参数必须为JSON对象") from None
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "资源参数必须为对象")
+    if {"application_id", "app_id", "can_manage", "permissions", "roles"} & payload.keys():
+        raise HTTPException(422, "应用身份及权限由服务端确定，不能由请求指定")
+    return payload
+
+
+def _governance_permissions(request: Request) -> dict:
+    actor = _actor(request)
+    local = bool(not get_auth_settings(request).enabled
+                 and os.getenv('JTB_RD_LOCAL_WORKSPACE_ADMIN') == '1'
+                 and request.client and request.client.host in {'127.0.0.1', '::1'})
+    def role(name):
+        return local or actor in {v.strip() for v in os.getenv(name, '').split(',') if v.strip()}
+    workflows = role('JTB_RD_WORKFLOW_PUBLISHERS')
+    templates = role('JTB_RD_TEMPLATE_PUBLISHERS')
+    return {'can_edit_workflows': workflows, 'can_publish_workflows': workflows,
+            'can_prepare_templates': templates, 'can_publish_templates': templates,
+            'can_review_templates': role('JTB_RD_TEMPLATE_REVIEWERS'), 'local_bootstrap': local}
+
+
+def _require_governance(request: Request, permission: str) -> str:
+    _same_origin(request)
+    if not _governance_permissions(request).get(permission):
+        raise HTTPException(403, '当前主体没有此治理操作权限')
+    return _actor(request)
+
+
+@router.get('/governance/session')
+async def governance_session(request: Request):
+    return _governance_permissions(request)
+
+
+@router.get('/workflow-templates')
+async def workflow_templates(request: Request, category: str | None = None,
+                             q: str = Query(default='', max_length=200),
+                             page: int = Query(default=1, ge=1),
+                             page_size: int = Query(default=5, ge=1, le=50), management: bool = False):
+    return await asyncio.to_thread(_store(request).workflow_templates.list, _actor(request),
+        _governance_permissions(request), category=category, q=q, page=page, page_size=page_size, management=management)
+
+
+@router.post('/workflow-templates/validate')
+async def validate_workflow_template(request: Request):
+    _same_origin(request)
+    permissions = _governance_permissions(request)
+    if not any(permissions.get(name) for name in ('can_edit_workflows', 'can_publish_workflows')):
+        raise HTTPException(403, '当前主体没有流程模板校验权限')
+    payload = await _workspace_payload(request)
+    if {'actor', 'publisher', 'reviewer', 'status'} & payload.keys():
+        raise HTTPException(422, '主体和发布状态由服务端确定')
+    return await asyncio.to_thread(_store(request).workflow_templates.validate, _actor(request), permissions, payload)
+
+
+@router.get('/workflow-templates/{rid}/history')
+async def workflow_template_history(request: Request, rid: str,
+                                    page: int = Query(default=1, ge=1),
+                                    page_size: int = Query(default=5, ge=1, le=50), management: bool = False):
+    return await asyncio.to_thread(_store(request).workflow_templates.history, _actor(request), rid,
+        _governance_permissions(request), management=management, page=page, page_size=page_size)
+
+
+@router.get('/workflow-templates/{rid}/{version}')
+async def workflow_template(request: Request, rid: str, version: str, management: bool = False):
+    fixed_version = None if version == 'latest' else str(_resource_version(version))
+    return await asyncio.to_thread(_store(request).workflow_templates.detail, _actor(request), rid,
+        fixed_version, _governance_permissions(request), management=management)
+
+
+@router.post('/workflow-templates')
+async def save_workflow_template(request: Request):
+    _same_origin(request)
+    permissions = _governance_permissions(request)
+    if not any(permissions.get(name) for name in ('can_edit_workflows', 'can_publish_workflows')):
+        raise HTTPException(403, '当前主体没有此治理操作权限')
+    payload = await _workspace_payload(request)
+    if {'actor', 'publisher', 'reviewer', 'status'} & payload.keys():
+        raise HTTPException(422, '主体和发布状态由服务端治理操作确定')
+    return await asyncio.to_thread(_store(request).workflow_templates.save, _actor(request),
+        permissions, payload, _key(request))
+
+
+def _resource_version(value: str) -> int:
+    if not re.fullmatch(r"[1-9][0-9]{0,8}", value):
+        raise HTTPException(422, "资源固定版本必须为正整数")
+    return int(value)
 
 
 @router.get("/catalog")
-async def catalog():
-    return get_catalog()
+async def catalog(request: Request):
+    return await asyncio.to_thread(_store(request).workspace.filtered_catalog)
+
+
+@router.get("/catalog/resources")
+async def catalog_resources(request: Request, q: str = Query(default="", max_length=200),
+                            kind: str | None = None, page: int = Query(default=1, ge=1),
+                            page_size: int = Query(default=5, ge=1, le=50)):
+    return await asyncio.to_thread(_store(request).workspace.catalog_list,
+                                   q=q, kind=kind, page=page, page_size=page_size)
+
+
+@router.get("/catalog/resources/{rid}/{version}")
+async def catalog_resource(request: Request, rid: str, version: str):
+    return await asyncio.to_thread(_store(request).workspace.catalog_detail, rid, _resource_version(version))
+
+
+def _report_catalog():
+    # Document assets retain their existing catalog owner and access policy.
+    from src.controller import taskbook_controller
+    registry = taskbook_controller._STATE.template_versions
+    if registry is None:
+        raise RdError(503, "受控文档目录暂未就绪。")
+    return registry.catalog_items()
+
+
+@router.get("/catalog/items")
+async def catalog_items(request: Request, category: str, q: str = Query(default="", max_length=200),
+                        page: int = Query(default=1, ge=1), page_size: int = Query(default=5, ge=1, le=50)):
+    if category != "reports":
+        return await asyncio.to_thread(_store(request).workspace.catalog_items, category,
+                                       q=q, page=page, page_size=page_size)
+    entries = await asyncio.to_thread(_report_catalog)
+    query = q.strip().casefold()
+    items = sorted((item for item in entries if not query or query in " ".join(
+        str(item.get(key, "")) for key in ("product_type", "product_domain", "filename")).casefold()),
+        key=lambda item: (str(item.get("product_type_id", "")), str(item.get("product_domain_id", ""))))
+    return {"items": items[(page - 1) * page_size:page * page_size], "page": page, "page_size": page_size,
+            "total": len(items), "total_pages": (len(items) + page_size - 1) // page_size}
 
 
 @router.get("/session")
@@ -170,6 +312,11 @@ async def create_project(payload: CreateProject, request: Request):
 @router.get("/projects/{pid}")
 async def project(pid: str, request: Request):
     return await asyncio.to_thread(_store(request).get_project, _actor(request), pid)
+
+
+@router.delete("/projects/{pid}")
+async def delete_project(pid: str, request: Request, expected_version: int = Query(..., ge=1)):
+    return await asyncio.to_thread(_store(request).delete_project, _actor(request), pid, expected_version, _key(request))
 
 
 @router.post("/projects/{pid}/commands")
@@ -195,6 +342,42 @@ async def upload_source(pid: str, cid: str, request: Request, expected_version: 
         expected_version, key, role, file.filename or "source", content)
 
 
+@router.post("/projects/{pid}/cases/{cid}/sources/batch")
+async def upload_source_batch(pid: str, cid: str, request: Request, expected_version: int = Form(..., ge=1),
+                              manifest: str = Form(..., max_length=64000), files: list[UploadFile] = File(...)):
+    key = _key(request)
+    maximum = request.app.state.config.max_upload_bytes
+    uploaded, total = [], 0
+    try:
+        try:
+            items = json.loads(manifest)
+        except json.JSONDecodeError:
+            raise HTTPException(422, "manifest须为有效JSON数组") from None
+        if not 1 <= len(files) <= 50:
+            raise HTTPException(422, "每批须包含1至50份资料")
+        for file in files:
+            content = await file.read(maximum + 1)
+            total += len(content)
+            if len(content) > maximum:
+                raise HTTPException(413, "文件超过平台上传限制")
+            if total > maximum:
+                raise HTTPException(413, "整批资料超过平台上传限制，请拆分批次后上传")
+            uploaded.append((file.filename or "source", content))
+    finally:
+        for file in files:
+            await file.close()
+    return await asyncio.to_thread(_store(request).add_sources, _actor(request), pid, cid,
+                                   expected_version, key, items, uploaded)
+
+
+@router.post("/projects/{pid}/cases/{cid}/sources/classify")
+async def classify_source_names(pid: str, cid: str, payload: SourceClassificationRequest, request: Request):
+    return await asyncio.to_thread(_store(request).classify_source_names, _actor(request), pid, cid,
+        [file.model_dump() for file in payload.files],
+        model_selection=payload.model_selection.model_dump() if payload.model_selection is not None else None,
+        use_model=payload.use_model)
+
+
 @router.post("/projects/{pid}/cases/{cid}/analysis")
 async def analyze_sources(pid: str, cid: str, payload: SourceAnalysisRequest, request: Request):
     return await asyncio.to_thread(_store(request).analyze_sources, _actor(request), pid, cid,
@@ -208,7 +391,7 @@ async def source_file(pid: str, cid: str, sid: str, request: Request):
     path = await asyncio.to_thread(store.source_path, actor, pid, cid, sid)
     project = await asyncio.to_thread(store.get_project, actor, pid)
     case = next(c for c in project["cases"] if c["id"] == cid)
-    source = next(s for s in case["sources"] if s["id"] == sid)
+    source = next(s for s in case["sources"] + case.get("deleted_sources", []) if s["id"] == sid)
     return FileResponse(path, filename=source["name"], headers=_HEADERS)
 
 
@@ -222,22 +405,40 @@ async def artifact_file(pid: str, cid: str, wid: str, aid: str, request: Request
     return FileResponse(path, filename=artifact["name"], headers=_HEADERS)
 
 
+@router.get("/workspace/session")
+async def workspace_session(request: Request):
+    return _workspace_permissions(request)
+
+
 @router.get("/workspace/resources")
-async def resources(request: Request):
-    return {"resources": await asyncio.to_thread(_store(request).list_resources),
-            "can_manage": bool(await _workspace_manager(request))}
+async def resources(request: Request, q: str = Query(default="", max_length=200), kind: str | None = None,
+                    page: int = Query(default=1, ge=1), page_size: int = Query(default=5, ge=1, le=50)):
+    return await asyncio.to_thread(_store(request).workspace.management_list, _actor(request),
+                                  _workspace_permissions(request), q=q, kind=kind, page=page, page_size=page_size)
+
+
+@router.get("/workspace/resources/{rid}/{version}")
+async def workspace_resource(request: Request, rid: str, version: str):
+    return await asyncio.to_thread(_store(request).workspace.management_detail, _actor(request),
+                                  _workspace_permissions(request), rid, None if version == "latest" else _resource_version(version))
 
 
 @router.post("/workspace/resources")
 async def save_resource(request: Request):
-    manager = await _workspace_manager(request)
-    if not manager:
-        raise HTTPException(403, "请通过管理员OA登录后管理Workspace资源")
-    payload = await request.json()
-    if not isinstance(payload, dict):
-        raise HTTPException(400, "资源参数必须为对象")
-    return await asyncio.to_thread(_store(request).save_resource, manager,
-                                  payload, can_manage=True)
+    permissions = _workspace_permissions(request)
+    if not permissions["can_edit_resources"] and not permissions["can_publish_resources"]:
+        raise HTTPException(403, "当前主体没有Workspace资源编辑或发布权限")
+    return await asyncio.to_thread(_store(request).workspace.save_resource, _actor(request), permissions,
+                                  await _workspace_payload(request), _key(request))
+
+
+@router.post("/workspace/grants")
+async def workspace_grant(request: Request):
+    permissions = _workspace_permissions(request)
+    if not permissions["can_manage_application_grants"]:
+        raise HTTPException(403, "当前主体没有Workspace应用授权权限")
+    return await asyncio.to_thread(_store(request).workspace.set_grant, _actor(request), permissions,
+                                  await _workspace_payload(request), _key(request))
 
 
 def _assistant(request: Request):
@@ -290,7 +491,8 @@ async def contracts():
 def configure_rd(application, config):
     root = Path(os.environ.get("JTB_RD_DATA_DIR") or config.logs_dir.parent / "data" / "rd_platform")
     local_review = os.environ.get("JTB_RD_LOCAL_REVIEW") == "1" and getattr(getattr(application.state, "auth_settings", None), "enabled", True) is False
-    application.state.rd_store = Store(root / "rd.sqlite3", root / "assets", local_review_enabled=local_review)
+    application.state.rd_store = Store(root / "rd.sqlite3", root / "assets", local_review_enabled=local_review,
+                                      application_id=os.environ.get("JTB_RD_WORKSPACE_APP_ID", "rd-platform-local"))
 
 
 def start_rd_worker(application):
@@ -300,3 +502,8 @@ def start_rd_worker(application):
     application.state.rd_worker = worker
     worker.start()
     return worker
+
+
+from src.controller.platform_chat_controller import router as platform_chat_router
+
+router.include_router(platform_chat_router)

@@ -31,7 +31,7 @@ from .store import RdError
 PARAMETER_LABELS = {
     'product_type': ('产品类型',), 'product_domain': ('产品领域', '质量体系', '质量管理体系'),
     'development_process': ('研制流程', '研制流程分类'), 'cover_phase': ('封面阶段', '研制阶段'),
-    'product_series': ('产品系列',), 'organization_scope': ('组织范围', '产品归属', '产品归属范围'),
+    'product_series': ('产品系列', '产品型号', '型号', '系列'), 'organization_scope': ('组织范围', '产品归属', '产品归属范围'),
 }
 
 
@@ -55,12 +55,19 @@ def _source_refs(evidence, case, texts):
     refs = []
     for item in evidence:
         sid, quote = item['source_id'], item['quote']
+        source = sources.get(sid)
+        if item.get('kind') == 'source_filename':
+            if not source or quote != source.get('name'):
+                raise RdError(422, '系列文件名证据与上传来源不一致，未采用。')
+            refs.append({'source_id': sid, 'kind': 'source_filename', 'version': source.get('version'),
+                         'sha256': source['sha256'], 'name_sha256': hashlib.sha256(quote.encode('utf-8')).hexdigest(),
+                         'location': {'filename': quote}})
+            continue
         text = texts[sid]
         offset = text.find(quote)
         location = {'text_offset': offset} if offset >= 0 else {'normalized_text_offset': _normal(text).find(_normal(quote))}
         if offset >= 0:
             location['line'] = text.count('\n', 0, offset) + 1
-        source = sources.get(sid)
         if source:
             refs.append({'source_id': sid, 'version': source.get('version'), 'sha256': source['sha256'],
                          'location': location})
@@ -70,25 +77,65 @@ def _source_refs(evidence, case, texts):
     return refs
 
 
+def _missing_series(value):
+    return not value or bool(re.fullmatch(
+        r'(?:待定|待确认|待明确|待填写|未明确|未确定|未填写|暂无|无|TBD|UNKNOWN|NONE|[-—_/\s]+)',
+        value.strip(), re.IGNORECASE))
+
+
+def _filename_series_candidates(source):
+    """A filename can suggest an identifier, never supply an engineering quote."""
+    name = source.get('name', '')
+    stem = Path(name).stem.replace('—', '-').replace('－', '-')
+    values = []
+    for match in re.finditer(r'(?<![A-Za-z0-9])([A-Za-z][A-Za-z0-9]*(?:[-.][A-Za-z0-9]+|_[0-9][A-Za-z0-9.]*)*)(?![A-Za-z0-9])', stem):
+        value = re.sub(r'[-_](?:v|ver|rev)\d+(?:\.\d+)*$', '', match.group(1), flags=re.IGNORECASE)
+        filename_label = re.sub(r'[-_.]?\d[\d._-]*$', '', value)
+        if (_missing_series(value) or _missing_series(filename_label)
+                or filename_label.upper() in {'TEST', 'DEMO', 'TECH', 'TECHNICAL', 'SPEC', 'SPECIFICATION', 'SPECIFICATIONS',
+                              'REQUIREMENT', 'REQUIREMENTS', 'REQ', 'DOCUMENT', 'DOCUMENTS', 'STANDARD', 'STANDARDS',
+                              'INPUT', 'SOURCE', 'DOC', 'DOCX', 'PDF', 'FINAL', 'DRAFT', 'COPY', 'SCAN', 'SCANNED'}
+                or re.fullmatch(r'X{2,}', value, re.IGNORECASE)
+                or re.fullmatch(r'(?:v|ver|rev|version|copy|final|draft|gb|gjb|qj|hb|iso|iec)[-_.]?\d[\w.-]*', value, re.IGNORECASE)
+                or not (any(character.isdigit() for character in value) or value.isupper() and len(value) >= 2)):
+            continue
+        if value not in values:
+            values.append(value)
+    evidence = [{'source_id': source['id'], 'kind': 'source_filename', 'quote': name}]
+    return [{'value': value, 'raw_value': value, 'evidence': deepcopy(evidence),
+             'controlled': True, 'eligible': True} for value in values]
+
+
 def _parameter_candidates(field, case, texts, options):
     labels = (*PARAMETER_LABELS[field], field)
-    pattern = re.compile(r'^\s*(?:' + '|'.join(map(re.escape, labels)) + r')\s*[:：|]\s*(.+?)\s*$')
+    label_pattern = '|'.join(map(re.escape, labels))
+    pattern = re.compile(r'(?:^|\|)\s*(?:' + label_pattern + r')\s*[:：|]\s*([^|]+)' if field == 'product_series'
+                         else r'^\s*(?:' + label_pattern + r')\s*[:：|]\s*(.+?)\s*$')
     spellings = _parameter_values(field, options)
     sources = {source['id']: source for source in case.get('sources', [])}
     candidates = []
     for sid, text in texts.items():
+        if field == 'product_series' and sources.get(sid, {}).get('role') != 'tech':
+            continue
         # A reference-only attachment is a candidate, not a new design input.
-        for line in re.split(r'[\n；;]', text):
-            match = pattern.match(line)
-            if not match:
+        for line in re.split(r'[\n；;。]', text):
+            for match in pattern.finditer(line):
+                raw = match.group(1).strip().rstrip('。')
+                if field == 'product_series' and _missing_series(raw):
+                    continue
+                value = spellings.get(_normal(raw).replace('—', '-').replace('－', '-'), raw)
+                evidence = [{'source_id': sid, 'quote': line.strip()}]
+                candidates.append({'value': value, 'raw_value': raw, 'evidence': evidence,
+                                   'source_refs': _source_refs(evidence, case, texts),
+                                   'controlled': field == 'product_series' or value in options[field],
+                                   'eligible': sources.get(sid, {}).get('role') != 'reference'})
+    if field == 'product_series':
+        for source in sources.values():
+            if source['role'] != 'tech':
                 continue
-            raw = match.group(1).strip().rstrip('。')
-            value = spellings.get(_normal(raw).replace('—', '-').replace('－', '-'), raw)
-            evidence = [{'source_id': sid, 'quote': line.strip()}]
-            candidates.append({'value': value, 'raw_value': raw, 'evidence': evidence,
-                               'source_refs': _source_refs(evidence, case, texts),
-                               'controlled': field == 'product_series' or value in options[field],
-                               'eligible': sources.get(sid, {}).get('role') != 'reference'})
+            for candidate in _filename_series_candidates(source):
+                candidate['source_refs'] = _source_refs(candidate['evidence'], case, texts)
+                candidates.append(candidate)
     return candidates
 
 
@@ -126,7 +173,8 @@ def _parameter_proposal(field, raw, case, texts, options):
     if trusted:
         value = trusted[0]['value']
         evidence = [entry for item in trusted for entry in item['evidence']]
-        reason = '来自资料中明确标注的参数，等待用户采用。'
+        reason = ('来自需求文件名的系列候选，等待用户核对采用。' if any(item.get('kind') == 'source_filename' for item in evidence)
+                  else '来自资料中明确标注的参数，等待用户采用。')
     else:
         if not isinstance(raw, dict):
             raise RdError(422, '模型返回的参数提案格式无效。')
@@ -134,9 +182,15 @@ def _parameter_proposal(field, raw, case, texts, options):
         if not isinstance(value, str) or len(value) > 1000:
             raise RdError(422, '模型返回的参数值无效。')
         value = value.strip()
+        if field == 'product_series' and _missing_series(value):
+            value = ''
         if value and field in options and value not in options[field]:
             raise RdError(422, f'模型返回了未定义的{field}受控值。')
         evidence = _quotes(raw.get('evidence'), texts) if value else []
+        if value and field == 'product_series':
+            sources = {source['id']: source for source in case.get('sources', [])}
+            if any(sources.get(item['source_id'], {}).get('role') != 'tech' for item in evidence):
+                raise RdError(422, '产品系列须引用本次需求文件；不能根据规范或补充资料推断本次型号。')
         if value and not _supports_parameter(field, value, evidence, options):
             raise RdError(422, '参数提案引用没有明确支持所选参数值；不能根据其他指标猜测阶段或产品身份。')
         reason = str(raw.get('reason') or base['reason'])[:2000]
@@ -174,7 +228,9 @@ def parameter_facts(case):
                 current = {'sha256': hashlib.sha256(text.encode('utf-8')).hexdigest()}
             else:
                 current = sources.get(ref['source_id'], {})
-            if any(ref.get(key) != current.get(key) for key in ('sha256', 'version') if key in ref):
+                if ref.get('kind') == 'source_filename':
+                    current = {**current, 'name_sha256': hashlib.sha256(current.get('name', '').encode('utf-8')).hexdigest()}
+            if any(ref.get(key) != current.get(key) for key in ('sha256', 'version', 'name_sha256') if key in ref):
                 evidence_status = 'stale'
         status = 'adopted' if value else pending.get('status', 'unresolved')
         reason = basis.get('reason', '')

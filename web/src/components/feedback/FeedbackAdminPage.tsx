@@ -1,3 +1,4 @@
+import { PlatformButton } from '../ui/PlatformButton';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { deleteFeedback, FeedbackApiError, listFeedback, type FeedbackFilters, type FeedbackPage, type FeedbackRecord } from '../../api/feedback';
 import { StyledSelect } from '../ui/StyledSelect';
@@ -135,7 +136,7 @@ export function FeedbackAdminPage({ embedded = false, visible = true }: { embedd
     <div className="feedback-page-main">
       <section className="feedback-overview" aria-labelledby="feedback-overview-title">
         <div className="feedback-section-heading"><div><h2 id="feedback-overview-title">反馈概况</h2><p>统计当前筛选范围内的全部记录</p></div>
-          <button type="button" className="feedback-button primary" onClick={() => setSelection({ mode: 'create', id: null })}>新增反馈</button></div>
+          <PlatformButton type="button" className="feedback-button primary" onClick={() => setSelection({ mode: 'create', id: null })}>新增反馈</PlatformButton></div>
         <div className="feedback-statistics" aria-label="反馈统计" aria-busy={loading}>
           {([
             ['反馈总数', data?.stats.total], ['好', data?.stats.good], ['一般', data?.stats.average], ['差', data?.stats.poor],
@@ -147,7 +148,7 @@ export function FeedbackAdminPage({ embedded = false, visible = true }: { embedd
 
       <section className="feedback-list-section" aria-labelledby="feedback-list-title">
         <div className="feedback-section-heading"><div><h2 ref={listHeading} tabIndex={-1} id="feedback-list-title">反馈记录</h2><p>查看反馈用户名、提交时的身份、任务参数与文件名。</p></div>
-          <button type="button" className="feedback-button" disabled={loading} onClick={() => setRevision(value => value + 1)}>刷新列表</button></div>
+          <PlatformButton type="button" className="feedback-button" disabled={loading} onClick={() => setRevision(value => value + 1)}>刷新列表</PlatformButton></div>
         <form className="feedback-filter-form" noValidate onSubmit={search} aria-label="筛选反馈记录">
           <label className="feedback-filter-query" htmlFor="feedback-search">关键词<input id="feedback-search" type="search" maxLength={500} value={draft.q}
             placeholder="搜索用户名、意见、任务或产品" onChange={event => setDraft({ ...draft, q: event.target.value })} /></label>
@@ -161,12 +162,12 @@ export function FeedbackAdminPage({ embedded = false, visible = true }: { embedd
             aria-invalid={Boolean(filterError)} aria-describedby={filterError ? 'feedback-filter-error' : undefined} onChange={event => setDraft({ ...draft, date_from: event.target.value })} /></label>
           <label htmlFor="feedback-date-to">结束日期<input id="feedback-date-to" type="date" value={draft.date_to} min={draft.date_from || undefined}
             onChange={event => setDraft({ ...draft, date_to: event.target.value })} /></label>
-          <div className="feedback-filter-actions"><button type="submit" className="feedback-button primary">查询</button>
-            <button type="button" className="feedback-button" onClick={() => commit({ ...initialFilters })}>重置</button></div>
+          <div className="feedback-filter-actions"><PlatformButton type="submit" className="feedback-button primary">查询</PlatformButton>
+            <PlatformButton type="button" className="feedback-button" onClick={() => commit({ ...initialFilters })}>重置</PlatformButton></div>
           {filterError && <p id="feedback-filter-error" className="feedback-error feedback-filter-error" role="alert">{filterError}</p>}
         </form>
         {notice && <p className="feedback-notice" role="status">{notice}</p>}
-        {error && <div className="feedback-error feedback-list-error" role="alert"><p>{error}</p><button type="button" className="feedback-link" onClick={() => setRevision(value => value + 1)}>重试加载</button></div>}
+        {error && <div className="feedback-error feedback-list-error" role="alert"><p>{error}</p><PlatformButton type="button" className="feedback-link" onClick={() => setRevision(value => value + 1)}>重试加载</PlatformButton></div>}
         {loading ? <div className="feedback-empty" role="status">正在读取反馈记录…</div> : !error && !data?.items.length ?
           <div className="feedback-empty"><strong>没有找到反馈记录。</strong><p>可调整筛选条件，或通过“新增反馈”补录已完成任务的意见。</p></div> : data && <>
           <div className="feedback-table-scroll" role="region" aria-label="反馈记录表格，可横向滚动" tabIndex={0}>
@@ -182,16 +183,16 @@ export function FeedbackAdminPage({ embedded = false, visible = true }: { embedd
               <td><strong>{record.snapshot.parameters.product_type_label || record.snapshot.parameters.product_type || '未指定产品'}</strong><span className="feedback-cell-meta">{record.snapshot.parameters.product_series || '未填写系列'}</span></td>
               <td className="feedback-file-cell">{record.snapshot.files.output || record.snapshot.files.tech || '未生成输出文件'}</td>
               <td><span className={`feedback-badge status-${record.status}`}>{statusLabels[record.status]}</span></td>
-              <td><div className="feedback-row-actions"><button type="button" className="feedback-link" aria-label={`查看反馈 ${record.id}`} onClick={() => setSelection({ id: record.id, mode: 'view' })}>查看</button>
-                <button type="button" className="feedback-link" aria-label={`编辑反馈 ${record.id}`} onClick={() => setSelection({ id: record.id, mode: 'edit' })}>编辑</button>
-                <button type="button" className="feedback-link danger-text" aria-label={`删除反馈 ${record.id}`} onClick={() => { setDeleteError(''); setRemove(record); }}>删除</button></div></td>
+              <td><div className="feedback-row-actions"><PlatformButton type="button" className="feedback-link" aria-label={`查看反馈 ${record.id}`} onClick={() => setSelection({ id: record.id, mode: 'view' })}>查看</PlatformButton>
+                <PlatformButton type="button" className="feedback-link" aria-label={`编辑反馈 ${record.id}`} onClick={() => setSelection({ id: record.id, mode: 'edit' })}>编辑</PlatformButton>
+                <PlatformButton type="button" className="feedback-link danger-text" aria-label={`删除反馈 ${record.id}`} onClick={() => { setDeleteError(''); setRemove(record); }}>删除</PlatformButton></div></td>
             </tr>)}</tbody></table>
           </div>
           <nav className="feedback-pagination" aria-label="反馈记录分页"><span>共 {data.total} 条 · 第 {filters.page} / {pages} 页</span>
             <div className="feedback-pagination-controls"><StyledSelect aria-label="每页反馈条数" value={String(filters.page_size)} options={[10, 20, 50].map(value => ({ value: String(value), label: `${value} 条 / 页` }))}
               onChange={value => commit({ ...filters, page: 1, page_size: Number(value) })} />
-              <button type="button" className="feedback-button" disabled={filters.page <= 1} onClick={() => commit({ ...filters, page: filters.page - 1 })}>上一页</button>
-              <button type="button" className="feedback-button" disabled={filters.page >= pages} onClick={() => commit({ ...filters, page: filters.page + 1 })}>下一页</button></div>
+              <PlatformButton type="button" className="feedback-button" disabled={filters.page <= 1} onClick={() => commit({ ...filters, page: filters.page - 1 })}>上一页</PlatformButton>
+              <PlatformButton type="button" className="feedback-button" disabled={filters.page >= pages} onClick={() => commit({ ...filters, page: filters.page + 1 })}>下一页</PlatformButton></div>
           </nav>
         </>}
       </section>

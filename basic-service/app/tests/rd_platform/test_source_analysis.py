@@ -9,9 +9,10 @@ from tests.rd_platform.test_http import make_client
 from jonhon_taskbook import llm_client
 
 
-def setup_case(tmp_path, source_text='工作压力：0.3 MPa。\n工作温度：5℃～70℃。'):
+def setup_case(tmp_path, source_text='工作压力：0.3 MPa。\n工作温度：5℃～70℃。',
+               brief='液冷管路；军品；改型II；S阶段；YLZJ；非中央研究院产品'):
     client = make_client(tmp_path)
-    project = client.post('/api/rd/projects', json={'title': '液冷资料分析', 'brief': '液冷管路；军品；改型II；S阶段；YLZJ；非中央研究院产品'}).json()
+    project = client.post('/api/rd/projects', json={'title': '液冷资料分析', 'brief': brief}).json()
     project = command(client, project, 'create_case', scenario_id='taskbook', title='源资料确认')
     cid = project['cases'][0]['id']
     response = client.post(f"/api/rd/projects/{project['id']}/cases/{cid}/sources",
@@ -65,6 +66,7 @@ def test_analysis_requires_explicit_adoption_and_keeps_unresolved_fields(tmp_pat
     assert case['context'] == {} and case['requirements'] == [] and case['decisions'] == []
     analysis = case['source_analysis']
     assert analysis['context']['cover_phase']['status'] == 'unresolved'
+    assert 'requirement_id' not in analysis['requirements'][0]
     assert analysis['source_hashes'][sid] == case['sources'][0]['sha256']
     adopted = command(client, proposed, 'adopt_source_analysis', analysis_id=analysis['id'])['cases'][0]
     assert adopted['context']['product_type'] == 'liquid_cooling_pipeline'
@@ -73,6 +75,60 @@ def test_analysis_requires_explicit_adoption_and_keeps_unresolved_fields(tmp_pat
     assert adopted['requirements'][0]['source_ids'] == [sid]
     assert adopted['decisions'] == [] and adopted['stage'] == 'input'
     assert adopted['source_analysis']['status'] == 'adopted'
+    assert adopted['source_analysis']['requirements'][0]['requirement_id'] == adopted['requirements'][0]['id']
+
+
+def test_parameter_declaration_ends_before_chinese_period_explanation(tmp_path, monkeypatch):
+    brief = ('产品类型：液冷管路；产品领域：军品;研制流程：改型II\n'
+             '封面阶段：S；产品系列：YLZJ-3.5/A；产品归属：非中央研究院产品。'
+             '采用受控液冷管路模板。工作压力按需求文件0.3 MPa执行。')
+    client, project = setup_case(tmp_path, source_text='产品系列：YLZJ-3.5/A。\n工作压力：0.3 MPa。\n工作温度：5℃～70℃。', brief=brief)
+    install_model(monkeypatch, project['cases'][0]['sources'][0]['id'])
+    response = analyze(client, project)
+    assert response.status_code == 200, response.text
+    proposed = response.json()
+    case = proposed['cases'][0]
+    proposal = case['source_analysis']
+    scope = proposal['context']['organization_scope']
+    assert scope['status'] == 'proposed'
+    assert scope['value'] == 'non_central_research'
+    assert scope['evidence'] == [{'source_id': 'project_brief', 'quote': '产品归属：非中央研究院产品'}]
+    reference = scope['source_refs'][0]
+    assert reference['kind'] == 'project_text'
+    assert reference['sha256'] == hashlib.sha256(brief.encode()).hexdigest()
+    assert brief[reference['location']['text_offset']:].startswith(scope['evidence'][0]['quote'])
+    assert proposal['context']['product_series']['value'] == 'YLZJ-3.5/A'
+    assert proposal['context']['development_process']['value'] == '改型II'
+    assert proposal['context']['cover_phase']['value'] == 'S'
+    assert case['context'] == {} and case['requirements'] == []
+
+    adopted = command(client, proposed, 'adopt_source_analysis', analysis_id=proposal['id'])['cases'][0]
+    assert adopted['context']['organization_scope'] == 'non_central_research'
+    assert adopted['context']['product_series'] == 'YLZJ-3.5/A'
+    assert adopted['requirements'][0]['content'] == '工作压力：0.3 MPa。'
+    assert adopted['decisions'] == []
+
+
+def test_adjacent_chinese_sentences_keep_conflicting_parameter_evidence():
+    from src.service.rd_platform import analysis
+    brief = '产品归属：非中央研究院产品。产品归属：中央研究院产品。采用受控模板。'
+    proposal = analysis._parameter_proposal('organization_scope', {}, {}, {'project_brief': brief},
+                                           {'organization_scope': analysis.allowed_organization_scopes()})
+    assert proposal['status'] == 'conflict' and proposal['value'] == ''
+    assert [item['value'] for item in proposal['candidates']] == ['non_central_research', 'central_research']
+    assert [item['evidence'][0]['quote'] for item in proposal['candidates']] == [
+        '产品归属：非中央研究院产品', '产品归属：中央研究院产品']
+    assert all(item['controlled'] for item in proposal['candidates'])
+
+
+def test_sentence_boundary_does_not_accept_uncontrolled_parameter_prefix():
+    from src.service.rd_platform import analysis
+    brief = '产品归属：非中央研究院产品（待确认）。采用受控模板。'
+    proposal = analysis._parameter_proposal('organization_scope', {}, {}, {'project_brief': brief},
+                                           {'organization_scope': analysis.allowed_organization_scopes()})
+    assert proposal['status'] == 'unresolved' and proposal['value'] == ''
+    assert proposal['candidates'][0]['raw_value'] == '非中央研究院产品（待确认）'
+    assert proposal['candidates'][0]['controlled'] is False
 
 
 def test_model_cannot_invent_quotes_or_product_domains(tmp_path, monkeypatch):
@@ -216,6 +272,47 @@ def test_reanalysis_keeps_adopted_clarification_and_only_adds_new_requirements(
     assert case['requirements'][1]['content'] == '工作温度：5℃～70℃。'
     assert case['requirements'][1]['source_ids'] == [sid]
     assert case['decisions'] == []
+    assert [row['requirement_id'] for row in case['source_analysis']['requirements']] == [
+        rid, case['requirements'][1]['id']]
+
+
+def test_ambiguous_source_candidate_does_not_choose_between_two_saved_requirements(tmp_path, monkeypatch):
+    client, project = setup_case(tmp_path)
+    sid = project['cases'][0]['sources'][0]['id']
+    candidate = install_model(monkeypatch, sid)['requirements'][0]
+    for _ in range(2):
+        project = command(client, project, 'save_requirement', title=candidate['title'],
+                          content=candidate['content'], source_ids=[sid])
+    project = analyze(client, project).json()
+    project = command(client, project, 'adopt_source_analysis', analysis_id=project['cases'][0]['source_analysis']['id'])
+    case = project['cases'][0]
+    assert len(case['requirements']) == 2
+    assert not case['source_analysis']['requirements'][0].get('requirement_id')
+
+
+def test_legacy_adopted_candidate_is_linked_on_read_without_changing_storage(tmp_path, monkeypatch):
+    client, project = setup_case(tmp_path)
+    sid = project['cases'][0]['sources'][0]['id']
+    install_model(monkeypatch, sid)
+    project = analyze(client, project).json()
+    project = command(client, project, 'adopt_source_analysis', analysis_id=project['cases'][0]['source_analysis']['id'])
+    rid = project['cases'][0]['requirements'][0]['id']
+    project = command(client, project, 'save_requirement', id=rid, title='更新后的压力指标',
+                      content='经澄清后验收。', source_ids=[sid])
+    store = client.app.state.rd_store
+    with store._connection() as db:
+        row = db.execute('SELECT payload FROM projects WHERE id=?', (project['id'],)).fetchone()
+        legacy = json.loads(row[0])
+        proposal = legacy['cases'][0]['source_analysis']
+        assert proposal['status'] == 'stale' and proposal['adopted_at']
+        assert proposal['requirements'][0].pop('requirement_id') == rid
+        legacy_json = json.dumps(legacy)
+        db.execute('UPDATE projects SET payload=? WHERE id=?', (legacy_json, project['id']))
+    for result in [client.get('/api/rd/projects/' + project['id']).json(),
+                   client.get('/api/rd/projects').json()['projects'][0]]:
+        assert result['cases'][0]['source_analysis']['requirements'][0]['requirement_id'] == rid
+    with store._connection() as db:
+        assert db.execute('SELECT payload FROM projects WHERE id=?', (project['id'],)).fetchone()[0] == legacy_json
 
 
 def test_equal_acceptance_values_for_distinct_tests_survive_analysis_and_adoption(tmp_path, monkeypatch):

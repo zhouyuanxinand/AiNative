@@ -42,3 +42,17 @@ test('admin, help, logs and genuine review routes retain their existing screens'
 test('malformed review identifiers do not throw or become generated job identities', () => {
   assert.deepEqual(resolveAppRoute('/review/%E0%A4%A', ''), { page: 'rd', replaceUrl: '/rd' });
 });
+
+test('directory URLs preserve independent state while unknown keys and credentials are removed', () => {
+  const search = '?rd_view=workspace&workspace_q=Skill&workspace_kind=skill&workspace_page=2&workspace_item=s1&workspace_version=1&flow_tab=actions&flow_kind=research&flow_item=f1%401&flow_version=1&flow_detail=canvas&flow_q=test&flow_page=3&management_q=CY&management_kind=completed&management_page=2&knowledge_q=YLZJ&knowledge_kind=all&knowledge_page=3';
+  assert.deepEqual(resolveAppRoute('/', search), { page: 'rd' });
+  assert.deepEqual(resolveAppRoute('/', search + '&workspace_token=secret&flow_appid=evil&token=secret'), { page: 'rd', replaceUrl: '/' + search });
+});
+
+test('case work surfaces and evidence deep links survive reload without retaining credentials', () => {
+  for (const detail of ['case_view=process', 'case_view=evidence&evidence=history', 'step=workpackages&workpackage=package-2']) {
+    const search = `?rd_view=projects&project=p1&case=c1&${detail}&q=CY&page=2`;
+    assert.deepEqual(resolveAppRoute('/rd', search), { page: 'rd' });
+    assert.deepEqual(resolveAppRoute('/rd', search + '&token=secret'), { page: 'rd', replaceUrl: '/rd' + search });
+  }
+});

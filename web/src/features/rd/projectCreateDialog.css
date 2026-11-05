@@ -1,0 +1,95 @@
+/* The modal portal lives outside the application shell. Only its form body scrolls. */
+.platform-feedback-modal.rd-platform-create .ant-modal-header {
+  margin-bottom: 16px;
+}
+.platform-feedback-modal.rd-platform-create .ant-modal-body,
+.platform-feedback-modal.rd-platform-create .rd-create-form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.platform-feedback-modal.rd-platform-create .rd-create-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scroll-padding-block: 8px;
+  padding: 2px 10px 2px 2px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+.rd-create-body::-webkit-scrollbar { width: 8px; height: 8px; }
+.rd-create-body::-webkit-scrollbar-track { background: transparent; }
+.rd-create-body::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: var(--color-border-strong);
+  background-clip: padding-box;
+}
+.rd-create-body::-webkit-scrollbar-thumb:hover { background-color: var(--color-text-secondary); }
+.rd-create-body::-webkit-scrollbar-thumb:active { background-color: var(--color-action); }
+.rd-create-body::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+/* Chromium's standard scrollbar properties otherwise override its pseudo-elements. */
+@supports selector(::-webkit-scrollbar) {
+  .platform-feedback-modal.rd-platform-create .rd-create-body {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+}
+.platform-feedback-modal.rd-platform-create .rd-create-body > *,
+.platform-feedback-modal.rd-platform-create .rd-field {
+  flex-shrink: 0;
+  margin: 0;
+}
+.platform-feedback-modal.rd-platform-create .rd-create-profile-grid { gap: 16px; }
+.platform-feedback-modal.rd-platform-create .rd-create-body p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.platform-feedback-modal.rd-platform-create .rd-field > textarea { min-height: 68px; height: 68px; }
+.platform-feedback-modal.rd-platform-create .rd-create-template-link {
+  display: flex;
+  justify-content: flex-end;
+  font-size: 12px;
+}
+.platform-feedback-modal.rd-platform-create .rd-create-template-link a { color: var(--color-action); }
+.platform-feedback-modal.rd-platform-create .rd-create-options {
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-bg-subtle);
+}
+.platform-feedback-modal.rd-platform-create .rd-create-options > summary {
+  padding: 10px 12px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+.platform-feedback-modal.rd-platform-create .rd-create-options > summary span {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+.platform-feedback-modal.rd-platform-create .rd-create-options > .rd-create-profile-grid { padding: 4px 12px 12px; }
+.platform-feedback-modal.rd-platform-create .rd-create-footer {
+  flex: none;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0 0;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--color-border);
+}
+.platform-feedback-modal.rd-platform-create .rd-create-footer > .rd-button { margin: 0; }
+@media (max-width: 600px) {
+  .platform-feedback-modal.rd-platform-create .rd-create-body { padding-right: 6px; }
+  .platform-feedback-modal.rd-platform-create .rd-create-footer { gap: 8px; }
+}
+@media (forced-colors: active) {
+  .platform-feedback-modal.rd-platform-create .rd-create-body { scrollbar-color: auto; }
+  .rd-create-body::-webkit-scrollbar-thumb { background-color: ButtonText; }
+}

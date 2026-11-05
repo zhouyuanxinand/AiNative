@@ -1,4 +1,99 @@
-.xiaohang-sprite{display:block;width:124px;height:124px;flex-shrink:0;pointer-events:auto;background-repeat:no-repeat;filter:drop-shadow(0 3px 2px rgb(23 42 66 / 10%))}
-.xiaohang-sprite>canvas{display:block;width:100%;height:100%;pointer-events:none}
-.xiaohang-sprite>img{display:block;width:100%!important;height:100%!important;max-width:none;object-fit:contain;filter:none!important;pointer-events:none;user-select:none;-webkit-user-drag:none}
+.xiaohang-sprite{position:relative;display:block;width:124px;height:124px;flex-shrink:0;pointer-events:auto;background-repeat:no-repeat;filter:drop-shadow(0 3px 2px rgb(23 42 66 / 10%))}
+.xiaohang-sprite-motion{position:relative;display:block;width:100%;height:100%;transform-origin:50% 96%;animation-timing-function:cubic-bezier(.22,.72,.28,1);pointer-events:none}
+.xiaohang-sprite-motion>canvas{display:block;width:100%;height:100%;pointer-events:none}
+.xiaohang-sprite-motion>img{display:block;width:100%!important;height:100%!important;max-width:none;object-fit:contain;filter:none!important;pointer-events:none;user-select:none;-webkit-user-drag:none}
+.xiaohang-sprite[data-playing=true][data-gesture=peek]>.xiaohang-sprite-motion{animation-name:xiaohang-peek}
+.xiaohang-sprite[data-playing=true][data-gesture=sway]>.xiaohang-sprite-motion{animation-name:xiaohang-sway}
+.xiaohang-sprite[data-playing=true][data-gesture=hop]>.xiaohang-sprite-motion{animation-name:xiaohang-hop}
+.xiaohang-sprite[data-playing=true][data-gesture=wave]>.xiaohang-sprite-motion{animation-name:xiaohang-wave}
+.xiaohang-sprite[data-playing=true][data-gesture=float]>.xiaohang-sprite-motion{animation-name:xiaohang-space-float}
+.xiaohang-sprite[data-playing=true][data-gesture=orbit]>.xiaohang-sprite-motion{animation-name:xiaohang-orbit-look}
+.xiaohang-sprite[data-playing=true][data-gesture=dock]>.xiaohang-sprite-motion{animation-name:xiaohang-dock-check}
+.xiaohang-sprite[data-playing=true][data-gesture=rocket]>.xiaohang-sprite-motion{animation-name:xiaohang-rocket-watch}
+.xiaohang-sprite[data-playing=true][data-gesture=moonwalk]>.xiaohang-sprite-motion{animation-name:xiaohang-moonwalk}
+.xiaohang-sprite[data-playing=true][data-gesture=stargaze]>.xiaohang-sprite-motion{animation-name:xiaohang-stargaze}
+.xiaohang-sprite[data-playing=true][data-gesture=signal]>.xiaohang-sprite-motion{animation-name:xiaohang-signal-listen}
+.xiaohang-sprite[data-playing=true][data-gesture=march]>.xiaohang-sprite-motion{animation-name:xiaohang-march-posture}
+.xiaohang-sprite[data-playing=true][data-gesture=pace]>.xiaohang-sprite-motion{animation-name:xiaohang-pace;animation-timing-function:linear}
+.xiaohang-sprite[data-renderer=webgl][data-playing=true][data-gesture=pace]>.xiaohang-sprite-motion{animation-name:xiaohang-pace-model}
+.xiaohang-sprite-motion>.xiaohang-step-body{position:relative;z-index:1;clip-path:inset(0 0 calc(var(--xiaohang-leg-height) - 1.2%) 0);transform-origin:50% calc(100% - var(--xiaohang-leg-height));animation-name:xiaohang-step-weight}
+.xiaohang-sprite-motion>.xiaohang-step-leg{position:absolute;bottom:0;width:50%;height:var(--xiaohang-leg-height)}
+.xiaohang-step-body,.xiaohang-step-leg{animation-duration:calc(var(--xiaohang-gesture-duration) / 4);animation-iteration-count:4;animation-timing-function:ease-in-out;animation-fill-mode:both}
+.xiaohang-step-leg.is-left{left:0;transform-origin:80% 0;animation-name:xiaohang-left-step}
+.xiaohang-step-leg.is-right{right:0;transform-origin:20% 0;animation-name:xiaohang-right-step}
+.xiaohang-flight-prop{position:absolute;inset:0;width:100%;height:100%;overflow:visible;color:var(--color-action);pointer-events:none}
+.xiaohang-prop-surface{fill:var(--color-bg-surface)}
+.xiaohang-prop-panel{fill:var(--color-action-subtle)}
+.xiaohang-flight-prop>g,.xiaohang-orbit-trail,.xiaohang-rocket-flame{animation-duration:var(--xiaohang-gesture-duration);animation-timing-function:cubic-bezier(.22,.72,.28,1);animation-fill-mode:both}
+.xiaohang-thrust{transform-origin:50% 86%;animation-name:xiaohang-thrust}
+.xiaohang-orbit-trail{animation-name:xiaohang-orbit-trail}
+.xiaohang-satellite{animation-name:xiaohang-satellite}
+.xiaohang-connector-left{animation-name:xiaohang-connector-left}
+.xiaohang-connector-right{animation-name:xiaohang-connector-right}
+.xiaohang-connection-signal{color:var(--color-success);transform-origin:50% 60%;animation-name:xiaohang-connection-signal}
+.xiaohang-launch-trail{animation-name:xiaohang-launch-trail}
+.xiaohang-mini-rocket{animation-name:xiaohang-mini-rocket}
+.xiaohang-rocket-flame{animation-name:xiaohang-rocket-flame}
+.xiaohang-moon-surface{animation-name:xiaohang-moon-surface}
+.xiaohang-moon-footprints-left{animation-name:xiaohang-moon-footprints-left}
+.xiaohang-moon-footprints-right{animation-name:xiaohang-moon-footprints-right}
+.xiaohang-moon-dust{animation-name:xiaohang-moon-dust}
+.xiaohang-telescope{animation-name:xiaohang-telescope}
+.xiaohang-star-near{transform-origin:101px 21px;animation-name:xiaohang-star-near}
+.xiaohang-star-far{animation-name:xiaohang-star-far}
+.xiaohang-radio-dish{animation-name:xiaohang-radio-dish}
+.xiaohang-radio-send{transform-origin:105px 66px;animation-name:xiaohang-radio-send}
+.xiaohang-radio-receive{transform-origin:99px 65px;animation-name:xiaohang-radio-receive}
+.xiaohang-radio-reply{animation-name:xiaohang-radio-reply}
+@keyframes xiaohang-peek{0%,100%{transform:none}32%,56%{transform:translateX(1.5%) rotate(3deg)}78%{transform:translateX(-.3%) rotate(-.6deg)}}
+@keyframes xiaohang-sway{0%,100%{transform:none}24%{transform:rotate(-3deg)}57%{transform:rotate(2.7deg)}81%{transform:rotate(-.8deg)}}
+@keyframes xiaohang-hop{0%,100%{transform:none}20%{transform:scale(1.015,.975)}44%{transform:translateY(-3%) scale(.99,1.005)}67%{transform:scale(1.015,.98)}84%{transform:scale(.998,1.003)}}
+@keyframes xiaohang-wave{0%,100%{transform:none}25%{transform:rotate(-1.4deg)}64%{transform:rotate(.8deg)}84%{transform:rotate(-.3deg)}}
+@keyframes xiaohang-space-float{0%,100%{transform:none}15%{transform:translateY(1%) scale(1.015,.98)}38%{transform:translate(-1%,-9%) rotate(-4deg)}65%{transform:translate(1%,-7%) rotate(3deg)}87%{transform:translateY(-1%)}}
+@keyframes xiaohang-thrust{0%,10%,87%,100%{opacity:0;transform:scaleY(.2)}27%{opacity:.65;transform:scaleY(1)}48%{opacity:.35;transform:scaleY(.65)}68%{opacity:.5;transform:scaleY(.85)}}
+@keyframes xiaohang-orbit-look{0%,100%{transform:none}28%{transform:rotate(-3deg)}64%{transform:translateY(-1%) rotate(2deg)}}
+@keyframes xiaohang-orbit-trail{0%,100%{opacity:0}20%,78%{opacity:.3}}
+@keyframes xiaohang-satellite{0%{opacity:0;transform:translate(18px,91px) rotate(-20deg) scale(.65)}18%{opacity:1}44%{transform:translate(86px,27px) rotate(12deg) scale(.8)}70%{transform:translate(108px,49px) rotate(28deg) scale(.85)}90%{opacity:1}100%{opacity:0;transform:translate(65px,83px) rotate(40deg) scale(.65)}}
+@keyframes xiaohang-dock-check{0%,100%{transform:none}30%,66%{transform:translateY(1.5%) rotate(-2deg)}80%{transform:translateY(-1%)}}
+@keyframes xiaohang-connector-left{0%,100%{opacity:0;transform:translateX(-11px)}16%{opacity:1;transform:translateX(-8px)}42%,77%{opacity:1;transform:translateX(1px)}92%{opacity:0;transform:translateX(-4px)}}
+@keyframes xiaohang-connector-right{0%,100%{opacity:0;transform:translateX(11px)}16%{opacity:1;transform:translateX(8px)}42%,77%{opacity:1;transform:translateX(-1px)}92%{opacity:0;transform:translateX(4px)}}
+@keyframes xiaohang-connection-signal{0%,40%,92%,100%{opacity:0;transform:scale(.7)}56%,76%{opacity:1;transform:scale(1)}}
+@keyframes xiaohang-rocket-watch{0%,100%{transform:none}18%{transform:translateY(1%) rotate(-1deg)}42%,68%{transform:translateY(-2%) rotate(-3deg)}86%{transform:rotate(-.5deg)}}
+@keyframes xiaohang-launch-trail{0%,12%,100%{opacity:0}24%{opacity:.45}58%{opacity:.32}86%{opacity:.14}}
+@keyframes xiaohang-mini-rocket{0%{opacity:0;transform:translate(23px,95px) rotate(-7deg)}12%{opacity:1;transform:translate(23px,95px) rotate(-7deg)}30%{transform:translate(20px,85px) rotate(-3deg)}66%{opacity:1;transform:translate(24px,43px) rotate(5deg)}88%{opacity:.85;transform:translate(28px,26px) rotate(8deg)}100%{opacity:0;transform:translate(30px,21px) rotate(8deg)}}
+@keyframes xiaohang-rocket-flame{0%,12%,90%,100%{opacity:0}22%,46%,68%{opacity:.65}34%,57%,80%{opacity:.3}}
+@keyframes xiaohang-moonwalk{0%,100%{transform:none}12%{transform:translateY(1%) scale(1.01,.985)}28%{transform:translate(-2%,-6%) rotate(-2deg)}43%{transform:translate(-1%,0) scale(1.01,.985)}62%{transform:translate(2%,-5%) rotate(2deg)}78%{transform:translate(1%,0) scale(1.01,.99)}90%{transform:none}}
+@keyframes xiaohang-moon-surface{0%,100%{opacity:0}12%,86%{opacity:.75}}
+@keyframes xiaohang-moon-footprints-left{0%,31%,100%{opacity:0}43%,78%{opacity:.55}90%{opacity:.2}}
+@keyframes xiaohang-moon-footprints-right{0%,65%,100%{opacity:0}77%,88%{opacity:.55}}
+@keyframes xiaohang-moon-dust{0%,35%,52%,69%,90%,100%{opacity:0}43%,78%{opacity:.45}}
+@keyframes xiaohang-stargaze{0%,100%{transform:none}25%,68%{transform:translateY(-1%) rotate(2.3deg)}80%{transform:rotate(.8deg)}}
+@keyframes xiaohang-telescope{0%,100%{opacity:0;transform:translate(90px,80px) rotate(-10deg)}16%{opacity:1;transform:translate(90px,75px) rotate(-14deg)}32%,70%{opacity:1;transform:translate(88px,61px) rotate(-32deg)}88%{opacity:.6;transform:translate(90px,73px) rotate(-16deg)}}
+@keyframes xiaohang-star-near{0%,20%,100%{opacity:0;transform:scale(.65)}38%{opacity:.8;transform:scale(1)}52%{opacity:.45;transform:scale(.8)}68%{opacity:.85;transform:scale(1)}85%{opacity:.25;transform:scale(.8)}}
+@keyframes xiaohang-star-far{0%,25%,100%{opacity:0}43%{opacity:.55}58%{opacity:.3}76%{opacity:.65}90%{opacity:0}}
+@keyframes xiaohang-signal-listen{0%,100%{transform:none}22%,38%{transform:rotate(1.8deg)}54%{transform:translateY(-1%) rotate(-1deg)}72%{transform:rotate(1.2deg)}88%{transform:none}}
+@keyframes xiaohang-radio-dish{0%,100%{opacity:0;transform:translateY(5px)}15%,86%{opacity:1;transform:none}}
+@keyframes xiaohang-radio-send{0%,18%{opacity:0;transform:scale(.6)}31%{opacity:.8;transform:scale(.92)}44%,100%{opacity:0;transform:scale(1)}}
+@keyframes xiaohang-radio-receive{0%,48%{opacity:0;transform:scale(1.1)}62%{opacity:.75;transform:scale(.95)}73%,100%{opacity:0;transform:scale(.7)}}
+@keyframes xiaohang-radio-reply{0%,63%,100%{opacity:0}73%,83%{opacity:.9}92%{opacity:0}}
+/* Each stride has a planted shoe. Shortening the other boot about its knee raises its sole. */
+@keyframes xiaohang-left-step{0%,6%,48%,100%{transform:none}26%{transform:translateX(-2%) rotate(7deg) scaleY(.56)}}
+@keyframes xiaohang-right-step{0%,54%,97%,100%{transform:none}76%{transform:translateX(2%) rotate(-7deg) scaleY(.56)}}
+@keyframes xiaohang-step-weight{0%,50%,100%{transform:none}26%{transform:translateX(.8%) rotate(.8deg)}76%{transform:translateX(-.8%) rotate(-.8deg)}}
+@keyframes xiaohang-march-posture{0%,100%{transform:none}18%,82%{transform:scale(1.006,.996)}50%{transform:none}}
+/* Turn the frontal artwork in perspective so its uniform badge remains readable. */
+@keyframes xiaohang-pace-model{0%,100%{transform:none}6%{transform:translateX(-1%)}25%,30%{transform:translateX(-14%)}36%{transform:translateX(-12%)}64%,70%{transform:translateX(14%)}77%{transform:translateX(11%)}94%{transform:translateX(1%)}}
+@keyframes xiaohang-pace{
+  0%,100%{transform:none}
+  6%{transform:translateX(-1%) perspective(200px) rotateY(-24deg) rotate(-1deg)}
+  25%{transform:translateX(-14%) perspective(200px) rotateY(-32deg) rotate(-1.5deg)}
+  30%{transform:translateX(-14%) perspective(200px) rotateY(-5deg)}
+  36%{transform:translateX(-12%) perspective(200px) rotateY(28deg) rotate(1.3deg)}
+  64%{transform:translateX(14%) perspective(200px) rotateY(32deg) rotate(1.5deg)}
+  70%{transform:translateX(14%) perspective(200px) rotateY(5deg)}
+  77%{transform:translateX(11%) perspective(200px) rotateY(-28deg) rotate(-1.3deg)}
+  94%{transform:translateX(1%) perspective(200px) rotateY(-18deg)}
+}
+@media(prefers-reduced-motion:reduce){.xiaohang-sprite-motion{animation:none!important;transform:none!important}.xiaohang-flight-prop{display:none}}
+@media(prefers-reduced-motion:reduce){.xiaohang-step-body,.xiaohang-step-leg{animation:none!important}.xiaohang-sprite-motion>.xiaohang-step-body{clip-path:none;transform:none}.xiaohang-step-leg{display:none!important}}
 @media(max-width:600px){.xiaohang-sprite{width:112px;height:112px}}

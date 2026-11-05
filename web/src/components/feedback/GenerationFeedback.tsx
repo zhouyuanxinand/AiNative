@@ -1,3 +1,4 @@
+import { PlatformButton } from '../ui/PlatformButton';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { FeedbackApiError, submitGenerationFeedback, type FeedbackRating, type FeedbackRecord } from '../../api/feedback';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
@@ -89,10 +90,10 @@ function FeedbackForm({ jid }: { jid: string }) {
     <div className="feedback-inline-heading"><h3 id={`${id}-title`}>生成效果反馈</h3><span>帮助改进后续任务书</span></div>
     {receipt ? <div className="feedback-receipt" role="status">
       <div><strong>反馈已提交</strong><p>{receipt.username} · 评分：{ratingLabels[receipt.rating]} · 编号 #{receipt.id}</p></div>
-      <button type="button" className="feedback-button" onClick={() => {
+      <PlatformButton type="button" className="feedback-button" onClick={() => {
         setReceipt(null); setComment(''); setRating(''); setInvalid(false); setError(''); setIdentityChanged(false); attempt.current = undefined;
         requestAnimationFrame(() => { if (isLocal) usernameInput.current?.focus(); else firstRating.current?.focus(); });
-      }}>再写一条反馈</button>
+      }}>再写一条反馈</PlatformButton>
     </div> : <form className="feedback-inline-form" onSubmit={submit} noValidate aria-label="提交生成效果反馈">
       <div className="feedback-inline-controls">
         {isLocal ? <label className="feedback-user-label" htmlFor={`${id}-username`}>反馈用户名 <span className="feedback-required">*</span>
@@ -105,10 +106,10 @@ function FeedbackForm({ jid }: { jid: string }) {
           <span className="feedback-identity-account" id={`${id}-account`}>账号：{user.userid}</span>
         </label> : <div className="feedback-identity-state" aria-live="polite">
           {identity.status === 'loading' ? <p role="status">正在读取登录身份…</p>
-            : identity.status === 'error' ? <><p role="alert">{identity.error}</p><button className="feedback-link" type="button" onClick={retryIdentity}>重试读取身份</button></>
+            : identity.status === 'error' ? <><p role="alert">{identity.error}</p><PlatformButton className="feedback-link" type="button" onClick={retryIdentity}>重试读取身份</PlatformButton></>
             : <><p>请先登录统一账号，再提交反馈。当前评分和意见会保留。</p><div className="feedback-identity-actions">
               <a className="feedback-link" href="/auth/login" target="_blank" rel="noopener noreferrer">前往统一登录</a>
-              <button className="feedback-link" type="button" onClick={retryIdentity}>重新读取登录状态</button>
+              <PlatformButton className="feedback-link" type="button" onClick={retryIdentity}>重新读取登录状态</PlatformButton>
             </div><span className="feedback-hint">登录页在新标签页打开，完成后可回到这里继续。</span></>}
         </div>}
         <fieldset className="feedback-rating-field" disabled={pending} aria-describedby={invalid && !rating ? `${id}-error` : undefined}>
@@ -127,7 +128,7 @@ function FeedbackForm({ jid }: { jid: string }) {
           placeholder="例如：内容准确性、缺失章节、格式问题或改进建议" onChange={event => setComment(event.target.value)} />
       </label>
       <div className="feedback-inline-footer"><span className="feedback-hint">{comment.length}/4000 字</span>
-        <button className="feedback-button primary" type="submit" disabled={pending || !canSubmit}>{pending ? '正在提交…' : '提交反馈'}</button></div>
+        <PlatformButton className="feedback-button primary" type="submit" disabled={pending || !canSubmit}>{pending ? '正在提交…' : '提交反馈'}</PlatformButton></div>
       {error && <p className="feedback-error" id={`${id}-error`} role="alert">{error}</p>}
     </form>}
   </section>;

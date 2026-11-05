@@ -1,4 +1,5 @@
-/** Run against Vite with the existing Playwright installation, as the sibling browser tests do. */
+/** Admin page CRUD plus retained ResultCard/GenerationFeedback component integration against Vite.
+ * The isolated result fixture does not exercise the retired generation home route or SSE pipeline. */
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -92,7 +93,7 @@ try {
   assert.equal(requests.filter(item => item.method === 'POST').length, 0);
   await page.getByLabel('关联任务 ID', { exact: false }).fill('feedback-job-1');
   await page.getByLabel('反馈用户名', { exact: false }).fill('试验工程师');
-  await page.locator('#feedback-editor-rating').click();
+  await page.locator('.ant-select-selector').filter({ has: page.locator('#feedback-editor-rating') }).click();
   await page.getByRole('option', { name: '差', exact: true }).click();
   await page.getByLabel('意见与建议', { exact: false }).fill('复核件的条款编号需要调整。');
   await page.getByRole('button', { name: '保存反馈', exact: true }).click();
@@ -103,7 +104,7 @@ try {
   await page.getByRole('button', { name: '关闭详情', exact: true }).click();
   current = { ...current, identity: {} }; items = [current];
   await page.getByLabel('关键词', { exact: true }).fill('条款');
-  await page.locator('#feedback-rating-filter').click();
+  await page.locator('.ant-select-selector').filter({ has: page.locator('#feedback-rating-filter') }).click();
   await page.getByRole('option', { name: '差', exact: true }).click();
   await page.getByLabel('开始日期', { exact: true }).fill('2026-10-14');
   await page.getByLabel('结束日期', { exact: true }).fill('2026-10-15');
@@ -126,8 +127,10 @@ try {
   await page.close();
 
   const generation = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-  generation.on('pageerror', error => console.error('Generation page error:', error.message));
+  const componentErrors = [];
+  generation.on('pageerror', error => componentErrors.push(error.message));
   const submissions = [];
+  await generation.route('**/__feedback-result-fixture', route => route.fulfill({ contentType: 'text/html', body: '<html lang="zh-CN"><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>生成效果反馈 · 保留组件测试</title></head><body style="margin:0;padding:20px;width:auto;overflow:auto"><main id="fixture" style="max-width:900px;margin:0 auto"></main></body></html>' }));
   await generation.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     if (!path.startsWith('/api/')) return route.continue();
@@ -139,24 +142,38 @@ try {
     }
     let response = {};
     if (path === '/api/current-user') response = { auth_enabled: false, authenticated: false, user: null };
-    if (path === '/api/product_catalog') response = { product_types: [] };
-    if (path === '/api/models') response = { success: true, models: [] };
-    if (path === '/api/history' || path === '/api/local_defaults') response = [];
     if (path.startsWith('/api/indicator_review/')) response = { manual_review_required: [], comparison_decisions: [], indicator_clarifications: {} };
     return route.fulfill({ json: response });
   });
-  await generation.addInitScript(() => { window.EventSource = class { constructor() { window.testEventSource = this; } close() {} }; });
-  await generation.goto(`${base}/`);
-  await generation.locator('#workspace-shell').waitFor({ timeout: 5000 }).catch(async error => {
-    console.error('Public page URL:', generation.url());
-    console.error('Public page text:', await generation.locator('body').innerText());
-    throw error;
+  await generation.goto(`${base}/__feedback-result-fixture`);
+  await generation.evaluate(async () => {
+    const refresh = await import('/@react-refresh');
+    refresh.default.injectIntoGlobalHook(window);
+    window.$RefreshReg$ = () => {};
+    window.$RefreshSig$ = () => type => type;
+    window.__vite_plugin_react_preamble_installed__ = true;
+    const React = (await import('/node_modules/.vite/deps/react.js')).default;
+    const { createRoot } = (await import('/node_modules/.vite/deps/react-dom_client.js')).default;
+    const { TaskbookProvider, useTaskbook } = await import('/src/hooks/useTaskbook.tsx');
+    const { CurrentUserProvider } = await import('/src/hooks/useCurrentUser.tsx');
+    const { ResultCard } = await import('/src/components/result/ResultCard.tsx');
+    await import('/src/styles.css');
+    function ExistingResultFixture() {
+      const { setCurrentJid, setJobResult, setJobStatus, setResultEmpty } = useTaskbook();
+      React.useEffect(() => {
+        setCurrentJid('feedback-job-1');
+        setJobStatus('done');
+        setResultEmpty(false);
+        setJobResult({ meta: { product_type: '射频连接器', output_name: '任务书.docx', qa_ok: true }, warnings: [] });
+      }, [setCurrentJid, setJobResult, setJobStatus, setResultEmpty]);
+      return React.createElement(ResultCard);
+    }
+    createRoot(document.getElementById('fixture')).render(React.createElement(CurrentUserProvider, null,
+      React.createElement(TaskbookProvider, null, React.createElement(ExistingResultFixture))));
   });
-  await generation.evaluate(() => window.dispatchEvent(new CustomEvent('taskbook:replay-started', { detail: { jid: 'feedback-job-1' } })));
-  await generation.locator('#btn-cancel').waitFor();
-  await generation.evaluate(() => window.testEventSource.onmessage({ data: JSON.stringify({ type: 'done', result: { meta: { product_type: '射频连接器', output_name: '任务书.docx' } } }) }));
   const feedback = generation.locator('#result-card .generation-feedback');
   await feedback.waitFor();
+  await feedback.getByLabel('反馈用户名', { exact: false }).waitFor();
   const feedbackBox = await feedback.boundingBox();
   const downloadBox = await generation.locator('#btn-docx').boundingBox();
   assert.ok(feedbackBox.y + feedbackBox.height <= downloadBox.y, 'feedback is inside the result card above downloads');
@@ -164,26 +181,39 @@ try {
   await feedback.getByRole('alert').waitFor();
   assert.equal(submissions.length, 0, 'missing username/rating never submitted');
   await feedback.getByLabel('反馈用户名', { exact: false }).fill('设计工程师');
+  await feedback.getByRole('button', { name: '提交反馈', exact: true }).click();
+  await feedback.getByRole('alert').filter({ hasText: '请选择生成效果评分' }).waitFor();
+  assert.equal(submissions.length, 0, 'a missing rating still blocks submission after the username is filled');
   await feedback.getByLabel('好', { exact: true }).check();
   await feedback.getByLabel('意见与建议', { exact: false }).fill('章节完整，参数可追溯。');
   await feedback.getByRole('button', { name: '提交反馈', exact: true }).evaluate(button => { button.click(); button.click(); });
   await feedback.getByRole('alert').filter({ hasText: '暂不可用' }).waitFor();
   assert.equal(submissions.length, 1, 'rapid double click submits once');
+  await generation.locator('#btn-docx').click({ trial: true });
+  assert.equal(await generation.locator('#btn-docx').isEnabled(), true, 'feedback failure does not disable downloads');
+  assert.equal(await generation.locator('#btn-docx').getAttribute('href'), '/api/download/feedback-job-1', 'feedback failure preserves the result download target');
   await feedback.getByRole('button', { name: '提交反馈', exact: true }).click();
   await feedback.getByText('反馈已提交', { exact: true }).waitFor();
   assert.equal(submissions.length, 2);
   assert.equal(submissions[0].request_id, submissions[1].request_id, 'retry preserves idempotency key');
+  assert.equal(submissions[0].jid, 'feedback-job-1');
   assert.deepEqual(Object.keys(submissions[0]).sort(), ['comment', 'jid', 'rating', 'request_id', 'username']);
   assert.equal(await generation.locator('#btn-docx').isEnabled(), true, 'feedback does not block downloads');
   if (process.env.SCREENSHOT_DIR) {
     await feedback.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'generation-feedback-receipt.png') });
-    await generation.setViewportSize({ width: 390, height: 844 });
-    if (await generation.locator('#workspace-shell.sidebar-expanded').count()) await generation.locator('#sidebar .sidebar-toggle').click();
-    await feedback.getByRole('button', { name: '再写一条反馈', exact: true }).click();
+  }
+  await generation.setViewportSize({ width: 390, height: 844 });
+  await feedback.getByRole('button', { name: '再写一条反馈', exact: true }).click();
+  assert.equal(await generation.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, '390px result fixture does not overflow');
+  const mobileFeedbackBox = await feedback.boundingBox(), mobileDownloadBox = await generation.locator('#btn-docx').boundingBox();
+  assert.ok(mobileFeedbackBox.y + mobileFeedbackBox.height <= mobileDownloadBox.y, 'mobile feedback remains above downloads');
+  assert.equal(await generation.locator('#btn-docx').isEnabled(), true);
+  if (process.env.SCREENSHOT_DIR) {
     await feedback.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'generation-feedback-mobile.png') });
   }
+  assert.deepEqual(componentErrors, [], 'retained result components render without browser errors');
   await generation.close();
-  console.log('Feedback browser flow passed: CRUD, conflict preservation, filters, China dates, mobile, public validation and idempotent retry.');
+  console.log('Feedback browser checks passed: admin page CRUD, conflicts, filters, China dates and mobile; isolated retained ResultCard/GenerationFeedback validation, duplicate-submit prevention, idempotent retry, download-link availability and 390px layout. Result fixture is component integration, not generation-home E2E.');
 } finally {
   await browser.close();
 }

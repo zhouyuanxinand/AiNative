@@ -65,6 +65,31 @@ class ServiceCredentialStore:
                 return None
             return self._read(connection)
 
+    def read_default_model(self, environment: str) -> dict | None:
+        if not self.path.exists():
+            return None
+        with closing(sqlite3.connect(self.path, timeout=10)) as connection:
+            if connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'default_model_selections'"
+            ).fetchone() is None:
+                return None
+            row = connection.execute(
+                "SELECT payload FROM default_model_selections WHERE environment = ?", (environment,),
+            ).fetchone()
+            return json.loads(row[0]) if row else None
+
+    def save_default_model(self, environment: str, selection: dict) -> None:
+        with self._connection() as connection:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS default_model_selections "
+                "(environment TEXT PRIMARY KEY, payload TEXT NOT NULL)"
+            )
+            connection.execute(
+                "INSERT INTO default_model_selections(environment, payload) VALUES (?, ?) "
+                "ON CONFLICT(environment) DO UPDATE SET payload = excluded.payload",
+                (environment, json.dumps(selection, ensure_ascii=False)),
+            )
+
     @contextmanager
     def _connection(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)

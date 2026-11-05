@@ -1,0 +1,29 @@
+/* Shared Ant Design adapters retain their callers' layout hooks, not native-control presentation. */
+.select-control.platform-select-control { min-width: 0; }
+.platform-select-control > .platform-select.ant-select { display: flex; width: 100%; min-width: 0; }
+.platform-select-control .ant-select-selection-search-input {
+  width: 100%; height: 100%; min-height: 0; margin: 0; padding: 0 !important;
+  border: 0 !important; border-radius: 0; background: transparent !important;
+  outline: 0 !important; box-shadow: none !important;
+}
+.platform-select-popup .ant-select-item-option-content { overflow-wrap: anywhere; white-space: normal; }
+
+.platform-feedback-modal.ant-modal.feedback-dialog {
+  position: relative; top: auto; max-width: calc(100vw - 32px); max-height: none;
+  margin: 24px auto; padding: 0; border: 0; border-radius: 0;
+  background: none; box-shadow: none; overflow: visible; scrollbar-gutter: auto;
+}
+.platform-feedback-modal.ant-modal .ant-modal-content {
+  display: flex; flex-direction: column; max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+}
+.platform-feedback-modal .ant-modal-header { flex: none; }
+.platform-feedback-modal .ant-modal-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.platform-feedback-modal .feedback-dialog-title { margin: 0 32px 0 0; font-size: 18px; line-height: 1.5; }
+.platform-feedback-modal .feedback-dialog-actions { flex-wrap: wrap; }
+.platform-feedback-modal .feedback-dialog-actions > .ant-btn { flex: 0 0 auto; }
+.platform-feedback-modal-root .ant-modal-wrap { overscroll-behavior: contain; }
+@media (max-width: 600px) {
+  .platform-feedback-modal.ant-modal.feedback-dialog { max-width: calc(100vw - 24px); margin: 12px auto; }
+  .platform-feedback-modal.ant-modal .ant-modal-content { padding: 20px 16px; max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); }
+}

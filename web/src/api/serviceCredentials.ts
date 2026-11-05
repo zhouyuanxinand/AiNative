@@ -39,6 +39,37 @@ export interface ModelCatalogResult extends Omit<ModelConnectionResult, 'model'>
   models: TestableModel[];
 }
 
+export interface DefaultModelSelection { provider: string; name: string; id: string }
+export interface DefaultModelResponse {
+  selection: DefaultModelSelection | null;
+  source: 'settings' | 'deployment';
+  requires_selection: boolean;
+}
+
+export async function requestDefaultModel(selection?: DefaultModelSelection, signal?: AbortSignal): Promise<DefaultModelResponse> {
+  const response = await fetch('/api/settings/credentials/default-model', {
+    method: selection ? 'PUT' : 'GET',
+    headers: { 'X-Credential-Settings': '1', ...(selection ? { 'Content-Type': 'application/json' } : {}) },
+    credentials: 'same-origin', cache: 'no-store', signal,
+    ...(selection ? { body: JSON.stringify(selection) } : {}),
+  });
+  if (!response.ok) {
+    let message = '';
+    try { const body = await response.json(); message = body.error || body.detail || ''; } catch { /* Proxy response may be text. */ }
+    throw new Error(typeof message === 'string' && message ? message : `默认模型${selection ? '未保存' : '读取失败'}（HTTP ${response.status}），请重试。`);
+  }
+  return response.json();
+}
+
+export async function requestDefaultModelCatalog(signal: AbortSignal): Promise<TestableModel[]> {
+  const response = await fetch('/api/models', { credentials: 'same-origin', cache: 'no-store', signal });
+  const body = await response.json();
+  if (!response.ok || body.success !== true || !Array.isArray(body.models)) {
+    throw new Error(typeof body.error === 'string' ? body.error : '模型目录读取失败，请重试。');
+  }
+  return body.models;
+}
+
 async function requestModelProbe<T>(path: string, payload: object, signal: AbortSignal): Promise<T> {
   const response = await fetch(path, {
     method: 'POST',

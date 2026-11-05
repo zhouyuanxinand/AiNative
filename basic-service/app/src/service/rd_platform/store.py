@@ -113,6 +113,52 @@ def _example(value):
     return False
 
 
+def _project_summary(project):
+    result = _public(project)
+    for case in result.get("cases", []):
+        for package in case.get("workpackages", []):
+            for action in (package.get("snapshot") or {}).get("actions", []):
+                action.pop("configuration", None)
+    return result
+
+
+class _OriginalRequirementIndex:
+    """Identify the adopted requirement even after clarification adds sources or changes its value."""
+
+    def __init__(self, requirements):
+        self.versions = {}
+        for requirement in requirements:
+            self.add(requirement)
+
+    @staticmethod
+    def _key(row):
+        return tuple(re.sub(r"\s+", "", row[key]) for key in ("title", "content"))
+
+    def add(self, requirement):
+        for version in [requirement, *requirement.get("history", [])]:
+            sources = frozenset(version["source_ids"])
+            self.versions.setdefault(self._key(version), set()).add((requirement["id"], sources))
+
+    def matches(self, row):
+        sources = frozenset(row["source_ids"])
+        return {rid for rid, known_sources in self.versions.get(self._key(row), ())
+                if sources and sources <= known_sources}
+
+
+def _project_legacy_requirement_links(case):
+    """Fill unambiguous links in the response copy, never in a stored historical project."""
+    missing = [row for proposal in [case.get("source_analysis"), *case.get("source_analysis_history", [])]
+               if proposal and (proposal.get("status") == "adopted" or proposal.get("adopted_at"))
+               for row in proposal.get("requirements", [])
+               if row.get("status") != "rejected" and "requirement_id" not in row]
+    if missing:
+        origins = _OriginalRequirementIndex(case["requirements"])
+        for row in missing:
+            matches = origins.matches(row)
+            if len(matches) == 1:
+                row["requirement_id"] = next(iter(matches))
+
+
 def _reject_raw_credentials(value):
     secret_fields = {"secret", "password", "passwd", "apikey", "apisecret", "accesstoken", "refreshtoken", "idtoken",
                      "authorization", "clientsecret", "privatekey", "secretkey", "signingkey", "bearertoken", "authtoken", "sessiontoken", "token"}
@@ -127,7 +173,7 @@ def _reject_raw_credentials(value):
 
 
 class Store:
-    def __init__(self, path: Path, asset_root: Path, *, local_review_enabled=False):
+    def __init__(self, path: Path, asset_root: Path, *, local_review_enabled=False, application_id="rd-platform-local"):
         from .case_records import CaseRecords
         from .lifecycle import Lifecycle
         from .review_records import ReviewRecords
@@ -159,6 +205,15 @@ class Store:
                             "created_at": _now(), "actor": "system"}
                 db.execute("INSERT OR IGNORE INTO resource_versions VALUES(?,?,?)", (resource["id"], 1, _json(resource)))
                 db.execute("INSERT OR IGNORE INTO resource_heads VALUES(?,?)", (resource["id"], 1))
+        from .workspace import Workspace
+        self.workspace = Workspace(self, application_id)
+        self.application_id = self.workspace.application_id
+        self.workspace.initialize()
+        from .designer import Designer
+        self.designer = Designer(self)
+        from .workflow_templates import WorkflowTemplates
+        self.workflow_templates = WorkflowTemplates(self)
+        self.workflow_templates.initialize()
 
     @contextmanager
     def _connection(self):
@@ -181,20 +236,23 @@ class Store:
                 raise
 
     def catalog(self):
-        return definitions.get_catalog()
+        return self.workspace.filtered_catalog()
 
     @staticmethod
     def _business_context(project):
         return {"project_id": project["id"], **{key: project.get(key, "") for key in ("title", "brief", "customer_name", "product_name")}}
 
-    def _load(self, db, pid, actor=None):
+    def _load(self, db, pid, actor=None, *, include_deleted=False):
         row = db.execute("SELECT payload FROM projects WHERE id=?", (pid,)).fetchone()
         if row is None:
             raise RdError(404, "项目不存在或无权访问。")
         project = _project_profile_defaults(json.loads(row["payload"]))
+        if project.get("deleted_at") and not include_deleted:
+            raise RdError(404, "项目不存在或无权访问。")
         for case in project["cases"]:
             case["business_context"] = self._business_context(project)
             case.setdefault("engineering_records", [])
+            case.setdefault("deleted_sources", [])
             if "source_selection" not in case:
                 case["source_selection"] = {role: candidates[0]["id"] for role in ("tech", "spec")
                     if len(candidates := [source for source in case["sources"] if source["role"] == role]) == 1}
@@ -205,6 +263,7 @@ class Store:
             case.setdefault("source_analysis_history", [])
             self.records.initialize(case)
             self.lifecycle.initialize(case)
+            self.designer.initialize(case)
             self._warnings(case)
             for package in case["workpackages"]:
                 for key, default in (("planned_start", None), ("planned_end", None), ("plan_note", ""), ("schedule_revision", 0),
@@ -254,37 +313,85 @@ class Store:
                 if replay is not None:
                     return _project_profile_defaults(replay)
             db.execute("INSERT INTO projects VALUES(?,?)", (project["id"], _json(project)))
+            public = self._project_public(project, actor, db)
             if key is not None:
-                db.execute("INSERT INTO receipts VALUES(?,?,?,?,?)", (actor, "__project_create__", key, fingerprint, _json(_public(project))))
-        return _public(project)
+                db.execute("INSERT INTO receipts VALUES(?,?,?,?,?)", (actor, "__project_create__", key, fingerprint, _json(public)))
+        return public
 
     def get_project(self, actor, pid):
         actor = _actor(actor)
         with self._connection() as db:
-            return self._project_public(self._load(db, pid, actor), actor)
+            return self._project_public(self._load(db, pid, actor), actor, db)
 
-    def _project_public(self, project, actor):
-        result = _public(project)
+    @staticmethod
+    def _delete_blocked_reason(db, project):
+        if any(package.get("status") in {"submitted", "running"}
+               for case in project.get("cases", []) for package in case.get("workpackages", [])):
+            return "项目有已提交或正在运行的工作包，请待执行结束或取消后再删除。"
+        if db.execute("SELECT 1 FROM runs WHERE project_id=? AND status IN ('submitted','running') LIMIT 1",
+                      (project["id"],)).fetchone():
+            return "项目有已提交或正在运行的任务，请待执行结束或取消后再删除。"
+        if db.execute("SELECT 1 FROM claims c JOIN runs r ON r.id=c.run_id WHERE r.project_id=? AND c.lease_until>? LIMIT 1",
+                      (project["id"], time.time())).fetchone():
+            return "项目仍持有有效执行租约，请待执行结束后再删除。"
+        return ""
+
+    def _delete_permissions(self, db, project, actor):
+        owner = actor == project["owner_id"]
+        return {"can_delete": owner, "delete_blocked_reason": self._delete_blocked_reason(db, project)
+                if owner else "仅项目负责人可删除项目。"}
+
+    def _project_public(self, project, actor, db):
+        # Projection can validate fixed output files before paths are removed
+        # from the response. It never mutates the stored business record.
+        result = deepcopy(project)
+        result.update(self._delete_permissions(db, project, actor))
         if result["cases"]:
             from .analysis import parameter_facts
             for case in result["cases"]:
+                _project_legacy_requirement_links(case)
+                self.designer.initialize(case)
+                self.workflow_templates.project_projection(case)
                 case["parameter_facts"] = parameter_facts(case)
                 case["business_lifecycle"]["can_confirm_requirements"] = actor == project["owner_id"]
                 case["business_lifecycle"]["can_record_decision"] = bool(self.local_review_enabled and actor == project["owner_id"]
                     and case["business_lifecycle"]["policy_version"] == "v2")
-        return result
+        return _project_summary(result)
 
     def list_projects(self, actor):
         actor = _actor(actor)
         with self._connection() as db:
             projects = [json.loads(row[0]) for row in db.execute("SELECT payload FROM projects ORDER BY rowid DESC")]
-        visible = [project for project in projects if actor == project["owner_id"] or actor in project["members"]]
-        for project in visible:
-            _project_profile_defaults(project)
-            for case in project["cases"]:
-                self.lifecycle.initialize(case)
-                self._warnings(case)
-        return [self._project_public(project, actor) for project in visible]
+            visible = [project for project in projects if not project.get("deleted_at")
+                       and (actor == project["owner_id"] or actor in project["members"])]
+            for project in visible:
+                _project_profile_defaults(project)
+                for case in project["cases"]:
+                    self.lifecycle.initialize(case)
+                    self._warnings(case)
+            return [self._project_public(project, actor, db) for project in visible]
+
+    def delete_project(self, actor, pid, expected_version, key):
+        actor = _actor(actor)
+        with self._transaction() as db:
+            project = self._load(db, pid, actor, include_deleted=True)
+            if actor != project["owner_id"]:
+                raise RdError(403, "仅项目负责人可删除项目。")
+            key, fingerprint, replay = self._receipt(db, actor, pid, key,
+                {"command": "delete_project", "expected_version": expected_version})
+            if replay is not None:
+                return replay
+            if project.get("deleted_at"):
+                raise RdError(404, "项目不存在或无权访问。")
+            self._cas(project, expected_version)
+            reason = self._delete_blocked_reason(db, project)
+            if reason:
+                raise RdError(409, reason)
+            project.update(deleted_at=_now(), deleted_by=actor)
+            self._save(db, project, "project_deleted", actor)
+            response = {"ok": True, "project_id": pid, "version": project["version"], "deleted_at": project["deleted_at"]}
+            db.execute("INSERT INTO receipts VALUES(?,?,?,?,?)", (actor, pid, key, fingerprint, _json(response)))
+            return response
 
     def _receipt(self, db, actor, pid, key, intent):
         key = _text(key, "Idempotency-Key", 200, True)
@@ -296,7 +403,23 @@ class Store:
         if receipt:
             if receipt["fingerprint"] != fingerprint:
                 raise RdError(409, "同一幂等键不能用于不同请求。")
-            return key, fingerprint, json.loads(receipt["response"])
+            replay = _project_summary(json.loads(receipt["response"]))
+            if "id" in replay:
+                # Business receipts stay fixed, but current access and deletion
+                # eligibility must never be restored from a historical response.
+                current = self._load(db, replay["id"], actor)
+                replay.update(self._delete_permissions(db, current, actor))
+                cases = {case["id"]: case for case in current["cases"]}
+                for case in replay.get("cases", []):
+                    deleted = cases.get(case["id"], {}).get("deleted_sources", [])
+                    if deleted:
+                        removed = {source["id"] for source in deleted}
+                        case["sources"] = [source for source in case["sources"] if source["id"] not in removed]
+                        case["deleted_sources"] = _public(deleted)
+                        for role, sid in case.get("source_selection", {}).items():
+                            if sid in removed:
+                                case["source_selection"][role] = ""
+            return key, fingerprint, replay
         return key, fingerprint, None
 
     @staticmethod
@@ -305,7 +428,7 @@ class Store:
             raise RdError(409, "项目已更新，请刷新后重试。")
 
     def _save_receipt(self, db, actor, project, key, fingerprint):
-        public = self._project_public(project, actor)
+        public = self._project_public(project, actor, db)
         db.execute("INSERT INTO receipts VALUES(?,?,?,?,?)", (actor, project["id"], key, fingerprint, _json(public)))
         return public
 
@@ -335,19 +458,27 @@ class Store:
                         case["business_context"] = self._business_context(project)
                 event_extra = {"fields": list(profile)}
             elif command == "create_case":
-                self._create_case(project, data, actor)
+                event_extra = self._create_case(db, project, data, actor)
                 cid = project["cases"][-1]["id"]
             else:
                 cid = data.get("case_id")
                 case = self._case(project, cid)
                 if case["status"] == "completed" and command != "cancel_workpackage":
                     raise RdError(409, "已完成案例的事实和决定已封存，请创建新的案例修订。")
-                if command == "save_context":
+                if self.workflow_templates.fixed_project(case) and command in {
+                        'prepare_taskbook_scope_review', 'record_taskbook_scope_decision', 'confirm_engineering_stage',
+                        'record_engineering_node', 'record_delivery', 'prepare_reuse', 'advance_stage'}:
+                    raise RdError(422, '当前项目流程止于研制任务书生成，不包含后续范围批准、工程设计或交付办理。')
+                if command in self.designer.COMMANDS:
+                    event_extra = self.designer.command(db, project, case, command, data, actor)
+                elif command == "save_context":
                     event_extra = self._save_context(case, data, actor)
                 elif command == "adopt_source_analysis":
                     event_extra = self._adopt_source_analysis(case, data, actor)
                 elif command == "select_source":
                     event_extra = self._select_source(case, data)
+                elif command == "delete_source":
+                    event_extra = self._delete_source(db, project, case, data, actor)
                 elif command == "save_requirement":
                     event_extra = self._save_requirement(case, data, actor)
                 elif command == "confirm_requirements":
@@ -364,13 +495,28 @@ class Store:
                 elif command == "record_route_decision":
                     self._route_decision(case, data, actor)
                 elif command == "adopt_taskbook_flow":
-                    event_extra = self._adopt_taskbook_flow(case, data, actor)
+                    self.workspace.require_actions(definitions.definition("taskbook")["required_actions"], db=db)
+                    event_extra = self._adopt_taskbook_flow(db, case, data, actor)
+                    fixed_workflow = case["taskbook_binding"]["workflow"]
+                    if self.workflow_templates.fixed_project(case):
+                        event_extra["workflow_adoption_id"] = case["workflow_templates"]["project"]["id"]
+                    else:
+                        event_extra.update(self.workflow_templates.adopt(db, project, case, {
+                            "template_id": fixed_workflow["id"], "template_version": fixed_workflow["version"],
+                            "template_digest": fixed_workflow["digest"]}, actor))
+                elif command == "adopt_workflow_template":
+                    event_extra = self.workflow_templates.adopt(db, project, case, data, actor)
                 elif command == "advance_stage":
                     self._advance_stage(case, data, actor)
                 elif command == "pull_workpackage":
+                    from .designer import business_template
+                    self.workspace.require_definition(data.get("definition_id"), data.get("definition_version", "1"), db=db,
+                        workflow=business_template(case, data.get("definition_id")))
                     self._pull_package(case, data)
                 elif command == "save_plan":
                     package = self._package(case, data.get("workpackage_id"))
+                    if package.get("execution_schema_version") == 3:
+                        raise RdError(409, "新版流程只能通过结构化草稿和固定候选采用修改。")
                     if package["status"] != "draft":
                         raise RdError(409, "提交后的计划不可修改；请建立新的工作包修订。")
                     package["nodes"] = self._validate_plan(db, package["definition_id"], data.get("nodes"), package["definition_version"])
@@ -388,24 +534,37 @@ class Store:
             self._save(db, project, command, actor, **event_extra)
             return self._save_receipt(db, actor, project, key, fingerprint)
 
-    def _create_case(self, project, data, actor):
-        if set(data) - {"scenario_id", "title"}:
+    def _create_case(self, db, project, data, actor):
+        if set(data) - {"scenario_id", "title", "workflow_template"}:
             raise RdError(422, "案例政策由服务端固定，创建只接受场景与名称。")
-        scenario = definitions.scenario(data.get("scenario_id"))
-        if scenario is None:
-            raise RdError(422, "未知的案例场景。")
-        context = deepcopy(project.get("_initial_context", {})) if not project["cases"] else {}
+        if "workflow_template" in data:
+            if data.get("scenario_id", "taskbook") != "taskbook":
+                raise RdError(422, "项目流程与内部办理类型不匹配。")
+            scenario = {"id": "taskbook", "initial_stage": "input", "context_fields": definitions.CONTEXT_FIELDS}
+        else:
+            self.workspace.require_definition("taskbook", db=db)
+            scenario = definitions.scenario(data.get("scenario_id"))
+            if scenario is None:
+                raise RdError(422, "未知的案例场景。")
+        context = deepcopy(project.get("_initial_context", {}))
+        if project["cases"]:
+            context = {key: value for key, value in context.items()
+                       if key in {"product_type", "product_domain", "cover_phase", "organization_scope"}}
         context = _context(context, scenario["context_fields"])
         project["cases"].append({"id": _id(), "scenario_id": scenario["id"], "title": _text(data.get("title"), "案例名称", 200, True),
             "stage": scenario["initial_stage"], "status": "active", "context": context,
             "context_provenance": {key: {"kind": "user", "actor": actor, "created_at": _now(), "source_ids": []} for key in context},
             "model_selection": {"provider": "", "name": "", "id": ""}, "product_route": None, "composition_route": None,
-            "sources": [], "source_selection": {}, "input_revision": 1, "requirements": [], "workpackages": [], "decisions": [], "warnings": [],
+            "sources": [], "deleted_sources": [], "source_selection": {}, "input_revision": 1, "requirements": [], "workpackages": [], "decisions": [], "warnings": [],
             "clarifications": [], "comparisons": [], "deliveries": [], "reuse_candidates": [], "reuse_disposition": None,
             "taskbook_binding": None, "taskbook_binding_history": [], "engineering_records": [],
             "source_analysis": None, "source_analysis_history": [],
             "business_context": self._business_context(project)})
         self.lifecycle.initialize(project["cases"][-1], new=True)
+        if "workflow_template" in data:
+            adoption = self.workflow_templates.start_project(db, project, project["cases"][-1], data["workflow_template"], actor)
+            return {"workflow_template": deepcopy(data["workflow_template"]), "workflow_adoption_id": adoption["id"]}
+        return {}
 
     @staticmethod
     def _active_sources(case):
@@ -413,6 +572,8 @@ class Store:
         for role in ("tech", "spec"):
             candidates = [source for source in case["sources"] if source["role"] == role]
             sid = case.get("source_selection", {}).get(role)
+            if sid == "":
+                continue
             if sid is None and len(candidates) == 1:
                 sid = candidates[0]["id"]
             if candidates and sid not in {source["id"] for source in candidates}:
@@ -451,6 +612,34 @@ class Store:
         invalidated = self._invalidate_inputs(case, "用户重新选择了正式输入资料版本。") if previous != source["id"] else []
         return {"role": role, "previous_source_id": previous, "selected_source_id": source["id"],
                 "input_revision": case["input_revision"], "invalidated_decision_ids": invalidated}
+
+    def _delete_source(self, db, project, case, data, actor):
+        if set(data) != {"case_id", "source_id"}:
+            raise RdError(422, "删除资料只接受案例与来源标识。")
+        sid = _text(data.get("source_id"), "来源标识", 200, True)
+        source = next((item for item in case["sources"] if item["id"] == sid), None)
+        if source is None:
+            raise RdError(404, "资料不存在或不属于当前案例。")
+        if (any(package.get("status") in {"submitted", "running"} for package in case["workpackages"])
+                or db.execute("SELECT 1 FROM runs WHERE project_id=? AND case_id=? AND status IN ('submitted','running') LIMIT 1",
+                              (project["id"], case["id"])).fetchone()
+                or db.execute("SELECT 1 FROM claims c JOIN runs r ON r.id=c.run_id WHERE r.project_id=? AND r.case_id=? AND c.lease_until>? LIMIT 1",
+                              (project["id"], case["id"], time.time())).fetchone()):
+            raise RdError(409, "当前案例有已提交、正在运行的工作包或有效执行租约，请执行结束或取消后再删除资料。")
+        active = any(item["id"] == sid for item in self._active_sources(case))
+        role = source["role"]
+        previous = case["source_selection"].get(role)
+        case["deleted_sources"].append({**source, "status": "deleted", "deleted_at": _now(), "deleted_by": actor,
+                                        "_source_index": case["sources"].index(source)})
+        case["sources"] = [item for item in case["sources"] if item["id"] != sid]
+        if active and role in {"tech", "spec"}:
+            # An explicit empty choice must not revive a lone historical version.
+            case["source_selection"][role] = ""
+        invalidated = self._invalidate_inputs(case, "用户删除了当前输入资料，请重新核对来源与原有依据。") if active else []
+        return {"source_id": sid, "source_name": source["name"], "source_role": role,
+                "source_version": source["version"], "source_sha256": source["sha256"], "was_active": active,
+                "previous_source_id": previous, "input_revision": case["input_revision"],
+                "invalidated_decision_ids": invalidated}
 
     @staticmethod
     def _warnings(case):
@@ -581,11 +770,7 @@ class Store:
             changed.append(field)
         invalidated = self._invalidate_inputs(case, "用户明确采用来源分析参数，需要按新基线确认。") if changed else []
         requirements = []
-        known_requirements = [
-            (re.sub(r"\s+", "", version["title"]), re.sub(r"\s+", "", version["content"]), set(version["source_ids"]))
-            for requirement in case["requirements"]
-            for version in [requirement, *requirement.get("history", [])]
-        ]
+        origins = _OriginalRequirementIndex(case["requirements"])
         for candidate in proposal["requirements"]:
             if candidate.get("status") == "rejected":
                 continue
@@ -593,18 +778,18 @@ class Store:
             # a later clarification replaced. Additional confirmation sources do
             # not turn the same quoted requirement into a new engineering fact;
             # distinct tests with an equal acceptance value remain separate.
-            title = re.sub(r"\s+", "", candidate["title"])
-            content = re.sub(r"\s+", "", candidate["content"])
-            source_ids = set(candidate["source_ids"])
-            if any(title == known_title and content == known_content and source_ids <= known_sources
-                   for known_title, known_content, known_sources in known_requirements):
+            matches = origins.matches(candidate)
+            if matches:
+                if len(matches) == 1:
+                    candidate["requirement_id"] = next(iter(matches))
                 continue
             result = self.records.save_requirement(case, candidate, actor)
             requirement = next(item for item in case["requirements"] if item["id"] == result["requirement_id"])
             requirement["analysis_id"] = proposal["id"]
             requirement["evidence"] = deepcopy(candidate["evidence"])
+            candidate["requirement_id"] = requirement["id"]
             requirements.append(requirement["id"])
-            known_requirements.append((title, content, source_ids))
+            origins.add(requirement)
             invalidated.extend(result["invalidated_decision_ids"])
         proposal.update(status="adopted", adopted_at=_now(), adopted_by=actor, adopted_input_revision=case["input_revision"])
         proposal.pop("invalidated_reason", None)
@@ -663,7 +848,7 @@ class Store:
                 raise RdError(422, "已采用的任务书模板资产发生变化，请重新采用模板。")
         return binding
 
-    def _adopt_taskbook_flow(self, case, data, actor):
+    def _adopt_taskbook_flow(self, db, case, data, actor):
         from .business_binding import document_template, business_fingerprint
         from .lifecycle import LifecyclePolicy
         allowed = {"case_id", "workflow_id", "workflow_version", "scope", "rationale"}
@@ -678,12 +863,23 @@ class Store:
             for field, fact in facts.items():
                 if fact["status"] != "adopted" or fact["evidence_status"] == "stale" or not (fact["source_refs"] or fact["decision_ref"]):
                     raise RdError(422, f"参数 {field} 缺少当前有效来源或明确确认，无法固定任务书模板；请核对来源、冲突或关键澄清。")
-        workflow = next((item for item in definitions.RESEARCH_WORKFLOW_TEMPLATES
-                         if item["id"] == data.get("workflow_id") and item["version"] == data.get("workflow_version")
-                         and item["status"] == "published"), None)
-        if not workflow or not case.get("product_route") or not case.get("composition_route"):
+        workflow = self.workflow_templates.fixed_project(case)
+        if workflow:
+            if any(data.get(field, workflow[key]) != workflow[key] for field, key in (("workflow_id", "id"), ("workflow_version", "version"))):
+                raise RdError(409, "请使用创建项目时固定的流程模板，不能替换为另一流程或版本。")
+        else:
+            try:
+                workflow = self.workflow_templates._detail(db, data.get("workflow_id"), data.get("workflow_version"))
+            except RdError:
+                workflow = None
+        if not workflow or workflow.get("category") not in {"research", "project"} or not case.get("product_route") or not case.get("composition_route"):
             raise RdError(422, "请先完成当前需求的产品路线与任务书编制策略决定。")
-        if workflow["product_route"] != case["product_route"]["value"]:
+        self.workflow_templates._validate_graph(db, workflow['category'], workflow["graph"])
+        if workflow['category'] == 'project':
+            # Applicability is a current business choice, separate from the
+            # unchanged template reference and immutable graph chosen at start.
+            workflow['product_route'] = case['product_route']['value']
+        elif workflow["product_route"] != case["product_route"]["value"]:
             raise RdError(422, "研发流程模板与当前产品研制分类不一致。")
         context = _context(case["context"])
         if set(context) != set(definitions.CONTEXT_FIELDS) or not all(context.values()):
@@ -803,6 +999,7 @@ class Store:
         if version == "2":
             self._current_taskbook_binding(case)
         case["workpackages"].append({"id": _id(), "definition_id": definition["id"], "definition_version": definition["version"],
+            **({"execution_schema_version": 3} if LifecyclePolicy.resolve(case).version == "v2" else {}),
             "required": definition["required"],
             **({"business_node_id": definition["business_node_id"]} if "business_node_id" in definition else {}),
             "title": definition["title"], "stage": case["stage"], "status": "draft", "plan_revision": 1,
@@ -860,7 +1057,15 @@ class Store:
         upstream = candidates[-1]
         if not self._same_inputs(upstream["snapshot"], case):
             raise RdError(422, "当前资料、需求、参数、研制分类或编制策略已变更，请重新生成任务书后校验。")
-        return {"upstream_workpackage_id": upstream["id"], "upstream_artifacts": deepcopy(upstream["artifacts"]),
+        from collections import Counter
+        completed = [n for n in upstream["nodes"] if n["status"] == "completed"]
+        counts = Counter(n["action_id"] for n in completed)
+        fixed_results = {n["action_id"]: deepcopy(n["result"]) for n in completed if counts[n["action_id"]] == 1}
+        fixed_results["__by_node__"] = {n["id"]: deepcopy(n["result"]) for n in completed}
+        return {"upstream_workpackage_id": upstream["id"], "upstream_run_id": upstream["run_id"],
+                "upstream_bindings": {n["action_id"]: n["id"] for n in completed if counts[n["action_id"]] == 1},
+                "upstream_nodes": [{"id": n["id"], "action_id": n["action_id"]} for n in completed],
+                "upstream_artifacts": deepcopy(upstream["artifacts"]),
                 **({"lifecycle_refs": deepcopy(upstream["snapshot"]["lifecycle_refs"]),
                     "business_node_id": upstream["snapshot"].get("business_node_id")}
                    if upstream["snapshot"].get("lifecycle_refs") else {}),
@@ -868,9 +1073,9 @@ class Store:
                 "source_selection": deepcopy(upstream["snapshot"]["source_selection"]),
                 "taskbook_binding": deepcopy(upstream["snapshot"].get("taskbook_binding")),
                 "business_context": deepcopy(upstream["snapshot"].get("business_context")),
-                "upstream_results": {node["action_id"]: deepcopy(node["result"]) for node in upstream["nodes"] if node["status"] == "completed"}}
+                "upstream_results": fixed_results}
 
-    def _validate_plan(self, db, definition_id, nodes, definition_version="1"):
+    def _validate_plan(self, db, definition_id, nodes, definition_version="1", *, allow_duplicate_required=False):
         definition = definitions.definition(definition_id, definition_version)
         if definition is None:
             raise RdError(422, "工作包固定定义版本不存在。")
@@ -889,6 +1094,7 @@ class Store:
             aid = node.get("action_id")
             if aid not in allowed or node.get("action_version") != "1":
                 raise RdError(422, "动作或发布版本不受当前工作包支持。")
+            self.workspace.require_actions([aid], db=db)
             deps = node.get("depends_on")
             if not isinstance(deps, list) or any(not isinstance(item, str) for item in deps) or len(set(deps)) != len(deps):
                 raise RdError(422, "节点依赖必须是唯一ID列表。")
@@ -900,7 +1106,8 @@ class Store:
                            "required": node["required"], "status": "draft", "result": None, "attempt": 0,
                            "started_at": None, "completed_at": None, "ended_at": None})
         for aid in required:
-            if sum(node["action_id"] == aid for node in result) != 1:
+            count = sum(node["action_id"] == aid for node in result)
+            if count < 1 or (count != 1 and not allow_duplicate_required):
                 raise RdError(422, "所有必需动作必须保留一次。")
         by_id = {node["id"]: node for node in result}
         visiting, visited = set(), set()
@@ -927,10 +1134,10 @@ class Store:
             return found
 
         for earlier, later in zip(required, required[1:]):
-            first = next(node["id"] for node in result if node["action_id"] == earlier)
-            last = next(node["id"] for node in result if node["action_id"] == later)
-            if first not in ancestors(last):
-                raise RdError(422, "计划不能绕过必需动作的前置检查。")
+            producers = {node["id"] for node in result if node["action_id"] == earlier}
+            for consumer in (node for node in result if node["action_id"] == later):
+                if not producers & ancestors(consumer["id"]):
+                    raise RdError(422, "计划不能绕过必需动作的前置检查。")
         return result
 
     def _submit(self, db, project, case, data, actor):
@@ -940,16 +1147,25 @@ class Store:
         from .lifecycle import LifecyclePolicy
         if package["definition_id"] == "taskbook" and LifecyclePolicy.resolve(case).version == "v2" and package["definition_version"] != "2":
             raise RdError(422, "历史任务书草稿须明确采用新版策划工作包，不能原地改版提交。")
-        package["nodes"] = self._validate_plan(db, package["definition_id"], package["nodes"], package["definition_version"])
+        candidate = None
+        if package.get("execution_schema_version") == 3:
+            candidate = self.designer.adopted_candidate(db, case, package)
+            package["nodes"] = deepcopy(candidate["compiled_plan"])
+        else:
+            if any(key in data for key in ("execution_schema_version", "schema_version", "candidate_id", "execution_adoption_id")):
+                raise RdError(422, "不能由客户端声明旧版执行对象或绕过候选采用。")
+            package["nodes"] = self._validate_plan(db, package["definition_id"], package["nodes"], package["definition_version"])
         binding = self._current_taskbook_binding(case) if package["definition_id"] == "taskbook" else None
         actions = []
         for node in package["nodes"]:
             resource = self._resource(db, node["action_id"], 1)
-            if resource["status"] != "published" or not self._resource_enabled(db, node["action_id"]) or resource["execution_mode"] not in {"local_real", "remote_real"}:
+            if not self.workspace.capability_available(node["action_id"], 1, db=db) or resource["execution_mode"] not in {"local_real", "remote_real"}:
                 raise RdError(422, "计划绑定的能力版本不可执行。")
+            from .workspace import content_digest
             actions.append({"id": node["action_id"], "version": node["action_version"], "resource_id": resource["id"], "resource_version": 1,
-                            "execution_mode": resource["execution_mode"], "configuration": resource["configuration"]})
+                            "execution_mode": resource["execution_mode"], "configuration": resource["configuration"], "content_digest": content_digest(resource)})
         snapshot = {"project_id": project["id"], "case_id": case["id"], "scenario_id": case["scenario_id"], "workpackage_id": package["id"],
+            "application_id": self.application_id, "authorization_policy": "workspace-fixed-grant-v1",
             "actor_id": actor, "business_context": deepcopy(case["business_context"]),
             "stage": case["stage"], "definition_id": package["definition_id"], "definition_version": package["definition_version"],
             "request_ref": package["request_ref"], "context": deepcopy(case["context"]), "parameters": deepcopy(case["context"]),
@@ -967,10 +1183,20 @@ class Store:
                 snapshot["lifecycle_refs"] = deepcopy(binding["lifecycle_refs"])
                 snapshot["business_node_id"] = package["business_node_id"]
         snapshot.update(self._fixed_upstream(case, package))
+        if candidate is not None:
+            snapshot.update(execution_schema_version=3, graph_digest=candidate["semantic_digest"],
+                execution_graph=deepcopy(candidate["graph"]), layout_digest=candidate["layout_digest"],
+                execution_candidate={"id": candidate["id"], "digest": candidate["digest"], "draft_revision": candidate["draft_revision"]},
+                execution_adoption_id=package["execution_adoption_id"], resource_locks=deepcopy(candidate["resource_locks"]),
+                execution_mapping=deepcopy(candidate["mapping"]))
         snapshot["rule_assets"] = [{"name": path.name, "path": str(path.resolve()), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
                                    for path in sorted(_RULE_ROOT.glob("*.yaml"))]
         snapshot["rule_versions"].update({item["name"]: item["sha256"] for item in snapshot["rule_assets"]})
         package.update(status="submitted", snapshot=snapshot, run_id=_id())
+        if candidate is not None:
+            for item in snapshot["execution_mapping"]:
+                item["run_id"] = package["run_id"]
+            package["execution_mapping"] = deepcopy(snapshot["execution_mapping"])
         for node in package["nodes"]:
             node["status"] = "submitted"
         db.execute("INSERT INTO runs VALUES(?,?,?,?,?,?,?)", (package["run_id"], project["id"], case["id"], package["id"], "submitted", time.time(), _json(snapshot)))
@@ -985,6 +1211,7 @@ class Store:
         package["completed_at"] = None
         for node in package["nodes"]:
             if node["status"] != "completed":
+                self._terminal_checkpoint(node, package, "cancelled")
                 node["status"] = "cancelled"
                 node["ended_at"] = node.get("ended_at") or ended_at
                 node["completed_at"] = None
@@ -1012,7 +1239,8 @@ class Store:
             path = self.asset_root / "sources" / pid / cid / sid
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(content)
-            version = 1 + max((source["version"] for source in case["sources"] if source["name"] == name and source["role"] == role), default=0)
+            version = 1 + max((source["version"] for source in case["sources"] + case["deleted_sources"]
+                               if source["name"] == name and source["role"] == role), default=0)
             case["sources"].append({"id": sid, "role": role, "name": name, "sha256": digest, "size": len(content), "version": version, "created_at": _now(), "path": str(path)})
             previous = case["source_selection"].get(role)
             invalidated = []
@@ -1026,6 +1254,93 @@ class Store:
                 input_revision=case["input_revision"], invalidated_decision_ids=invalidated)
             return self._save_receipt(db, actor, project, key, fingerprint)
 
+    def add_sources(self, actor, pid, cid, expected_version, key, manifest, files):
+        """Commit a complete batch and its explicit primary choices together."""
+        actor = _actor(actor)
+        if (not isinstance(manifest, list) or not 1 <= len(manifest) <= 50
+                or not isinstance(files, list) or len(files) != len(manifest)):
+            raise RdError(422, "每批须包含1至50份资料，文件数量必须与manifest一致。")
+        entries, client_ids, primary_roles = [], set(), set()
+        for item, uploaded in zip(manifest, files):
+            if not isinstance(item, dict) or set(item) != {"id", "name", "role", "primary"}:
+                raise RdError(422, "每份资料仅接受id、name、role、primary。")
+            client_id = _text(item["id"], "队列标识", 128, True)
+            name = _text(item["name"], "文件名", 255, True)
+            role, primary = item["role"], item["primary"]
+            if (client_id in client_ids or not isinstance(role, str) or role not in {"tech", "spec", "reference"}
+                    or not isinstance(primary, bool) or primary and (role == "reference" or role in primary_roles)):
+                raise RdError(422, "队列标识不能重复；需求与规范各最多一份主文件，补充资料不能作为主文件。")
+            if (not isinstance(uploaded, (tuple, list)) or len(uploaded) != 2
+                    or uploaded[0] != name or not isinstance(uploaded[1], bytes) or not uploaded[1]):
+                raise RdError(422, "上传文件须与manifest名称和顺序一致，且不能是空文件。")
+            client_ids.add(client_id)
+            if primary:
+                primary_roles.add(role)
+            entries.append({"client_id": client_id, "name": name, "role": role, "primary": primary,
+                            "sha256": hashlib.sha256(uploaded[1]).hexdigest(), "size": len(uploaded[1]),
+                            "content": uploaded[1]})
+        intent = {"command": "add_sources", "case_id": cid,
+                  "files": [{field: value for field, value in item.items() if field != "content"} for item in entries]}
+        created_paths = []
+        try:
+            with self._transaction() as db:
+                project = self._load(db, pid, actor)
+                key, fingerprint, replay = self._receipt(db, actor, pid, key, intent)
+                if replay is not None:
+                    return replay
+                self._cas(project, expected_version)
+                case = self._case(project, cid)
+                if case["status"] == "completed":
+                    raise RdError(409, "已完成案例的资料已封存，请创建新的案例修订。")
+                for role in {item["role"] for item in entries} - primary_roles - {"reference"}:
+                    candidates = [source for source in case["sources"] if source["role"] == role]
+                    selected = case["source_selection"].get(role)
+                    if selected is None and len(candidates) == 1:
+                        selected = candidates[0]["id"]
+                    if not any(source["id"] == selected for source in candidates):
+                        label = "需求" if role == "tech" else "规范"
+                        raise RdError(422, f"请为{label}资料明确选择一份主文件后保存。")
+                previous_selection, added = deepcopy(case["source_selection"]), []
+                for item in entries:
+                    sid, name = _id(), _safe_name(item["name"])
+                    role = item["role"] if item["primary"] else "reference"
+                    version = 1 + max((source["version"] for source in case["sources"] + case["deleted_sources"]
+                                       if source["name"] == name and source["role"] == role), default=0)
+                    path = self.asset_root / "sources" / pid / cid / sid
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    created_paths.append(path)
+                    path.write_bytes(item["content"])
+                    source = {"id": sid, "client_id": item["client_id"], "role": role,
+                              "document_category": item["role"], "name": name, "sha256": item["sha256"],
+                              "size": item["size"], "version": version, "created_at": _now(), "path": str(path)}
+                    case["sources"].append(source)
+                    added.append({"source_id": sid, "client_id": item["client_id"], "role": role,
+                                  "document_category": item["role"], "primary": item["primary"]})
+                    if item["primary"]:
+                        case["source_selection"][role] = sid
+                invalidated = self._invalidate_inputs(case, "用户批量保存了新的正式输入或补充资料，请重新核对来源与原有依据。")
+                self._save(db, project, "sources_added", actor, case_id=cid, sources=added,
+                           previous_source_selection=previous_selection, source_selection=deepcopy(case["source_selection"]),
+                           input_revision=case["input_revision"], invalidated_decision_ids=invalidated)
+                return self._save_receipt(db, actor, project, key, fingerprint)
+        except Exception:
+            for path in created_paths:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    # No committed metadata exposes a failed batch's orphaned bytes.
+                    pass
+            raise
+
+    def classify_source_names(self, actor, pid, cid, files, *, model_selection=None, use_model=False):
+        from .source_classification import classify_source_names
+        actor = _actor(actor)
+        with self._connection() as db:
+            project = self._load(db, pid, actor)
+            case = self._case(project, cid)
+            selection = deepcopy(case["model_selection"] if model_selection is None else model_selection)
+        return classify_source_names(files, selection, use_model, actor)
+
     def _checked_path(self, item):
         path = Path(item["path"]).resolve()
         if not path.is_relative_to(self.asset_root) or not path.is_file():
@@ -1037,7 +1352,7 @@ class Store:
     def source_path(self, actor, pid, cid, sid):
         with self._connection() as db:
             case = self._case(self._load(db, pid, _actor(actor)), cid)
-            source = next((item for item in case["sources"] if item["id"] == sid), None)
+            source = next((item for item in case["sources"] + case["deleted_sources"] if item["id"] == sid), None)
             if source is None:
                 raise RdError(404, "资料不存在。")
             return self._checked_path(source)
@@ -1063,51 +1378,35 @@ class Store:
 
     def get_resource(self, rid, version=None):
         with self._connection() as db:
-            return _public(self._resource(db, rid, version))
-
-    @staticmethod
-    def _resource_enabled(db, rid):
-        for row in db.execute("SELECT payload FROM resource_versions WHERE id=? ORDER BY version DESC", (rid,)):
-            status = json.loads(row[0])["status"]
-            if status != "draft":
-                return status == "published"
-        return False
+            return self.workspace._detail(db, rid, version)
 
     def list_resources(self):
         with self._connection() as db:
-            return [_public(json.loads(row[0])) for row in db.execute("SELECT v.payload FROM resource_versions v JOIN resource_heads h ON h.id=v.id AND h.version=v.version ORDER BY v.id")]
+            return [self.workspace._detail(db, row[0], row[1]) for row in db.execute("SELECT id,version FROM resource_heads ORDER BY id")]
 
     def save_resource(self, actor, payload, can_manage=False):
+        """Trusted internal compatibility adapter; HTTP uses Workspace permissions."""
         actor = _actor(actor)
         if not can_manage:
             raise RdError(403, "只有资源管理员可以修改Workspace。")
-        if not isinstance(payload, dict) or payload.get("kind") not in {"agent", "skill", "team"}:
-            raise RdError(422, "资源类型必须为agent/skill/team。")
-        operation = payload.get("operation", "save")
-        if operation not in {"save", "publish", "retire"}:
-            raise RdError(422, "资源操作无效。")
-        config = payload.get("configuration", {})
-        if not isinstance(config, dict):
-            raise RdError(422, "资源配置必须是对象。")
-        _reject_raw_credentials(config)
-        mode = config.get("execution_mode", "local_real")
-        if mode not in {"local_real", "remote_real", "contract_example"}:
-            raise RdError(422, "执行模式无效。")
-        rid = payload.get("id") or _id()
-        if not isinstance(rid, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", rid):
-            raise RdError(422, "资源ID无效。")
-        with self._transaction() as db:
-            head = db.execute("SELECT version FROM resource_heads WHERE id=?", (rid,)).fetchone()
-            if head and payload.get("expected_version") != head[0]:
-                raise RdError(409, "资源版本已更新。")
-            version = head[0] + 1 if head else 1
-            resource = {"id": rid, "version": version, "kind": payload["kind"], "name": _text(payload.get("name"), "资源名称", 200, True),
-                        "description": _text(payload.get("description", ""), "资源说明", 10000), "configuration": deepcopy(config),
-                        "execution_mode": mode, "status": {"save": "draft", "publish": "published", "retire": "retired"}[operation],
-                        "executable": False, "actor": actor, "created_at": _now()}
-            db.execute("INSERT INTO resource_versions VALUES(?,?,?)", (rid, version, _json(resource)))
-            db.execute("INSERT INTO resource_heads VALUES(?,?) ON CONFLICT(id) DO UPDATE SET version=excluded.version", (rid, version))
-            return _public(resource)
+        if not isinstance(payload, dict):
+            raise RdError(422, "资源命令必须是对象。")
+        values = deepcopy(payload)
+        permissions = {"can_edit_resources": True, "can_publish_resources": True}
+        operation = values.get("operation", "save")
+        if not values.get("id"):
+            if operation not in {"save", "publish", "retire"}:
+                raise RdError(422, "资源操作无效。")
+            resource = self.workspace.save_resource(actor, permissions, {**values, "operation": "save", "expected_version": 0}, _id())
+            if operation == "save":
+                return resource
+            values.update(id=resource["id"], expected_version=resource["version"], version=resource["version"],
+                          expected_state_revision=resource["publication_revision"], expected_control_revision=resource["control_revision"])
+        elif operation in {"publish", "retire"}:
+            resource = self.get_resource(values["id"], values.get("version"))
+            values.setdefault("expected_state_revision", resource["publication_revision"])
+            values.setdefault("expected_control_revision", resource["control_revision"])
+        return self.workspace.save_resource(actor, permissions, values, _id())
 
     def _blocked(self, db, project, case, package, reason):
         package["status"] = "blocked"
@@ -1117,6 +1416,8 @@ class Store:
         package["completed_at"] = None
         for node in package["nodes"]:
             if node.get("started_at") and node["status"] in {"running", "submitted"}:
+                stop_reason = "budget_exhausted" if "预算" in reason else ("permission_revoked" if "授权" in reason else "source_invalid")
+                self._terminal_checkpoint(node, package, stop_reason)
                 node.update(status="blocked", ended_at=node.get("ended_at") or ended_at, completed_at=None)
         db.execute("UPDATE runs SET status='blocked' WHERE id=?", (package["run_id"],))
         db.execute("DELETE FROM claims WHERE run_id=?", (package["run_id"],))
@@ -1124,6 +1425,9 @@ class Store:
 
     def _valid_bindings(self, db, snapshot):
         try:
+            permission_error = self.workspace.snapshot_permission_error(db, snapshot)
+            if permission_error:
+                return permission_error
             binding = snapshot.get("taskbook_binding")
             if binding:
                 from .business_binding import verify_binding
@@ -1139,7 +1443,7 @@ class Store:
                 self._checked_path(source)
             for action in snapshot["actions"]:
                 bound = self._resource(db, action["resource_id"], action["resource_version"])
-                if bound["status"] != "published" or not self._resource_enabled(db, action["resource_id"]) or bound["execution_mode"] not in {"local_real", "remote_real"}:
+                if bound["execution_mode"] not in {"local_real", "remote_real"}:
                     return "固定能力版本已停用或不允许用于真实执行。"
             return None
         except (RdError, ValueError, OSError):
@@ -1204,14 +1508,37 @@ class Store:
                     db.execute("UPDATE runs SET status='running' WHERE id=?", (run["id"],))
                     self._save(db, project, "node_claimed", "worker", case_id=case["id"], workpackage_id=package["id"], node_id=node["id"], attempt=node["attempt"])
                     previous = deepcopy(snapshot.get("upstream_results", {}))
-                    for item in package["nodes"]:
-                        if item["status"] == "completed":
-                            previous[item["action_id"]] = deepcopy(item["result"])
-                            if item["id"] != item["action_id"]:
-                                previous[item["id"]] = deepcopy(item["result"])
+                    completed = {item["id"]: item for item in package["nodes"] if item["status"] == "completed"}
+                    for item in completed.values():
+                        previous[item["id"]] = deepcopy(item["result"])
+                    if snapshot.get("execution_schema_version") == 3:
+                        # The legacy executors read role keys. Populate those only
+                        # from this consumer's explicit producer references.
+                        previous["__by_node__"] = {nid: deepcopy(item["result"]) for nid, item in completed.items()}
+                        for role in definitions.ACTION_TITLES:
+                            previous.pop(role, None)
+                        for role, producer in node.get("input_bindings", {}).items():
+                            if producer.startswith("upstream:"):
+                                result = snapshot.get("upstream_results", {}).get("__by_node__", {}).get(producer.removeprefix("upstream:"))
+                                if result is not None:
+                                    previous[role] = deepcopy(result)
+                            elif producer in completed:
+                                previous[role] = deepcopy(completed[producer]["result"])
+                    else:
+                        from collections import Counter
+                        counts = Counter(item["action_id"] for item in completed.values())
+                        for role, count in counts.items():
+                            if count > 1:
+                                previous.pop(role, None)
+                        for item in completed.values():
+                            if counts[item["action_id"]] == 1:
+                                previous[item["action_id"]] = deepcopy(item["result"])
+                    claim_snapshot = deepcopy(snapshot)
+                    if node.get("completion_session"):
+                        claim_snapshot["completion_resume"] = deepcopy(node["completion_session"])
                     return {"project_id": project["id"], "case_id": case["id"], "workpackage_id": package["id"], "run_id": run["id"],
                             "node_id": node["id"], "action_id": node["action_id"], "attempt": node["attempt"], "token": token,
-                            "snapshot": snapshot, "previous_results": previous, "work_dir": str(work_dir)}
+                            "snapshot": claim_snapshot, "previous_results": previous, "work_dir": str(work_dir)}
         return None
 
     def _active_claim(self, db, claim):
@@ -1220,6 +1547,8 @@ class Store:
             return None
         run = db.execute("SELECT status,created_at,snapshot FROM runs WHERE id=?", (claim["run_id"],)).fetchone()
         if run is None or run["status"] != "running" or time.time() - run["created_at"] >= json.loads(run["snapshot"])["budget"]["max_seconds"]:
+            return None
+        if self.workspace.snapshot_permission_error(db, json.loads(run["snapshot"])):
             return None
         project = self._load(db, claim["project_id"])
         case = self._case(project, claim["case_id"])
@@ -1231,6 +1560,7 @@ class Store:
 
     def renew_claim(self, claim, lease_seconds=60):
         with self._transaction() as db:
+            self._stop_invalid_run(db, claim)
             if self._active_claim(db, claim) is None:
                 return False
             db.execute("UPDATE claims SET lease_until=? WHERE run_id=? AND node_id=? AND token=?", (time.time() + lease_seconds, claim["run_id"], claim["node_id"], claim["token"]))
@@ -1242,13 +1572,58 @@ class Store:
 
     def progress(self, claim, payload):
         with self._transaction() as db:
+            self._stop_invalid_run(db, claim)
             current = self._active_claim(db, claim)
             if current is None:
                 return False
             project, case, package, node = current
+            if isinstance(payload, dict) and "completion_checkpoint" in payload:
+                checkpoint = payload["completion_checkpoint"]
+                if not isinstance(checkpoint, dict) or len(_json(checkpoint)) > 2000000:
+                    raise RdError(422, "补缺checkpoint必须为有效且有界的对象。")
+                checkpoint = _public(checkpoint)
+                checkpoint_digest = hashlib.sha256(_json(checkpoint).encode()).hexdigest()
+                history = node.setdefault("completion_checkpoints", [])
+                if any(item["checkpoint_digest"] == checkpoint_digest and item["attempt"] == claim["attempt"] for item in history):
+                    return True
+                if history and isinstance(checkpoint.get("rounds"), list):
+                    prior = history[-1]
+                    old_rounds = prior.get("rounds", [])
+                    if prior.get("session_id") == checkpoint.get("session_id") and isinstance(old_rounds, list) and checkpoint["rounds"][:len(old_rounds)] != old_rounds:
+                        raise RdError(409, "补缺已保存轮次不可被后续checkpoint覆盖。")
+                fixed = {**deepcopy(checkpoint), "run_id": claim["run_id"], "node_id": claim["node_id"],
+                    "attempt": claim["attempt"], "fencing_id": hashlib.sha256(claim["token"].encode()).hexdigest(),
+                    "checkpoint_digest": checkpoint_digest, "saved_at": _now()}
+                history.append(fixed)
+                node["completion_session"] = deepcopy(fixed)
             node["progress"] = _public(payload) if isinstance(payload, dict) else {"message": str(payload)[:2000]}
             self._save(db, project, "node_progress", "worker", case_id=case["id"], workpackage_id=package["id"], node_id=node["id"])
             return True
+
+    def _stop_invalid_run(self, db, claim):
+        run = db.execute("SELECT status,created_at,snapshot FROM runs WHERE id=?", (claim["run_id"],)).fetchone()
+        if run is None or run["status"] != "running":
+            return
+        snapshot = json.loads(run["snapshot"])
+        reason = self.workspace.snapshot_permission_error(db, snapshot)
+        if time.time() - run["created_at"] >= snapshot["budget"]["max_seconds"]:
+            reason = "累计运行预算已耗尽。"
+        if reason:
+            project = self._load(db, claim["project_id"])
+            case = self._case(project, claim["case_id"])
+            package = self._package(case, claim["workpackage_id"])
+            self._blocked(db, project, case, package, reason)
+
+    @staticmethod
+    def _terminal_checkpoint(node, package, reason):
+        previous = node.get("completion_session")
+        if not previous or previous.get("stop_reason") == reason:
+            return
+        fixed = deepcopy(previous)
+        fixed.update(stop_reason=reason, terminal=True, saved_at=_now(), run_id=package["run_id"], node_id=node["id"])
+        fixed["checkpoint_digest"] = hashlib.sha256(_json({k: v for k, v in fixed.items() if k not in {"checkpoint_digest", "saved_at"}}).encode()).hexdigest()
+        node.setdefault("completion_checkpoints", []).append(fixed)
+        node["completion_session"] = deepcopy(fixed)
 
     def _register_artifacts(self, claim, artifacts):
         if not isinstance(artifacts, list):
@@ -1278,6 +1653,7 @@ class Store:
 
     def complete_node(self, claim, outcome):
         with self._transaction() as db:
+            self._stop_invalid_run(db, claim)
             current = self._active_claim(db, claim)
             if current is None:
                 return False
@@ -1289,6 +1665,7 @@ class Store:
                 outcome = {"status": "blocked", "result": {}, "obligations": outcome.get("obligations", []), "blocked_reasons": ["结果依赖示例模式，不能作为真实研发证据。"]}
             binding_error = self._valid_bindings(db, package["snapshot"])
             if binding_error:
+                self._terminal_checkpoint(node, package, "source_invalid")
                 outcome = {"status": "blocked", "result": {}, "blocked_reasons": [binding_error]}
             registered = []
             try:

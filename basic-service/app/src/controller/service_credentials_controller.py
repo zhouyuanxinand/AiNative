@@ -21,6 +21,31 @@ def _allowed(request: Request) -> bool:
     return request.headers.get("X-Credential-Settings") == "1" and request.headers.get("Sec-Fetch-Site") != "cross-site"
 
 
+@router.get('/default-model')
+async def get_default_model(request: Request):
+    if not _allowed(request):
+        return _response({'error': '请从平台的凭证设置入口访问。'}, 403)
+    try:
+        return _response(await asyncio.to_thread(llm_client.get_default_model_setting))
+    except (OSError, sqlite3.Error, ValueError):
+        return _response({'error': '默认模型读取失败，请重试。'}, 503)
+
+
+@router.put('/default-model')
+async def put_default_model(request: Request):
+    if not _allowed(request):
+        return _response({'error': '请从平台的凭证设置入口访问。'}, 403)
+    try:
+        data = await asyncio.to_thread(llm_client.save_default_model_setting, await request.json())
+        return _response(data)
+    except llm_client.ModelCatalogUnavailable as error:
+        return _response({'error': str(error)}, error.status_code)
+    except (ValueError, TypeError):
+        return _response({'error': '模型未保存，请从当前环境的可用模型目录重新选择完整模型。'}, 400)
+    except (OSError, sqlite3.Error):
+        return _response({'error': '默认模型未保存，请检查数据目录后重试。'}, 503)
+
+
 async def _test_credentials(request: Request, *, catalog: bool):
     if not _allowed(request):
         return _response({"error": "请从平台的凭证设置入口访问。"}, 403)

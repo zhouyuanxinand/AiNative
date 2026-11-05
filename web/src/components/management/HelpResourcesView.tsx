@@ -1,3 +1,4 @@
+import { PlatformButton } from '../ui/PlatformButton';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   addHelpResourceLink, deleteHelpResource, getAdminHelpResources, helpResourceDownloadUrl, uploadHelpResource,
@@ -160,8 +161,8 @@ export function HelpResourcesView({ active }: { active: boolean }) {
       {saving && source === 'file' && <div className="help-resource-progress"><label htmlFor="help-resource-upload-progress">{progress < 100 ? `正在上传 ${progress}%` : '上传完成，正在保存资料…'}</label>
         <progress id="help-resource-upload-progress" max={100} value={progress} /></div>}
       {formError && <p id="help-resource-form-error" role="alert" className="feedback-error">{formError}</p>}
-      <div className="help-resource-form-actions"><button type="submit" className="feedback-button primary" disabled={busy}>
-        {saving ? source === 'file' ? '正在上传…' : '正在保存…' : source === 'file' ? '上传资料' : '保存链接'}</button>
+      <div className="help-resource-form-actions"><PlatformButton type="submit" className="feedback-button primary" disabled={busy}>
+        {saving ? source === 'file' ? '正在上传…' : '正在保存…' : source === 'file' ? '上传资料' : '保存链接'}</PlatformButton>
         <p className="help-resource-hint">保存后将显示在主页对应的操作资料入口。</p></div>
     </form>
     {notice && <p role="status" className="feedback-notice help-resource-notice">{notice}</p>}
@@ -170,9 +171,9 @@ export function HelpResourcesView({ active }: { active: boolean }) {
         <p>查看原文件或链接，删除后用户将无法再从主页访问该条资料。</p></div>
         <div className="help-resource-list-actions"><StyledSelect id="help-resource-filter" aria-label="筛选资料分类" value={filter}
           options={[{ value: 'all', label: '全部资料' }, ...kindOptions]} onChange={setFilter} />
-          <button type="button" className="feedback-button" disabled={loading || busy} onClick={() => setRevision(value => value + 1)}>刷新列表</button></div>
+          <PlatformButton type="button" className="feedback-button" disabled={loading || busy} onClick={() => setRevision(value => value + 1)}>刷新列表</PlatformButton></div>
       </div>
-      {loadError && <div className="feedback-error" role="alert"><p>{loadError}</p><button type="button" className="feedback-link" onClick={() => setRevision(value => value + 1)}>重试加载资料</button></div>}
+      {loadError && <div className="feedback-error" role="alert"><p>{loadError}</p><PlatformButton type="button" className="feedback-link" onClick={() => setRevision(value => value + 1)}>重试加载资料</PlatformButton></div>}
       {loading && <p className="help-resource-loading" role="status">正在读取资料列表…</p>}
       {!loading && !loadError && visibleItems.length === 0 && <div className="feedback-empty"><p>{filter === 'all' ? '暂无操作资料' : `暂无${kindLabels[filter as HelpResourceKind]}`}</p><p>使用上方表单上传原文件或添加链接。</p></div>}
       {visibleItems.length > 0 && <><ul className="admin-help-resource-list">{visibleItems.map(item => {
@@ -185,8 +186,8 @@ export function HelpResourcesView({ active }: { active: boolean }) {
         </div><div className="help-resource-row-actions">
           {href && <a className="feedback-button" href={href} target="_blank" rel="noopener noreferrer" aria-label={`查看${item.source_type === 'file' ? '原文件' : '链接'}：${item.title}`}>{item.source_type === 'file' ? '查看原文件' : '打开链接'}</a>}
           {download && <a className="feedback-link" href={download} aria-label={`下载原文件：${item.title}`}>下载</a>}
-          <button type="button" className="feedback-link danger-text" disabled={busy} aria-label={`删除资料：${item.title}`}
-            onClick={() => { setRemove(item); setDeleteError(''); }}>删除</button>
+          <PlatformButton type="button" className="feedback-link danger-text" disabled={busy} aria-label={`删除资料：${item.title}`}
+            onClick={() => { setRemove(item); setDeleteError(''); }}>删除</PlatformButton>
         </div></li>;
       })}</ul><p className="help-resource-count">共 {visibleItems.length} 份{filter === 'all' ? '资料' : kindLabels[filter as HelpResourceKind]}</p></>}
     </section>

@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import asdict, dataclass, replace
 import json
+import hashlib
 import logging
 import os
 import re
@@ -555,6 +556,51 @@ def _provider_kind(config: LLMConfig) -> str:
     return config.provider
 
 
+def _default_model_environment(base: LLMConfig | None) -> str:
+    # A catalog ID belongs to a connection/tenant. Store only its fingerprint,
+    # and never carry a selection into a newly activated credential environment.
+    configs = ([base] if base else []) + _effective_configs()
+    connections = list(dict.fromkeys((
+        _provider_kind(item), item.endpoint, item.app_id, item.tenant_id, item.api_key,
+    ) for item in configs))
+    return hashlib.sha256(json.dumps(connections, ensure_ascii=False).encode('utf-8')).hexdigest()
+
+
+def get_default_model_setting() -> dict[str, Any]:
+    base = _base_config()
+    saved = get_credential_store().read_default_model(_default_model_environment(base))
+    selection = saved or ({'provider': _provider_kind(base), 'name': base.model, 'id': base.model_id} if base else None)
+    incomplete = not selection or not selection['name'] or (
+        selection['provider'] == 'smartvision' and not _positive_model_id(selection['id'])
+    )
+    return {'selection': selection, 'source': 'settings' if saved else 'deployment',
+            'requires_selection': bool(incomplete)}
+
+
+def _positive_model_id(value: str) -> bool:
+    return value.isascii() and value.isdigit() and int(value) > 0
+
+
+def save_default_model_setting(payload: object) -> dict[str, Any]:
+    if not isinstance(payload, dict) or set(payload) != {'provider', 'name', 'id'}:
+        raise ValueError('请选择目录中的完整模型。')
+    if any(not isinstance(value, str) or len(value) > 200 or any(char in value for char in '\r\n\t\x00')
+           for value in payload.values()):
+        raise ValueError('模型参数格式不正确。')
+    selection = {key: value.strip() for key, value in payload.items()}
+    if selection['provider'] == 'smartvision' and not _positive_model_id(selection['id']):
+        raise ValueError('该网关要求有效的模型 ID，请重新读取模型目录。')
+    environment = _default_model_environment(_base_config())
+    if not any((item['provider'], item['model'], item['id']) ==
+               (selection['provider'], selection['name'], selection['id']) and item.get('configured')
+               for item in list_available_models()):
+        raise ValueError('该模型不在当前可用目录中，请重新读取后选择。')
+    if environment != _default_model_environment(_base_config()):
+        raise ValueError('服务凭证已改变，请重新读取当前环境的模型目录。')
+    get_credential_store().save_default_model(environment, selection)
+    return get_default_model_setting()
+
+
 def request_extra_parameters(config: LLMConfig, *, model_id: str | None = None) -> dict[str, str]:
     """Preserve model selection and attach the OA id for MaaS usage statistics.
 
@@ -572,6 +618,10 @@ def request_extra_parameters(config: LLMConfig, *, model_id: str | None = None) 
 
 def _resolve_model_config(selection: ModelSelection | None) -> LLMConfig:
     base = _base_config()
+    if selection is None:
+        saved = get_credential_store().read_default_model(_default_model_environment(base))
+        if saved:
+            selection = ModelSelection(provider=saved['provider'], model=saved['name'], model_id=saved['id'])
     if selection is None:
         if base is None:
             raise RuntimeError(
@@ -656,7 +706,8 @@ def _safe_status(config: LLMConfig | None) -> dict[str, Any]:
         "source": config.source,
         "app_id_configured": bool(config.app_id),
         "tenant_id_configured": bool(config.tenant_id),
-        "model_id_configured": bool(config.model_id),
+        "model_id_configured": (_positive_model_id(config.model_id)
+                                if _provider_kind(config) == 'smartvision' else bool(config.model_id)),
         "max_tokens": config.max_tokens,
         "json_initial_tokens": min(DEFAULT_JSON_MAX_TOKENS, config.max_tokens),
     }
@@ -664,13 +715,10 @@ def _safe_status(config: LLMConfig | None) -> dict[str, Any]:
 
 def get_status() -> dict[str, Any]:
     """返回可展示状态；永远不返回 API Key 或完整认证头。"""
-    with _LOCK:
-        config = _runtime_config
-    if config is None:
-        try:
-            config = _base_config()
-        except (TypeError, ValueError):
-            config = None
+    try:
+        config = _resolve_model_config(None)
+    except (RuntimeError, TypeError, ValueError):
+        config = None
     return _safe_status(config)
 
 

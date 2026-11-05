@@ -146,10 +146,12 @@ try {
     await page.goForward();
     await assertView(view, label);
   }
-  await page.locator('#feedback-rating-filter').click();
-  await page.waitForFunction(() => Math.abs(document.getElementById('feedback-rating-filter').getBoundingClientRect().width - document.getElementById('feedback-rating-filter-menu').getBoundingClientRect().width) <= 1);
-  const selectBox = await page.locator('#feedback-rating-filter').boundingBox();
-  const optionBox = await page.getByRole('listbox').boundingBox();
+  const ratingSelect = page.locator('#feedback-rating-filter');
+  await ratingSelect.focus();
+  await ratingSelect.press('ArrowDown');
+  await page.waitForFunction(() => Math.abs(document.getElementById('feedback-rating-filter').closest('.ant-select').getBoundingClientRect().width - document.querySelector('.ant-select-dropdown:not(.ant-select-dropdown-hidden)').getBoundingClientRect().width) <= 1);
+  const selectBox = await page.locator('.ant-select').filter({ has: ratingSelect }).boundingBox();
+  const optionBox = await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden)').boundingBox();
   assert.ok(Math.abs(selectBox.width - optionBox.width) <= 1);
   await page.keyboard.press('Escape');
   listMode = 'error';

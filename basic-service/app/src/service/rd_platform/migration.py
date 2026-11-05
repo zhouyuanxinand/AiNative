@@ -82,11 +82,12 @@ def _reference_blockers(project):
     for case in project["cases"]:
         for kind in ("sources", "requirements", "decisions", "workpackages", "requirement_baselines", "review_bundles", "rd_activations"):
             unique(case.get(kind, []), kind, case["id"])
-        sources = {row["id"] for row in case.get("sources", [])}
+        live_sources = {row["id"] for row in case.get("sources", [])}
+        sources = live_sources | {row["id"] for row in case.get("deleted_sources", [])}
         for requirement in case.get("requirements", []):
             if set(requirement.get("source_ids", [])) - sources:
                 blockers.append({"code": "dangling_source_reference", "case_id": case["id"], "record_id": requirement["id"]})
-        if set(case.get("source_selection", {}).values()) - sources:
+        if set(case.get("source_selection", {}).values()) - {""} - live_sources:
             blockers.append({"code": "dangling_source_selection", "case_id": case["id"]})
         for package in case.get("workpackages", []):
             unique(package.get("nodes", []), "nodes", case["id"])

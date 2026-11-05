@@ -57,6 +57,13 @@ def version_api(tmp_path, monkeypatch):
     state.template_versions = TemplateVersions(path, templates, config, tmp_path / "history")
     monkeypatch.setattr(controller, "_STATE", state)
     application = FastAPI()
+    from src.common.platform_auth import AuthSettings
+    application.state.auth_settings = AuthSettings(enabled=True)
+    monkeypatch.setenv("JTB_RD_TEMPLATE_PUBLISHERS", "verified-template-publisher")
+    @application.middleware("http")
+    async def verified_identity(request, call_next):
+        request.state.current_user = {"userid": "verified-template-publisher", "username": "Test publisher"}
+        return await call_next(request)
     application.include_router(controller.router)
     with TestClient(application) as client:
         yield client, state, catalog

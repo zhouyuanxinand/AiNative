@@ -21,29 +21,29 @@
 .help-page{height:100vh;height:100dvh;overflow:auto;background:var(--color-bg-page);scrollbar-gutter:stable}
 .help-page-header{
   display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);
-  min-height:76px;padding:var(--space-4) var(--space-8);
+  min-height:64px;padding:8px 24px;
   background:var(--color-bg-surface);border-bottom:1px solid var(--color-border);
 }
-.help-page-brand{font-size:var(--font-size-title-md);font-weight:600}
+.help-page-brand{font-size:18px;font-weight:600}
 .help-home-link{display:inline-flex;align-items:center;gap:var(--space-2);min-height:40px;color:var(--color-text-link);font-size:var(--font-size-control);white-space:nowrap}
 .help-home-link:hover,.help-file-link:hover{text-decoration:underline;text-underline-offset:3px}
-.help-page-main{width:min(100%,1040px);margin:0 auto;padding:var(--space-8)}
-.help-page-nav{display:flex;gap:var(--space-2);margin-bottom:var(--space-6)}
+.help-page-main{width:min(100%,1120px);margin:0 auto;padding:32px 24px}
+.help-page-nav{display:flex;gap:8px;margin-bottom:16px}
 .help-page-nav a{
-  display:inline-flex;align-items:center;justify-content:center;gap:var(--space-2);min-height:44px;
-  padding:10px var(--space-4);border-radius:var(--radius-control);
+  display:inline-flex;align-items:center;justify-content:center;gap:var(--space-2);min-height:36px;
+  padding:7px 14px;border-radius:var(--radius-control);
   color:var(--color-text-secondary);font-size:var(--font-size-control);
 }
 .help-page-nav svg{width:18px;height:18px}
 .help-page-nav a:hover{background:var(--color-bg-hover)}
 .help-page-nav a[aria-current="page"]{color:var(--color-action);background:var(--color-bg-selected);font-weight:600}
-.help-content{padding:var(--space-8);border:1px solid var(--color-border);border-radius:var(--radius-card);background:var(--color-bg-surface)}
-.help-content-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--space-4);margin-bottom:var(--space-6)}
-.help-content-heading h1{font-size:var(--font-size-title-lg);line-height:1.4;margin-bottom:var(--space-2)}
+.help-content{padding:24px;border:1px solid var(--color-border);border-radius:var(--radius-card);background:var(--color-bg-surface)}
+.help-content-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}
+.help-content-heading h1{font-size:24px;line-height:1.5;margin-bottom:4px}
 .help-content-heading p,.help-placeholder p{color:var(--color-text-secondary);font-size:var(--font-size-control);line-height:1.7}
 .help-placeholder{
   display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
-  gap:var(--space-3);min-height:360px;padding:var(--space-8);
+  gap:12px;min-height:280px;padding:24px;
   border:1px dashed var(--color-border-strong);border-radius:var(--radius-control);background:var(--color-bg-page);
 }
 .help-placeholder-icon{display:grid;place-items:center;width:64px;height:64px;margin-bottom:var(--space-2);border-radius:var(--radius-card);background:var(--color-bg-selected);color:var(--color-action)}
@@ -56,20 +56,20 @@
 .help-manual-frame{width:100%;height:72vh;min-height:400px;border:1px solid var(--color-border);border-radius:var(--radius-sm)}
 .help-home-link svg,.help-file-link svg{width:18px;height:18px;flex-shrink:0}
 .help-file-link{gap:var(--space-2)}
-.help-content button{font:inherit;color:var(--color-text-primary);border:1px solid var(--color-border-strong);border-radius:var(--radius-control);background:var(--color-bg-surface);min-height:40px;padding:var(--space-2) var(--space-3);cursor:pointer}
+.help-content button{font:inherit;color:var(--color-text-primary);border:1px solid var(--color-border-strong);border-radius:var(--radius-control);background:var(--color-bg-surface);min-height:32px;padding:4px 12px;cursor:pointer}
 .help-content button:hover:not(:disabled){background:var(--color-bg-hover)}
 .help-content button:disabled{opacity:.6;cursor:wait}
 .help-page :is(button,a,[tabindex]):focus-visible{outline:2px solid var(--color-border-focus);outline-offset:2px}
 .help-refresh{flex-shrink:0;font-size:var(--font-size-control)!important}
 .help-status{display:grid;justify-items:start;gap:var(--space-3);padding:var(--space-6) 0;line-height:1.7}
-.help-resource-list{display:flex;flex-direction:column;border-block:1px solid var(--color-border);padding:var(--space-2) 0;margin-bottom:var(--space-6);gap:var(--space-1)}
+.help-resource-list{display:flex;flex-direction:column;border-block:1px solid var(--color-border);padding:var(--space-2) 0;margin-bottom:16px;gap:4px}
 .help-resource-list button{display:flex;justify-content:space-between;align-items:center;text-align:left;gap:var(--space-4);border-color:transparent}
 .help-resource-list button[aria-current]{background:var(--color-bg-selected);color:var(--color-action);font-weight:600}
 .help-resource-list span{overflow-wrap:anywhere}
 .help-resource-list small{flex-shrink:0;color:var(--color-text-secondary);font-size:var(--font-size-xs);font-weight:400}
 .help-selected-resource{min-width:0}
 .help-resource-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--space-4);margin-bottom:var(--space-4)}
-.help-resource-heading h2{font-size:var(--font-size-title-md);line-height:1.6;overflow-wrap:anywhere}
+.help-resource-heading h2{font-size:18px;line-height:1.6;overflow-wrap:anywhere}
 .help-resource-heading a{flex-shrink:0}
 .help-note{color:var(--color-text-secondary);font-size:var(--font-size-control);line-height:1.7;overflow-wrap:anywhere}
 .help-external-resource{padding:var(--space-6) 0;line-height:1.8}
@@ -86,11 +86,11 @@
 .help-document-table::-webkit-scrollbar-thumb{background:var(--color-border-strong);border-radius:var(--radius-sm)}
 .help-document-table::-webkit-scrollbar-track{background:var(--color-bg-page)}
 @media(max-width:540px){
-  .help-page-header{padding:var(--space-4);min-height:68px;gap:var(--space-2)}
+  .help-page-header{padding:12px 16px;min-height:64px;gap:8px}
   .help-page-brand{font-size:var(--font-size-title-sm)}
-  .help-page-main{padding:var(--space-6) var(--space-4)}
-  .help-content{padding:var(--space-6) var(--space-4)}
-  .help-content-heading h1{font-size:var(--font-size-title-md)}
+  .help-page-main{padding:20px 16px}
+  .help-content{padding:16px}
+  .help-content-heading h1{font-size:20px}
   .help-placeholder{min-height:280px;padding:var(--space-6) var(--space-4)}
   .help-content-heading,.help-resource-heading{flex-wrap:wrap}
   .help-manual-frame{height:65vh;min-height:320px}

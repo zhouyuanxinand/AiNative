@@ -54,6 +54,11 @@ def test_http_flow_freezes_two_templates_and_business_baseline(tmp_path):
     assert '"path"' not in json.dumps(binding)
     project = command('pull_workpackage', definition_id='taskbook')
     wid = project['cases'][0]['workpackages'][-1]['id']
+    project = command('create_flow_draft', workpackage_id=wid)
+    draft = project['cases'][0]['flow_drafts'][-1]
+    project = command('prepare_execution_bundle', draft_id=draft['id'])
+    candidate = project['cases'][0]['execution_candidates'][-1]
+    project = command('adopt_execution_bundle', candidate_id=candidate['id'], candidate_digest=candidate['digest'])
     project = command('submit_workpackage', workpackage_id=wid)
     package = project['cases'][0]['workpackages'][-1]
     assert package['status'] == 'submitted'

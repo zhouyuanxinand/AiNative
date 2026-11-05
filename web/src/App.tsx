@@ -13,7 +13,7 @@ type AppRoute =
   | { page: 'help'; kind: 'video' | 'manual' }
   | { page: 'review'; jid: string };
 
-const researchQueryKeys = new Set(['rd_view', 'project', 'case', 'q', 'page']);
+const researchQueryKeys = new Set(['rd_view', 'project', 'case', 'case_view', 'step', 'evidence', 'workpackage', 'management_q', 'management_kind', 'management_page', 'knowledge_q', 'knowledge_kind', 'knowledge_page', 'q', 'page', 'flow_tab', 'flow_kind', 'flow_item', 'flow_version', 'flow_detail', 'flow_q', 'flow_page', 'workspace_q', 'workspace_kind', 'workspace_page', 'workspace_item', 'workspace_version']);
 
 export function resolveAppRoute(pathname: string, search = '', hash = ''): AppRoute {
   const path = pathname.replace(/\/+$/, '') || '/';

@@ -35,6 +35,12 @@ const scenarios: Record<string, ScenarioManifest> = { taskbook };
 export function scenarioManifest(id: string): ScenarioManifest | undefined { return scenarios[id]; }
 
 export function scenarioStage(researchCase: ResearchCase, manifest?: ScenarioManifest): ScenarioStage {
+  if (researchCase.workflow_templates?.project && researchCase.stage === 'planning') return {
+    title: '研制任务书生成', guidance: researchCase.project_workflow_status?.status === 'completed'
+      ? '本次流程已完成，可查看任务书、质量报告及固定版本的执行记录。'
+      : '沿用已选流程，固定当前需求与文档模板；提交工作包后完成编制和质量校验。',
+    outcomeTitle: '研制任务书生成成果', outcome: 'artifacts', edit: researchCase.project_workflow_status?.status === 'completed' ? 'workpackages' : 'preparation', editLabel: researchCase.project_workflow_status?.status === 'completed' ? '查看任务书工作包' : '核对固定流程与任务书输入', primaryArtifactKinds: ['taskbook', 'docx'],
+  };
   if (manifest?.id === 'taskbook' && researchCase.business_lifecycle?.policy_version === 'v2') {
     if (researchCase.business_lifecycle.rd_activation_state === 'historical_unverified') return { ...manifest.stages[researchCase.stage], title: '历史记录待核对', guidance: '原阶段与成果继续保留，不能推断已取得研发启动或任务书范围批准。请在项目空间新建业务流程，按当前政策重新确认后续办。', edit: 'sources', editLabel: '核对历史来源' };
     if (researchCase.stage === 'selection') return { ...manifest.stages.selection, title: '选型决定与研发启动', guidance: '核对固定选型报告并记录决定；改型与新研需再单独确认研发启动。' };
@@ -49,6 +55,7 @@ export function scenarioStage(researchCase: ResearchCase, manifest?: ScenarioMan
 }
 
 export function nextCaseAction(researchCase: ResearchCase, manifest?: ScenarioManifest): { target: CaseSurface; label: string } | null {
+  if (researchCase.workflow_templates?.project && researchCase.project_workflow_status?.status === 'completed') return null;
   if (!manifest || researchCase.status === 'completed' || researchCase.business_lifecycle?.rd_activation_state === 'historical_unverified' && researchCase.business_lifecycle.policy_version === 'v2') return null;
   const stage = scenarioStage(researchCase, manifest);
   const state = summarizeCaseOutcome(researchCase);
@@ -71,6 +78,7 @@ export function nextCaseAction(researchCase: ResearchCase, manifest?: ScenarioMa
     if (researchCase.stage === 'planning') {
       const binding = researchCase.taskbook_binding;
       if (!binding || binding.status !== 'current' || binding.invalidated_at || binding.input_revision !== researchCase.input_revision) return { target: 'preparation', label: '采用流程并固定任务书输入' };
+      if (researchCase.workflow_templates?.project) return { target: 'workpackages', label: hasDeliverable ? '查看生成成果与执行记录' : '编排与执行任务书工作包' };
       return hasDeliverable && state.verification.kind === 'passed' ? { target: 'decision', label: '核对并批准任务书范围' } : { target: 'workpackages', label: '编排与执行任务书工作包' };
     }
   }

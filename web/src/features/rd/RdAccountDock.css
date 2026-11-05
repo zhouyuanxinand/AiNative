@@ -34,3 +34,14 @@
   .rd-account-dock-actions{display:contents}
   .rd-account-dock .rd-account-dock-error,.rd-account-dock .sidebar-logout-error{position:static;flex:0 0 100%;order:1}
 }
+
+/* Account controls remain legible on the engineering navigation rail. */
+.rd-application-shell .rd-account-dock{min-height:64px;padding-top:16px;border-color:var(--color-nav-border);color:var(--color-nav-text)}
+.rd-application-shell .rd-account-dock-avatar{width:30px;height:30px;flex-basis:30px;background:var(--color-nav-border,#20354a);color:var(--color-nav-text,#c8d3df)}
+.rd-application-shell .rd-account-dock-heading strong{font-size:13px;font-weight:500;color:var(--color-bg-surface)}
+.rd-application-shell .rd-account-dock-identity>span{color:var(--color-nav-text,#c8d3df)}
+.rd-application-shell .rd-account-dock-link,.rd-application-shell .rd-account-dock-refresh{color:var(--color-nav-text,#c8d3df)}
+.rd-application-shell .rd-account-dock-actions{gap:4px}
+.rd-application-shell .rd-account-dock-actions .sidebar-logout,.rd-application-shell .rd-account-dock-actions .rd-account-settings{height:30px;width:30px;flex-basis:30px;padding:6px;background:transparent;border-color:var(--color-nav-border,#20354a);color:var(--color-nav-text,#c8d3df)}
+.rd-application-shell .rd-account-dock-actions .sidebar-logout:hover,.rd-application-shell .rd-account-dock-actions .rd-account-settings:hover:not(:disabled),.rd-application-shell .rd-account-settings[aria-current=page]{background:var(--color-nav-border,#20354a);color:var(--color-bg-surface);border-color:var(--color-nav-text,#c8d3df)}
+@media(max-width:700px){.rd-application-shell .rd-account-dock{min-height:48px;padding-top:10px}}

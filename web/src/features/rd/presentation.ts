@@ -23,7 +23,7 @@ export const ROUTES = { direct: '直接选用', modification: '改型', new: '�
 export const COMPOSITION_ROUTES: Record<string, string> = { direct: '直接使用现有模板', adapt: '适配现有模板', new: '新建任务书模板' };
 export const routeTitle = (axis: string, value: string) => (axis === 'product' ? ROUTES[value as keyof typeof ROUTES] : COMPOSITION_ROUTES[value]) ?? value;
 export const isCurrentSource = (source: Source, selection: ResearchCase['source_selection']) => source.role === 'reference' || selection?.[source.role] === source.id;
-export const STATUS: Record<string, string> = { draft: '草稿', submitted: '已提交', pending: '待执行', running: '执行中', completed: '已完成', blocked: '已阻塞', failed: '执行失败', cancelled: '已取消', published: '已发布', retired: '已停用', approved: '已通过', rejected: '未通过' };
+export const STATUS: Record<string, string> = { validated: '验证通过', reviewed: '已审核', candidate: '候选', rolled_back: '已回退', draft: '草稿', submitted: '已提交', pending: '待执行', running: '执行中', completed: '已完成', blocked: '已阻塞', failed: '执行失败', cancelled: '已取消', published: '已发布', retired: '已停用', approved: '已通过', rejected: '未通过' };
 export const stageTitle = (id: string) => STAGES.find(stage => stage.id === id)?.title ?? id;
 export const statusTitle = (value?: string) => value ? STATUS[value] ?? value : '待执行';
 export const formatTime = (value?: string) => value && !Number.isNaN(new Date(value).getTime()) ? new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : '—';

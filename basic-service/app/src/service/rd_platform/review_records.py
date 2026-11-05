@@ -50,6 +50,10 @@ class ReviewRecords:
         sources = [row for row in self.store._active_sources(case) if row["role"] != "reference" or row["id"] in used_sources]
         for source in sources:
             self.store._checked_path(source)
+        selected = case.get('workflow_templates', {}).get('project')
+        workflow_reference = ({'id': selected['template_id'], 'version': selected['template_version'],
+                               'digest': selected['template_digest']} if selected else
+                              {"id": "taskbook-selection-v2", "version": "2"})
         return {"requirement_baseline_id": baseline["id"], "requirement_baseline_digest": baseline["digest"],
                 "input_revision": case["input_revision"], "context": deepcopy(case["context"]),
                 "business_context": deepcopy(case["business_context"]), "requirements": deepcopy(baseline["items"]),
@@ -57,7 +61,7 @@ class ReviewRecords:
                 "comparisons": comparisons, "product_route": deepcopy(case["product_route"]),
                 "composition_route": deepcopy(case["composition_route"]),
                 "report_template": {"id": "selection-report", "version": "1"},
-                "workflow_template": {"id": "taskbook-selection-v2", "version": "2"}}
+                "workflow_template": workflow_reference}
 
     def prepare_selection_review(self, project, case, data, actor):
         self._fields(data, {"expected_input_revision"})

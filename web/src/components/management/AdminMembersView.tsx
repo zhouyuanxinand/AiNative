@@ -1,3 +1,4 @@
+import { PlatformButton } from '../ui/PlatformButton';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { addAdminMember, getAdminMembers, removeAdminMember, type AdminMember, type AdminMembers } from '../../api/adminAccess';
 import { FeedbackConfirmDialog } from '../feedback/FeedbackDialog';
@@ -82,14 +83,14 @@ export function AdminMembersView({ active, canManage }: { active: boolean; canMa
           placeholder="例如：zhangsan" disabled={adding} required aria-invalid={Boolean(formError)}
           aria-describedby={`admin-member-hint${formError ? ' admin-member-error' : ''}`} onChange={event => { setDraft(event.target.value); setFormError(''); }} />
       </div>
-      <button type="submit" className="feedback-button primary" disabled={adding || deleting}>{adding ? '正在授权…' : '添加管理员'}</button>
+      <PlatformButton type="submit" className="feedback-button primary" disabled={adding || deleting}>{adding ? '正在授权…' : '添加管理员'}</PlatformButton>
       <p id="admin-member-hint" className="admin-member-hint">填写已有 OA 登录账号，不是中文显示姓名；此操作只授予管理权限，不创建 OA 账号或密码。</p>
       {formError && <p id="admin-member-error" role="alert" className="feedback-error">{formError}</p>}
     </form> : <p className="admin-member-readonly">当前名单只读。仅 wangxue 可以添加或移除管理员。</p>}
     {notice && <p role="status" className="feedback-notice">{notice}</p>}
     <div className="admin-member-list-heading"><div><h3 ref={listTitle} tabIndex={-1}>已授权账号</h3><p>名单中的账号仍需通过 OA 身份验证。</p></div>
-      <button type="button" className="feedback-button" disabled={loading} onClick={() => setRevision(value => value + 1)}>刷新名单</button></div>
-    {error && <div className="feedback-error" role="alert"><p>{error}</p><button type="button" className="feedback-link" onClick={() => setRevision(value => value + 1)}>重试加载名单</button></div>}
+      <PlatformButton type="button" className="feedback-button" disabled={loading} onClick={() => setRevision(value => value + 1)}>刷新名单</PlatformButton></div>
+    {error && <div className="feedback-error" role="alert"><p>{error}</p><PlatformButton type="button" className="feedback-link" onClick={() => setRevision(value => value + 1)}>重试加载名单</PlatformButton></div>}
     {loading ? <p className="feedback-empty" role="status">正在读取管理员名单…</p> : !error && data && <>
       <div className="admin-member-table-scroll"><table className="admin-member-table" aria-label="管理员权限名单"><thead><tr>
         <th scope="col">OA 登录账号</th><th scope="col">权限</th><th scope="col">授权时间（北京时间）</th><th scope="col">授权人</th>{canManage && <th scope="col">操作</th>}
@@ -97,7 +98,7 @@ export function AdminMembersView({ active, canManage }: { active: boolean; canMa
         <td data-label="OA 登录账号"><strong>{member.username}</strong></td><td data-label="权限">{member.is_owner ? '主管理员' : '管理员'}</td>
         <td data-label="授权时间"><time dateTime={member.created_at}>{feedbackTime(member.created_at)}</time></td><td data-label="授权人">{member.created_by || '系统初始化'}</td>
         {canManage && <td data-label="操作">{member.is_owner ? <span className="admin-member-protected">初始账号，不可移除</span> :
-          <button type="button" className="feedback-link danger-text" disabled={adding || deleting} aria-label={`移除管理员 ${member.username}`} onClick={() => { setRemove(member); setDeleteError(''); }}>移除</button>}</td>}
+          <PlatformButton type="button" className="feedback-link danger-text" disabled={adding || deleting} aria-label={`移除管理员 ${member.username}`} onClick={() => { setRemove(member); setDeleteError(''); }}>移除</PlatformButton>}</td>}
       </tr>)}</tbody></table></div>
       <p className="admin-member-count">共 {data.items.length} 个已授权账号</p>
     </>}

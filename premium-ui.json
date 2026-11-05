@@ -4,7 +4,7 @@
   "locale": "zh-CN",
   "canonicalMap": "UX-CONTRACT.md",
   "requiredCapabilities": ["Select/Listbox", "Date", "Form", "Scrollbar", "Toast", "CRUD"],
-  "ownership": { "Select/Listbox": "authored", "Date": "native" },
+  "ownership": { "Select/Listbox": "library:antd/Select via StyledSelect", "Date": "native" },
   "requiredCommands": ["build", "browser"],
   "commands": {
     "build": "npm --prefix web run build",

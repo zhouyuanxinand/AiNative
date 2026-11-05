@@ -1,70 +1,77 @@
-/* The research application follows the existing JONHON engineering workbench. */
-/* The global body is locked; this shell owns scrolling for every RD view. */
-.rd-application-shell{height:100vh;height:100dvh;min-height:0;overflow-y:auto;grid-template-columns:240px minmax(0,1fr);font-size:14px;line-height:1.6}
-.rd-application-shell .rd-sidebar{padding:24px 16px 20px;gap:22px;overflow:hidden;background:var(--color-bg-subtle);border-right:1px solid var(--color-border)}
-.rd-application-shell .rd-sidebar-navigation{display:flex;flex:1;min-height:0;min-width:0;flex-direction:column;gap:22px;overflow:auto}
+/* The application shell owns vertical scrolling; wide work surfaces own horizontal scrolling. */
+.rd-application-shell{height:100vh;height:100dvh;min-height:0;overflow-y:auto;grid-template-columns:216px minmax(0,1fr);font-size:14px;line-height:1.6}
+.rd-application-shell .rd-sidebar{padding:0 12px 16px;gap:16px;overflow:hidden;background:var(--color-nav-bg,#001529);border-right:1px solid var(--color-nav-border,#20354a);color:var(--color-nav-text,#c8d3df)}
+.rd-application-shell .rd-sidebar-navigation{display:flex;flex:1;min-height:0;min-width:0;flex-direction:column;gap:20px;overflow:auto;scrollbar-color:var(--color-nav-border,#20354a) var(--color-nav-bg,#001529)}
 .rd-application-shell .rd-sidebar-navigation>nav,.rd-application-shell .rd-sidebar-case{flex-shrink:0}
-.rd-application-shell .rd-brand-row{display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:12px;min-height:50px;padding:0 6px}
+.rd-application-shell .rd-brand-row{display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:8px;min-height:64px;padding:0 4px;border-bottom:1px solid var(--color-nav-border,#20354a)}
 .rd-application-shell .rd-brand{padding:0;border:0;display:block;min-width:0}
-.rd-application-shell .rd-brand img{display:block;width:145px;height:auto}
-.rd-sidebar-toggle,.rd-topbar-help a{display:flex;align-items:center;justify-content:center;width:34px;height:34px;padding:7px;border:1px solid var(--color-border);border-radius:var(--radius-control);background:var(--color-bg-surface);color:var(--color-text-secondary);flex-shrink:0}
-.rd-sidebar-toggle svg,.rd-topbar-help svg{width:20px;height:20px}
-.rd-sidebar-toggle:hover,.rd-topbar-help a:hover{color:var(--color-action);background:var(--color-action-subtle)}
-.rd-application-shell .rd-sidebar nav{gap:6px;display:grid;padding:0}
-.rd-application-shell .rd-sidebar nav button{gap:13px;min-height:44px;padding:11px 14px;font-size:14px;font-weight:400;color:var(--color-text-secondary);border-radius:var(--radius-control);white-space:nowrap}
-.rd-application-shell .rd-sidebar nav button>svg{width:20px;height:20px;flex-shrink:0}
+.rd-application-shell .rd-brand img{display:block;width:128px;height:auto}
+.rd-application-shell .rd-sidebar-toggle,.rd-topbar-help a{display:flex;align-items:center;justify-content:center;width:32px;height:32px;padding:6px;border:1px solid var(--color-border);border-radius:var(--radius-control);background:var(--color-bg-surface);color:var(--color-text-secondary);flex-shrink:0;box-shadow:none}
+.rd-application-shell .rd-sidebar-toggle{background:transparent;border-color:var(--color-nav-border,#20354a);color:var(--color-nav-text,#c8d3df)}
+.rd-sidebar-toggle svg,.rd-topbar-help svg{width:18px;height:18px}
+.rd-application-shell .rd-sidebar-toggle:hover:not(:disabled){background:var(--color-nav-border,#20354a);border-color:var(--color-nav-border,#20354a);color:var(--color-bg-surface)}
+.rd-topbar-help a:hover{color:var(--color-action);background:var(--color-action-subtle);border-color:var(--color-border-focus)}
+.rd-application-shell .rd-sidebar nav{gap:4px;display:grid;padding:0}
+.rd-application-shell .rd-sidebar nav button{display:flex;justify-content:flex-start;gap:11px;min-height:40px;height:40px;padding:9px 12px;border:0;box-shadow:none;background:transparent;font-size:14px;font-weight:400;color:var(--color-nav-text,#c8d3df);border-radius:var(--radius-control);white-space:nowrap;text-align:left}
+.rd-application-shell .rd-sidebar nav button>svg{width:18px;height:18px;flex-shrink:0}
 .rd-application-shell .rd-sidebar nav button>.rd-nav-label{width:auto;font-size:14px}
-.rd-application-shell .rd-sidebar nav button.active{background:var(--color-action-subtle);color:var(--color-action);font-weight:600}
-.rd-application-shell .rd-sidebar nav button:hover:not(:disabled){background:var(--color-bg-surface);color:var(--color-action)}
-.rd-application-shell .rd-sidebar nav button.active:hover{background:var(--color-action-subtle)}
+.rd-application-shell .rd-sidebar nav button.active{background:var(--color-nav-selected,var(--color-nav-hover));box-shadow:inset 3px 0 0 var(--color-nav-accent,var(--color-action));color:var(--color-bg-surface);font-weight:500}
+.rd-application-shell .rd-sidebar nav button:hover:not(:disabled){background:var(--color-nav-border,#20354a);color:var(--color-bg-surface)}
+.rd-application-shell .rd-sidebar nav button.active:hover{background:var(--color-nav-selected,var(--color-nav-hover))}
 .rd-application-shell .rd-sidebar nav button:focus-visible{outline-offset:-3px}
-.rd-application-shell .rd-sidebar-case{border-top:1px solid var(--color-border);padding:16px 0 0;margin:0}
-.rd-application-shell .rd-sidebar-case-label{font-size:12px;padding:0 12px;color:var(--color-text-secondary)}
-.rd-application-shell .rd-sidebar-case-name{font-size:13px;padding:0 12px;margin:5px 0 12px;line-height:1.6}
-.rd-application-shell .rd-sidebar-case nav button{font-size:13px;padding-left:18px;min-height:40px}
-.rd-application-shell .rd-topbar{min-height:80px;padding:16px 28px;gap:20px}
-.rd-platform-heading{display:flex;flex-direction:column;min-width:0;gap:2px}
-.rd-platform-heading strong{font-size:20px;font-weight:600;letter-spacing:0;line-height:1.5}
-.rd-platform-heading>span{font-size:13px;color:var(--color-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rd-topbar-help{display:flex;gap:10px;flex-shrink:0}
-.rd-application-shell .rd-page-content{padding:24px 28px 48px;max-width:1680px}
-.rd-application-shell h1{font-size:22px;letter-spacing:0;font-weight:600;line-height:1.5}
-.rd-application-shell h2{font-size:18px;letter-spacing:0;font-weight:600}
-.rd-application-shell h3{font-size:15px}
-.rd-application-shell .rd-page-title{margin:0 0 22px;align-items:center}
+.rd-application-shell .rd-sidebar-case{border-top:1px solid var(--color-nav-border,#20354a);padding:16px 0 0;margin:0}
+.rd-application-shell .rd-sidebar-case-label{font-size:12px;padding:0 12px;margin:0;color:var(--color-nav-text,#c8d3df)}
+.rd-application-shell .rd-sidebar-case-name{font-size:13px;padding:0 12px;margin:6px 0 12px;line-height:1.6;color:var(--color-bg-surface)}
+.rd-application-shell .rd-sidebar-case-hint{color:var(--color-nav-text,#c8d3df)}
+.rd-application-shell .rd-sidebar-case nav button{font-size:13px;padding-left:18px;min-height:36px;height:36px}
+.rd-application-shell .rd-sidebar-case nav button>span{width:auto;font-size:13px;text-align:left}
+.rd-application-shell .rd-topbar{height:64px;min-height:64px;padding:8px 32px;gap:16px;box-shadow:0 1px 0 var(--color-border)}
+.rd-platform-heading{display:flex;flex-direction:column;min-width:0;gap:0}
+.rd-platform-heading strong{font-size:17px;font-weight:600;letter-spacing:0;line-height:1.5}
+.rd-platform-heading>span{font-size:12px;line-height:1.5;color:var(--color-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rd-topbar-help{display:flex;gap:8px;flex-shrink:0}
+.rd-application-shell .rd-page-content{padding:28px 32px 48px;max-width:1680px}
+.rd-application-shell h1{font-size:24px;letter-spacing:0;font-weight:600;line-height:1.4}
+.rd-application-shell h2{font-size:20px;letter-spacing:0;font-weight:600}
+.rd-application-shell h3{font-size:16px}
+.rd-application-shell .rd-page-title{margin:0 0 24px;align-items:center}
 .rd-application-shell .rd-page-title h1{margin:0}
-.rd-application-shell .rd-page-title p{font-size:13px;margin-top:5px}
+.rd-application-shell .rd-page-title p{font-size:14px;margin-top:7px;line-height:1.75}
 .rd-application-shell .rd-page-title>.rd-button{margin:0;font-size:14px}
-.rd-application-shell .rd-management-page{padding:0}
+.rd-application-shell .rd-page-content.rd-management-page{padding:0;max-width:none}
 .rd-application-shell .rd-management-tools{font-size:14px}
 .rd-application-shell .rd-project-business-context{font-size:13px;padding:16px 0}
-.rd-application-shell .rd-case-heading{margin:16px 0 22px}
+.rd-application-shell .rd-case-heading{margin:16px 0 20px}
 .rd-application-shell .rd-case-kind{font-size:13px}
 .rd-application-shell .rd-outcome-heading{padding-top:0}
 .rd-application-shell .rd-outcome-heading h2{font-size:20px}
 .rd-application-shell .rd-outcome-statuses dt,.rd-application-shell .rd-outcome-statuses dd{font-size:13px}
-.rd-application-shell.is-sidebar-collapsed{grid-template-columns:76px minmax(0,1fr)}
-.rd-application-shell.is-sidebar-collapsed .rd-sidebar{padding-inline:12px}
+.rd-application-shell .rd-list-toolbar .rd-search>.ant-btn{padding:0 6px;border:0;box-shadow:none;background:transparent;height:28px}
+.rd-application-shell.is-sidebar-collapsed{grid-template-columns:64px minmax(0,1fr)}
+.rd-application-shell.is-sidebar-collapsed .rd-sidebar{padding-inline:8px}
 .rd-application-shell.is-sidebar-collapsed .rd-brand-row{justify-content:center;padding:0}
 .rd-application-shell.is-sidebar-collapsed .rd-brand,.rd-application-shell.is-sidebar-collapsed .rd-nav-label,.rd-application-shell.is-sidebar-collapsed .rd-sidebar-case{display:none}
 .rd-application-shell.is-sidebar-collapsed .rd-sidebar nav button{justify-content:center;padding-inline:10px}
-@media(max-width:1100px){.rd-application-shell{grid-template-columns:210px minmax(0,1fr)}.rd-application-shell .rd-sidebar{padding-inline:12px}.rd-application-shell .rd-brand img{width:125px}.rd-application-shell .rd-topbar{padding-inline:22px}.rd-application-shell .rd-page-content{padding-inline:22px}}
+@media(max-width:1100px){.rd-application-shell .rd-page-content{padding-inline:20px}.rd-application-shell .rd-topbar{padding-inline:20px}}
+@media(max-width:900px){.rd-application-shell .rd-page-title{align-items:stretch}}
 @media(max-width:700px){
   .rd-application-shell,.rd-application-shell.is-sidebar-collapsed{display:block}
-  .rd-application-shell .rd-sidebar{position:static;height:auto;padding:14px 16px 12px;gap:12px;border-right:0;border-bottom:1px solid var(--color-border)}
-  .rd-application-shell .rd-sidebar-navigation{flex:none;overflow:visible;gap:12px}
-  .rd-application-shell .rd-brand-row{min-height:30px;padding:0;justify-content:space-between}
+  .rd-application-shell .rd-sidebar{position:static;height:auto;padding:0 16px 12px;gap:10px;border-right:0;border-bottom:1px solid var(--color-nav-border,#20354a)}
+  .rd-application-shell .rd-sidebar-navigation{flex:none;overflow:hidden;gap:12px}
+  .rd-application-shell .rd-brand-row{min-height:56px;padding:0;justify-content:space-between}
   .rd-application-shell .rd-brand img{width:120px}
-  .rd-application-shell .rd-sidebar nav{display:flex;overflow-x:auto;gap:6px;padding:3px 0 9px}
-  .rd-application-shell .rd-sidebar nav button{font-size:13px;gap:7px;padding:9px 12px;min-height:42px;width:auto;flex-shrink:0}
+  .rd-application-shell .rd-sidebar nav{display:flex;overflow-x:auto;gap:4px;padding:0 0 6px}
+  .rd-application-shell .rd-sidebar nav button{font-size:13px;gap:7px;padding:9px 12px;min-height:40px;width:auto;flex-shrink:0}
   .rd-application-shell .rd-sidebar nav button>.rd-nav-label{font-size:13px}
   .rd-application-shell .rd-sidebar-case{padding-top:12px}
   .rd-application-shell .rd-sidebar-case-label{display:none}
   .rd-application-shell .rd-sidebar-case-name{margin-top:0;padding:0}
   .rd-application-shell .rd-sidebar-case nav{padding-bottom:0}
-  .rd-application-shell .rd-topbar{position:static;padding:15px 16px;min-height:76px}
-  .rd-platform-heading strong{font-size:18px}
+  .rd-application-shell .rd-topbar{position:static;flex-wrap:nowrap;padding:8px 16px;height:64px;min-height:64px}
+  .rd-platform-heading strong{font-size:17px}
   .rd-application-shell .rd-page-content{padding:20px 16px 32px}
+  .rd-application-shell h1{font-size:22px}
+  .rd-application-shell h2{font-size:18px}
   .rd-application-shell.is-sidebar-collapsed .rd-brand{display:block}
   .rd-application-shell.is-sidebar-collapsed .rd-brand-row{justify-content:space-between}
   .rd-application-shell.is-sidebar-collapsed .rd-sidebar-navigation{display:none}

@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {readFile} from 'node:fs/promises';
+import {createRequire} from 'node:module';
+const ts=createRequire(new URL('../../../package.json',import.meta.url))('typescript');
+const {outputText}=ts.transpileModule(await readFile(new URL('./workflowTemplateDiff.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2021}});
+const {workflowTemplateDiff}=await import('data:text/javascript;base64,'+Buffer.from(outputText).toString('base64'));
+const a={title:'测试流程',product_route:'modification',graph:{nodes:[{id:'a',title:'资料检查',role:'工程师',deliverables:['核查记录'],position:{x:10,y:20}},{id:'b',title:'批准'}],edges:[{id:'ab',source:'a',target:'b'}]}};
+test('layout-only edits do not appear as business or dependency changes',()=>{const b=structuredClone(a);b.graph.nodes[0].position.x=55;assert.deepEqual(workflowTemplateDiff(a,b).map(x=>x.kind),['仅布局']);assert.equal(a.graph.nodes[0].position.x,10);});
+test('dependency identity follows endpoints, not generated edge ids',()=>{const b=structuredClone(a);b.graph.edges[0].id='replacement-id';assert.deepEqual(workflowTemplateDiff(a,b),[]);b.graph.edges[0].source='b';b.graph.edges[0].target='a';assert.deepEqual(workflowTemplateDiff(a,b).map(x=>x.kind),['删除依赖','新增依赖']);});
+test('business values and fixed action versions remain understandable',()=>{const b=structuredClone(a);b.product_route='new';b.graph.nodes[0].role='研发负责人';b.graph.nodes[0].action_resource={resource_id:'team',resource_version:2};const rows=workflowTemplateDiff(a,b,{team:'资料检查动作'});assert.equal(rows[0].after,'全新研发');assert(rows.some(x=>x.after==='研发负责人'));assert(rows.some(x=>x.after==='资料检查动作 · V2'));});

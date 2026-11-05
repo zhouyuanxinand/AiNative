@@ -230,6 +230,7 @@ def execute(action_id, snapshot, previous_results, work_dir, progress, cancelled
             return _consistency(snapshot, previous_results, blocks)
         plan = _previous(previous_results, "template_plan")
         if action_id == "content_completion":
+            from .completion_loop import run_completion
             if not plan.get("selection") or not plan.get("assets", {}).get("template"):
                 raise EvidenceBlocked("缺少有效受控模板计划")
             engine_bridge.check_assets(plan["assets"])
@@ -240,16 +241,21 @@ def execute(action_id, snapshot, previous_results, work_dir, progress, cancelled
                 profile=profile, requirements=snapshot.get("requirements", []),
                 clarifications=snapshot.get("clarifications", []),
             )
+            ledger, session = run_completion(snapshot, ledger, blocks, progress, cancelled,
+                                             resume=snapshot.get("completion_resume"),
+                                             asset_refs={key: {"sha256": value.get("sha256")} for key, value in plan["assets"].items()})
             obligations = [item for item in ledger if item["status"] == "blocked"]
             conversions = {block["source_id"]: block["normalization"] for block in blocks
                            if block.get("normalization", {}).get("requires_review")}
             # The original engine can produce a review copy with unresolved
             # business inputs. Such a copy is never a formally approved output.
             generation_ready = (plan.get("publish_ready") is True
+                                and session["stop_reason"] not in {"cancelled", "permission_revoked", "source_invalid", "deadline_exceeded", "budget_exhausted"}
                                 and all(sum(source["role"] == role for source in snapshot.get("sources", [])) == 1
                                         for role in ("tech", "spec")))
-            result = {"ledger": ledger, "ready": not obligations and not conversions,
+            result = {"ledger": ledger, "ready": not obligations and not conversions and session["stop_reason"] == "converged",
                       "generation_ready": generation_ready, "conversion_review": conversions,
+                      "completion_session": session,
                       "coverage_scope": "all_retained_template_sections_and_gaps",
                       "policy": "exact local source evidence; original engine copies text; no invented engineering facts"}
             asset = engine_bridge.write_json(directory / "completion_ledger.json", result, "completion_ledger")

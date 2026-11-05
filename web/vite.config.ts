@@ -5,6 +5,7 @@ const apiTarget = process.env.JTB_API_PROXY_TARGET || 'http://127.0.0.1:18130';
 const adminTarget = process.env.JTB_ADMIN_PROXY_TARGET || 'http://127.0.0.1:18131';
 
 export default defineConfig({
+  build: { target: 'chrome104', cssTarget: 'chrome104' },
   plugins: [react(), {
     name: 'admin-home-redirect',
     configureServer(server) {

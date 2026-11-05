@@ -1,0 +1,92 @@
+/** Isolated UI fixtures: no live resources, projects or grants are changed. */
+import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const browser = await chromium.launch({ headless: true });
+const base = process.env.TEST_BASE_URL || 'http://127.0.0.1:18370';
+const output = process.env.SCREENSHOT_DIR;
+if (output) await mkdir(output, { recursive: true });
+const errors = [], writes = [], failedLoads = [];
+let failSave = false;
+const team = { id: 'team-ux', kind: 'team', name: '任务书编制专家团', version: 1, head_version: 1, status: 'draft', available_versions: [1], resource_retired: false, executable: true, control_revision: 1, publication_revision: 1, configuration: { members: [], inputs: ['需求文件'], outputs: ['研制任务书'], execution_graph: { nodes: [], edges: [] } } };
+const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+page.on('response', response => { if (response.status() >= 400) failedLoads.push({ url: response.url(), status: response.status() }); });
+page.on('requestfailed', request => failedLoads.push({ url: request.url(), failure: request.failure() }));
+page.on('console', message => { if (message.type() === 'error') failedLoads.push(message.text()); });
+page.setDefaultTimeout(15000); page.on('pageerror', error => errors.push(error.message));
+await page.route('**/api/**', async route => {
+  const req = route.request(), path = new URL(req.url()).pathname;
+  if (!path.startsWith('/api/')) return route.continue();
+  const json = data => route.fulfill({ json: data });
+  if (path === '/api/current-user') return json({ auth_enabled: false, authenticated: false, user: null });
+  if (path === '/api/rd/session') return json({ ok: true });
+  if (path === '/api/rd/catalog') return json({ stages: [], scenarios: [], actions: [], workpackage_definitions: [] });
+  if (path === '/api/rd/projects') return json({ projects: [] });
+  if (path === '/api/rd/workspace/session') return json({ application_id: 'local', can_edit_resources: true, can_publish_resources: true, can_manage_application_grants: true });
+  if (path === '/api/rd/workspace/resources' && req.method() === 'POST') {
+    writes.push(req.postDataJSON());
+    if (failSave) return route.fulfill({ status: 503, json: { error: '资源服务暂不可用，请稍后重试。' } });
+    return json(team);
+  }
+  if (path === '/api/rd/workspace/resources') return json({ items: [team], resources: [team], total: 1, page: 1, page_size: 5, total_pages: 1 });
+  if (path.startsWith('/api/rd/workspace/resources/')) return json(team);
+  return json({});
+});
+const snap = async name => { if (output) await page.screenshot({ path: join(output, name), fullPage: false }); };
+try {
+  await page.goto(`${base}/?rd_view=workspace&workspace_item=team-ux&workspace_version=1`);
+  await page.getByRole('button', { name: '编辑资源', exact: true }).click();
+  const editor = page.locator('.rd-resource-editor');
+  await editor.waitFor();
+  const contracts = page.getByLabel('输入合同（每行一项）', { exact: true });
+  assert.equal(await contracts.count(), 2, 'readonly detail and editor coexist with distinct labels');
+  const ids = await contracts.evaluateAll(nodes => nodes.map(node => node.id));
+  assert.equal(new Set(ids).size, 2, 'team field IDs are instance-unique');
+  await editor.locator(`label[for="${ids[1]}"]`).click();
+  assert.equal(await contracts.last().evaluate(node => document.activeElement === node), true);
+  await contracts.last().fill('需求文件\n产品规范');
+  await page.getByText('有未保存的资源填写。保存或取消后可切换固定版本及办理发布、授权。', { exact: true }).waitFor();
+  assert.equal(await editor.getByLabel('资源配置（JSON）', { exact: true }).isVisible(), false, 'raw team JSON starts collapsed');
+  await editor.getByText('高级配置（JSON）', { exact: true }).click();
+  const config = editor.getByLabel('资源配置（JSON）', { exact: true });
+  assert.deepEqual(JSON.parse(await config.inputValue()).inputs, ['需求文件', '产品规范']);
+  for (const incomplete of [{ members: {} }, { execution_graph: {} }, { inputs: {} }, { execution_graph: { nodes: [null], edges: [] } }, { execution_graph: { nodes: [{ id: 'n', resource_version: {} }], edges: [] } }]) {
+    await config.fill(JSON.stringify(incomplete));
+    await editor.getByRole('status').filter({ hasText: '团队配置暂时无法显示' }).waitFor();
+    assert.equal(await config.inputValue(), JSON.stringify(incomplete), 'incomplete JSON is preserved for correction');
+  }
+  await config.fill(JSON.stringify(team.configuration));
+  await editor.getByLabel('输入合同（每行一项）', { exact: true }).waitFor();
+  await config.fill('{ broken');
+  await editor.getByText('高级配置（JSON）', { exact: true }).click();
+  await editor.getByRole('button', { name: '保存资源', exact: true }).click();
+  await page.waitForFunction(() => document.activeElement?.id === 'rd-resource-configuration');
+  assert.equal(await config.getAttribute('aria-invalid'), 'true');
+  assert.equal(writes.length, 0, 'invalid JSON is not sent');
+  await config.fill(JSON.stringify(team.configuration));
+  await page.getByRole('button', { name: '定位填写区', exact: true }).click();
+  assert.equal(await page.evaluate(() => document.activeElement?.id), 'rd-resource-name');
+  await page.getByLabel('资源名称', { exact: true }).fill('修改后保留名称');
+  await editor.getByRole('button', { name: '取消编辑', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '继续编辑', exact: true }).click();
+  assert.equal(await page.getByLabel('资源名称', { exact: true }).inputValue(), '修改后保留名称');
+  failSave = true;
+  await editor.getByRole('button', { name: '保存资源', exact: true }).click();
+  await page.getByRole('alert').filter({ hasText: '资源服务暂不可用' }).waitFor();
+  assert.equal(await page.getByLabel('资源名称', { exact: true }).inputValue(), '修改后保留名称');
+  await snap('workspace-team-editor-desktop.png');
+  await page.setViewportSize({ width: 390, height: 520 });
+  await editor.getByRole('button', { name: '取消编辑', exact: true }).scrollIntoViewIfNeeded();
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+  await snap('workspace-editor-mobile-short.png');
+  await editor.getByRole('button', { name: '取消编辑', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '放弃填写', exact: true }).click();
+  assert.equal(writes.length, 1, 'cancel does not mutate server resources');
+  await page.getByRole('heading', { name: '新建资源', exact: true }).waitFor();
+  assert.equal(await page.getByLabel('资源名称', { exact: true }).inputValue(), '');
+  assert.equal(await page.getByRole('button', { name: '编辑资源', exact: true }).isEnabled(), true);
+  await page.getByText('此版本尚未发布，发布后才可授予应用。', { exact: true }).waitFor();
+  assert.deepEqual(errors, []);
+  console.log('Workspace UX: unique labels, advanced config recovery, dirty guidance, cancel, failed-save retention and mobile layout passed.');
+} catch (error) { console.error({ body: await page.locator('body').innerText(), errors, failedLoads }); throw error; } finally { await browser.close(); }

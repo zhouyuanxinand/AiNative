@@ -1,0 +1,29 @@
+.rd-project-entries { align-items: start; }
+.rd-project-entry.rd-project-overview-card > header { align-items: center; padding-bottom: 12px; }
+.rd-project-overview-card > header > h3 { flex: 1; }
+.rd-project-overview-body { padding: 0 22px 18px; }
+.rd-project-overview-profile,
+.rd-project-overview-meta { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px 20px; margin: 0; font-size: 12px; line-height: 1.6; }
+.rd-project-overview-profile > div,
+.rd-project-overview-meta > div { min-width: 0; }
+.rd-project-overview-profile dt,
+.rd-project-overview-meta dt { color: var(--color-text-secondary); }
+.rd-project-overview-profile dd,
+.rd-project-overview-meta dd { margin: 3px 0 0; color: var(--color-text-primary); overflow-wrap: anywhere; }
+.rd-project-overview-card .rd-project-goal-preview { margin: 12px 0 0; }
+.rd-project-overview-counts { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); margin: 16px 0; padding: 14px 0; background: var(--color-bg-subtle); border-radius: var(--radius-control); }
+.rd-project-overview-counts > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 0 16px; }
+.rd-project-overview-counts > div + div { border-left: 1px solid var(--color-border); }
+.rd-project-overview-counts dt { font-size: 12px; line-height: 1.5; color: var(--color-text-secondary); }
+.rd-project-overview-counts dd { margin: 0; font-size: 24px; line-height: 1.3; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--color-text-primary); }
+.rd-project-overview-counts .has-attention dd { color: var(--color-warning); }
+.rd-project-overview-card .rd-project-cases { background: var(--color-bg-subtle); }
+@media(max-width:700px) {
+  .rd-project-entry.rd-project-overview-card > header { flex-wrap: wrap; padding: 16px 18px 12px; gap: 8px; }
+  .rd-project-overview-card > header > h3 { min-width: 120px; }
+  .rd-project-overview-body { padding: 0 18px 16px; }
+  .rd-project-overview-counts > div { padding: 0 12px; }
+  .rd-project-overview-counts dd { font-size: 22px; }
+  .rd-project-overview-profile,
+  .rd-project-overview-meta { gap: 10px 12px; }
+}

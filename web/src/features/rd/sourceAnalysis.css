@@ -1,6 +1,10 @@
 .rd-source-analysis{margin-top:22px;min-width:0}
 .rd-source-analysis .rd-section-head{align-items:flex-start;gap:18px}
 .rd-source-analysis .rd-section-head>.rd-button{flex-shrink:0}
+.rd-analysis-model-settings{margin:0 0 18px;min-width:0}
+.rd-analysis-controls{display:flex;align-items:flex-end;gap:12px;min-width:0}
+.rd-source-analysis .rd-analysis-controls>.rd-analysis-model-field{flex:1;min-width:0;margin:0}
+.rd-analysis-controls>.rd-button{flex-shrink:0}
 .rd-analysis-meta{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;font-size:12px;color:var(--color-text-secondary);margin:20px 0}
 .rd-analysis-context{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 28px;margin:22px 0 0}
 .rd-analysis-context-item{padding:18px 0;border-top:1px solid var(--color-border);min-width:0}
@@ -19,9 +23,6 @@
 .rd-analysis-warnings{margin:12px 0 22px}
 .rd-analysis-warnings li{margin:8px 0;line-height:1.7}
 .rd-analysis-requirements{border-top:1px solid var(--color-border);padding-top:22px;margin-top:20px}
-.rd-analysis-requirements article{padding:18px 0;border-bottom:1px solid var(--color-border)}
-.rd-analysis-requirements h5{font-size:14px;margin:0 0 10px}
-.rd-analysis-requirements article>p{font-size:13px;line-height:1.85;overflow-wrap:anywhere}
 .rd-analysis-pagination{display:flex;justify-content:flex-end;align-items:center;gap:14px;margin-top:18px;font-size:12px;color:var(--color-text-secondary)}
 .rd-analysis-adopt{display:flex;justify-content:space-between;align-items:center;gap:24px;margin-top:22px}
 .rd-analysis-adopt>p{font-size:12px;color:var(--color-text-secondary);line-height:1.8}
@@ -30,3 +31,4 @@
 .rd-requirement-supplement>summary{cursor:pointer;color:var(--color-text-secondary);font-size:13px}
 .rd-requirement-supplement>form{margin-top:20px}
 @media(max-width:700px){.rd-analysis-context{grid-template-columns:1fr}.rd-source-analysis>.rd-section-head,.rd-analysis-adopt{flex-direction:column;align-items:stretch}.rd-analysis-adopt>.rd-button{align-self:flex-end}.rd-analysis-pagination{justify-content:space-between}}
+@media(max-width:700px){.rd-analysis-controls{flex-direction:column;align-items:stretch}.rd-source-analysis .rd-analysis-controls>.rd-analysis-model-field{flex:auto}.rd-analysis-controls>.rd-button{align-self:flex-end}}

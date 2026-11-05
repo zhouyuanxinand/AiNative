@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type RefObject } from 'react';
-import { clampLauncherPosition, crossedLauncherDragThreshold, launcherAnchorAt, launcherPosition, parseLauncherAnchor, type LauncherAnchor, type LauncherGeometry, type LauncherPoint } from './launcherGeometry';
+import { clampLauncherPosition, crossedLauncherDragThreshold, launcherAnchorAt, launcherDockEdge, launcherPosition, parseLauncherAnchor, type LauncherAnchor, type LauncherGeometry, type LauncherPoint } from './launcherGeometry';
 
 const POSITION_KEY = 'rd-xiaohang-launcher-position-v1';
 const DEFAULT_ANCHOR: LauncherAnchor = { edge: 'right', y: 1 };
@@ -8,6 +8,9 @@ interface DragSession { pointerId: number; x: number; y: number; start: Launcher
 /** Pointer dragging and keyboard placement share the same measured visual bounds. */
 export function useAssistantLauncherDrag(launcher: RefObject<HTMLButtonElement>, enabled: boolean, activate: () => void) {
   const [position, setPosition] = useState<LauncherPoint | null>(null), [launcherDragging, setLauncherDragging] = useState(false);
+  const [launcherPressed, setLauncherPressed] = useState(false);
+  const [dockedEdge, setDockedEdge] = useState<LauncherAnchor['edge'] | null>(null);
+  const [dockingEdge, setDockingEdge] = useState<LauncherAnchor['edge'] | null>(null);
   const anchor = useRef<LauncherAnchor>({ ...DEFAULT_ANCHOR }), initialized = useRef(false), geometry = useRef<LauncherGeometry | null>(null);
   const gesture = useRef<DragSession | null>(null), suppressClick = useRef(false);
 
@@ -15,7 +18,7 @@ export function useAssistantLauncherDrag(launcher: RefObject<HTMLButtonElement>,
     const button = launcher.current;
     if (!button) return null;
     const rect = button.getBoundingClientRect();
-    const visual = [rect, ...Array.from(button.querySelectorAll('.rd-floating-figure')).map(node => node.getBoundingClientRect())];
+    const visual = [rect, ...Array.from(button.querySelectorAll('.rd-floating-figure,.rd-floating-launcher-label')).map(node => node.getBoundingClientRect())];
     const left = Math.min(...visual.map(box => box.left)), top = Math.min(...visual.map(box => box.top));
     const right = Math.max(...visual.map(box => box.right)), bottom = Math.max(...visual.map(box => box.bottom));
     const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
@@ -25,10 +28,11 @@ export function useAssistantLauncherDrag(launcher: RefObject<HTMLButtonElement>,
   }
   function remember(next: LauncherAnchor) {
     anchor.current = next;
+    setDockedEdge(next.hidden ? next.edge : null);
     try { window.localStorage.setItem(POSITION_KEY, JSON.stringify(next)); } catch { /* Position remains usable when browser storage is unavailable. */ }
   }
-  function snap(point: LauncherPoint, area: LauncherGeometry) {
-    const next = launcherAnchorAt(point, area);
+  function snap(point: LauncherPoint, area: LauncherGeometry, edge: LauncherAnchor['edge'] | null = null) {
+    const next = { ...launcherAnchorAt(point, area), ...(edge ? { edge, hidden: true } : {}) };
     remember(next); setPosition(launcherPosition(next, area));
   }
 
@@ -37,6 +41,7 @@ export function useAssistantLauncherDrag(launcher: RefObject<HTMLButtonElement>,
     if (!initialized.current) {
       initialized.current = true;
       try { anchor.current = parseLauncherAnchor(window.localStorage.getItem(POSITION_KEY)) || { ...DEFAULT_ANCHOR }; } catch { /* Browser storage is optional for this UI preference. */ }
+      setDockedEdge(anchor.current.hidden ? anchor.current.edge : null);
     }
     const reposition = () => { const area = measure(); if (area && !gesture.current) setPosition(launcherPosition(anchor.current, area)); };
     reposition();
@@ -46,7 +51,7 @@ export function useAssistantLauncherDrag(launcher: RefObject<HTMLButtonElement>,
     if (figure) observer.observe(figure);
     window.addEventListener('resize', reposition);
     window.visualViewport?.addEventListener('resize', reposition);
-    return () => { observer.disconnect(); window.removeEventListener('resize', reposition); window.visualViewport?.removeEventListener('resize', reposition); gesture.current = null; };
+    return () => { observer.disconnect(); window.removeEventListener('resize', reposition); window.visualViewport?.removeEventListener('resize', reposition); gesture.current = null; setLauncherDragging(false); setLauncherPressed(false); setDockingEdge(null); };
   }, [enabled, launcher]);
 
   function pointerDown(event: PointerEvent<HTMLButtonElement>) {
@@ -56,6 +61,7 @@ export function useAssistantLauncherDrag(launcher: RefObject<HTMLButtonElement>,
     const rect = event.currentTarget.getBoundingClientRect();
     const start = { x: rect.left, y: rect.top };
     suppressClick.current = false;
+    setLauncherPressed(true);
     gesture.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, start, current: start, moved: false };
     event.currentTarget.focus({ preventScroll: true });
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -68,6 +74,7 @@ export function useAssistantLauncherDrag(launcher: RefObject<HTMLButtonElement>,
     if (!session.moved) { session.moved = true; setLauncherDragging(true); }
     event.preventDefault();
     session.current = clampLauncherPosition({ x: session.start.x + dx, y: session.start.y + dy }, area);
+    setDockingEdge(launcherDockEdge(event.clientX, area.viewport.width));
     setPosition(session.current);
   }
   function finishPointer(event: PointerEvent<HTMLButtonElement>, cancelled = false) {
@@ -75,8 +82,9 @@ export function useAssistantLauncherDrag(launcher: RefObject<HTMLButtonElement>,
     if (!session || session.pointerId !== event.pointerId) return;
     gesture.current = null;
     suppressClick.current = session.moved && !cancelled;
-    if (session.moved && area) snap(session.current, area);
+    if (session.moved && area) snap(session.current, area, cancelled ? null : launcherDockEdge(event.clientX, area.viewport.width));
     setLauncherDragging(false);
+    setLauncherPressed(false); setDockingEdge(null);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     // Touch/pen can omit a compatibility click after pointer capture. Complete
     // an unmoved tap here; the launcher hides before a later synthetic click.
@@ -90,11 +98,12 @@ export function useAssistantLauncherDrag(launcher: RefObject<HTMLButtonElement>,
     suppressClick.current = false; activate();
   }
   function keyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    if (event.key === 'Escape') { event.preventDefault(); remember({ ...anchor.current, hidden: true }); return; }
     if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home'].includes(event.key)) return;
     event.preventDefault();
     const area = measure();
     if (!area) return;
-    let next = anchor.current;
+    let next: LauncherAnchor = { ...anchor.current, hidden: false };
     if (event.key === 'Home') next = { ...DEFAULT_ANCHOR };
     else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') next = { ...next, edge: event.key === 'ArrowLeft' ? 'left' : 'right' };
     else {
@@ -103,7 +112,11 @@ export function useAssistantLauncherDrag(launcher: RefObject<HTMLButtonElement>,
     }
     remember(next); setPosition(launcherPosition(next, area));
   }
-  return { position, launcherDragging, launcherEvents: { onPointerDown: pointerDown, onPointerMove: pointerMove,
+  function reveal() {
+    remember({ ...anchor.current, hidden: false });
+    window.requestAnimationFrame(() => launcher.current?.focus({ preventScroll: true }));
+  }
+  return { position, launcherDragging, launcherPressed, dockedEdge, dockingEdge, reveal, launcherEvents: { onPointerDown: pointerDown, onPointerMove: pointerMove,
     onPointerUp: (event: PointerEvent<HTMLButtonElement>) => finishPointer(event),
     onPointerCancel: (event: PointerEvent<HTMLButtonElement>) => finishPointer(event, true),
     onLostPointerCapture: (event: PointerEvent<HTMLButtonElement>) => finishPointer(event, true), onClick: click, onKeyDown: keyDown } };

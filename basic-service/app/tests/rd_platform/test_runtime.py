@@ -212,7 +212,8 @@ def test_retirement_remains_effective_when_only_a_draft_revision_is_saved(tmp_pa
     store, project = submitted(tmp_path)
     resource = store.get_resource("resolve_context")
     retired = store.save_resource("manager", {**resource, "operation": "retire", "expected_version": 1}, can_manage=True)
-    store.save_resource("manager", {**retired, "operation": "save", "expected_version": 2}, can_manage=True)
+    assert retired["version"] == 1
+    store.save_resource("manager", {**retired, "operation": "save", "expected_version": 1}, can_manage=True)
     assert store.claim_node() is None and package_of(store, project)["status"] == "blocked"
 
 

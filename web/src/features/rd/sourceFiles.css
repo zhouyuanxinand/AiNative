@@ -1,0 +1,43 @@
+.rd-source-file-grid { display: grid; grid-template-columns: repeat(2, fit-content(calc((100% - 12px) / 2))); justify-content: start; gap: 12px; margin-top: 10px; }
+.rd-source-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  width: fit-content;
+  max-width: 100%;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-action-subtle);
+}
+.rd-source-file-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: var(--radius-control);
+  background: var(--color-action-subtle);
+  color: var(--color-action);
+  font-size: 26px;
+}
+.rd-source-file-icon.is-pdf { color: var(--color-error); background: var(--color-error-bg); }
+.rd-source-file-icon.is-sheet { color: var(--color-success); background: var(--color-success-bg); }
+.rd-source-file-icon.is-slides { color: var(--color-warning); background: var(--color-warning-bg); }
+.rd-source-card-content { flex: 1; min-width: 0; }
+.rd-source-file-name { display: inline-block; max-width: 100%; font-size: 14px; font-weight: 500; line-height: 1.6; overflow-wrap: anywhere; color: var(--color-action); }
+.rd-source-file-name:hover { text-decoration: underline; }
+.rd-source-file-name:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 3px; border-radius: 2px; }
+.rd-source-file-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-top: 6px; font-size: 12px; color: var(--color-text-secondary); }
+.rd-source-file-meta .rd-badge { font-size: 11px; padding: 1px 6px; white-space: normal; }
+.rd-source-card-content > .rd-link-button { margin-top: 5px; padding: 0; height: auto; font-size: 12px; }
+.rd-source-delete-anchor { display: inline-flex; flex-shrink: 0; }
+.rd-source-delete-anchor .ant-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; color: var(--color-text-secondary); }
+.rd-source-delete-anchor .ant-btn:not(:disabled):hover { color: var(--color-error); background: var(--color-error-bg); }
+.rd-source-delete-name { overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .rd-source-file-grid { grid-template-columns: minmax(0, 1fr); }
+  .rd-source-card { gap: 10px; padding: 12px; }
+  .rd-source-delete-anchor .ant-btn { width: 32px; height: 32px; }
+}

@@ -60,7 +60,7 @@ def _facts(project, case):
         role = source.get("role")
         same_role = [item for item in case["sources"] if item.get("role") == role]
         selected = case.get("source_selection", {}).get(role)
-        if role == "reference" or source["id"] == selected or (not selected and len(same_role) == 1):
+        if role == "reference" or source["id"] == selected or (selected is None and len(same_role) == 1):
             active.append(source)
     packages = case.get("workpackages", [])
     blockers, artifacts = [], []

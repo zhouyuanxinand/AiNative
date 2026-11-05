@@ -23,6 +23,9 @@ try {
   // Block every settings write from reaching the running platform.
   await page.route('**/api/settings/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname;
+    if (path === '/api/settings/credentials/default-model') return route.fulfill({ json: {
+      selection: { provider: 'test', name: 'test-model', id: 'test' }, source: 'settings', requires_selection: false,
+    } });
     if (path === '/api/settings/credentials') {
       if (request.method() === 'PUT') {
         if (failSave) { failSave = false; return route.fulfill({ status: 503, json: { error: '测试保存失败，请重试。' } }); }
@@ -71,7 +74,8 @@ try {
   await dialog.getByRole('button', { name: '保存凭证', exact: true }).click();
   await page.getByText('模型目录已刷新，共 1 项。', { exact: true }).waitFor({ state: 'attached' });
   assert.equal(saves, 1); assert.equal(modelReads, 1);
-  await dialog.locator('#credentials-history-picker').click();
+  await dialog.locator('#credentials-history-picker').focus();
+  await page.keyboard.press('ArrowDown');
   await page.getByRole('option', { name: /测试环境二/ }).click();
   await dialog.getByRole('button', { name: '使用此凭证', exact: true }).click();
   await dialog.getByRole('status').filter({ hasText: '已切换到' }).waitFor();

@@ -3,5 +3,6 @@
 .rd-review-table table { width: 100%; min-width: 520px; border-collapse: collapse; text-align: left; }
 .rd-review-table th, .rd-review-table td { padding: 12px; border-bottom: 1px solid var(--color-border); vertical-align: top; overflow-wrap: anywhere; }
 .rd-review-table th { color: var(--color-text-secondary); font-weight: 600; background: var(--color-bg-page); }
+.rd-review-table .rd-review-assessment { min-width: calc(4em + 24px); white-space: nowrap; overflow-wrap: normal; }
 .rd-review-digest { overflow-wrap: anywhere; font-size: 12px; }
 .rd-business-decision .rd-section { margin-block: 16px; }

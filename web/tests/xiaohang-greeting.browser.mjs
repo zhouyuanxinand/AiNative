@@ -14,6 +14,9 @@ try {
   await page.getByRole('button',{name:'暂停问候',exact:true}).click();
   assert.equal(await label.isVisible(),false);
   await page.getByRole('button',{name:'继续问候',exact:true}).click();
+  // React commits the enabled greeting after the click. Keep the virtual clock
+  // paused until that visible phase exists, just as on the initial mount above.
+  await label.waitFor();
   await page.clock.runFor(5900); assert.equal(await label.isVisible(),true);
   await page.clock.runFor(200); assert.equal(await label.isVisible(),false);
   assert.equal(await label.evaluate(element=>getComputedStyle(element).visibility),'hidden','mobile display:block must not revive a hidden greeting');

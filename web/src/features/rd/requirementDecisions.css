@@ -1,0 +1,17 @@
+.rd-decision-table .rd-review-hint,.rd-review-old-draft {display:block;font-size:12px;line-height:1.5;color:var(--color-text-secondary);margin-top:4px}
+.rd-review-proof {display:grid;gap:4px;font-size:13px}
+.rd-review-proof+.rd-review-proof {margin-top:8px}
+.rd-review-proof blockquote {margin:0;border-left:2px solid var(--color-border);padding-left:8px;white-space:pre-wrap;color:var(--color-text-secondary)}
+.rd-review-actions,.rd-review-actual,.rd-review-reason {display:flex;align-items:flex-start;flex-direction:column;gap:6px;min-width:0}
+.rd-review-actions>div:first-child {display:flex;gap:6px;flex-wrap:wrap}
+.rd-review-actual>.ant-input {width:100%;resize:none}
+.rd-review-actual>.ant-btn-link {padding-inline:0}
+.rd-review-old-draft summary {cursor:pointer}
+.rd-review-old-draft p {margin:4px 0;white-space:pre-wrap}
+@media (max-width:700px) {
+  .rd-req-table.rd-decision-table td:nth-child(2)::before {content:'原始指标'}
+  .rd-req-table.rd-decision-table td:nth-child(3)::before {content:'AI 推荐'}
+  .rd-req-table.rd-decision-table td:nth-child(4)::before {content:'证据来源'}
+  .rd-req-table.rd-decision-table td:nth-child(5)::before {content:'操作'}
+  .rd-req-table.rd-decision-table td:nth-child(6)::before {content:'实际结果'}
+}

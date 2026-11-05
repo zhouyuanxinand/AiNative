@@ -77,6 +77,7 @@ class Lifecycle:
             raise RdError(422, "需求确认需要有来源的非空需求。")
         if any(row.get("required") and row.get("status") != "adopted" for row in case["clarifications"]):
             raise RdError(422, "必需澄清尚未明确采用，不能确认需求。")
+        self.store.records.check_requirement_reviews(case)
         self.store._evidence(case, data.get("source_ids"))
         for requirement in case["requirements"]:
             if requirement.get("status") in {"conflict", "rejected"}:

@@ -32,6 +32,7 @@ const nav = () => page.getByRole('navigation', { name: '研发平台导航', exa
 const search = title => page.getByRole('textbox', { name: '搜索' + title + '记录', exact: true });
 const range = () => page.locator('.rd-management-page > .rd-pagination > span');
 const params = () => new URL(page.url()).searchParams;
+const currentCaseId = () => decodeURIComponent(new URL(page.url()).pathname.match(/\/flows\/([^/]+)/)?.[1] ?? '');
 const capture = name => page.screenshot({ path: join(output, name + '.png') });
 async function show(title) { await page.getByRole('heading', { name: title, level: 1, exact: true }).waitFor(); }
 async function module(name, title = name) { await nav().getByRole('button', { name, exact: true }).click(); await show(title); }
@@ -39,7 +40,7 @@ async function restored(title, prefix, query, pageNumber) {
   await show(title);
   assert.equal(await search(title).inputValue(), query, 'returning to ' + title + ' restores the committed search');
   assert.equal(params().get(prefix + '_q'), query);
-  assert.equal(params().get(prefix + '_page'), String(pageNumber));
+  assert.equal(params().get(prefix + '_page') ?? '1', String(pageNumber));
 }
 async function fixedCanvas() {
   const detail = page.getByRole('region', { name: '动作模板完整画布', exact: true });
@@ -89,7 +90,7 @@ try {
   await page.getByText('6–6 / 6 条', { exact: true }).waitFor();
   await page.getByRole('button', { name: '进入工作', exact: false }).click();
   await page.locator('.rd-case-workspace').waitFor();
-  assert.equal(params().get('case'), cases[11].id);
+  assert.equal(currentCaseId(), cases[11].id);
   await page.goBack();
   await restored('研发管理', 'management', '返回筛选工作', 2);
   assert.equal(params().get('management_kind'), 'completed');
@@ -97,7 +98,7 @@ try {
   assert(await page.locator('.rd-management-filter').getByText('已完成案例', { exact: true }).isVisible());
   await capture('01-management-return-1440');
   await page.goForward(); await page.locator('.rd-case-workspace').waitFor();
-  assert.equal(params().get('case'), cases[11].id);
+  assert.equal(currentCaseId(), cases[11].id);
   await page.goBack(); await restored('研发管理', 'management', '返回筛选工作', 2);
   await page.reload(); await restored('研发管理', 'management', '返回筛选工作', 2);
   await page.getByText('6–6 / 6 条', { exact: true }).waitFor();
@@ -112,7 +113,7 @@ try {
   await page.locator('.rd-candidate-row').first().click();
   await page.getByRole('button', { name: '查看所属成果', exact: false }).click();
   await page.locator('.rd-evidence-panel').waitFor();
-  assert.equal(params().get('case'), cases[5].id);
+  assert.equal(currentCaseId(), cases[5].id);
   await page.goBack(); await restored('知识管理', 'knowledge', '复用返回候选', 2);
   assert.equal(await range().innerText(), '6–10 / 12 条');
   assert((await page.locator('.rd-candidate-row').first().innerText()).includes('复用返回候选 06'));
@@ -164,7 +165,7 @@ try {
   await page.getByRole('button', { name: '清空搜索', exact: true }).click();
   assert.equal(await search('知识管理').inputValue(), '');
   assert(await search('知识管理').evaluate(element => element === document.activeElement));
-  assert.equal(params().get('knowledge_page'), '1');
+  assert.equal(params().get('knowledge_page'), null, 'default page one is omitted from the address');
   await page.goto(base + '/?rd_view=management&management_q=返回筛选工作&management_kind=completed&management_page=99');
   await page.getByText('6–6 / 6 条', { exact: true }).waitFor();
   await page.waitForFunction(() => new URL(location.href).searchParams.get('management_page') === '2');

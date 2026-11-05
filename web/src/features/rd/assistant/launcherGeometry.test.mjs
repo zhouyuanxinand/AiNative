@@ -23,3 +23,20 @@ test('launcher stays inside short and narrow viewports', () => {
   assert.deepEqual(geometry.launcherPosition({edge:'right', y:1}, area), {x:318, y:352});
   assert.deepEqual(geometry.clampLauncherPosition({x:-100,y:900}, area), {x:24,y:352});
 });
+
+test('a free placement survives persistence and viewport resize in both axes', () => {
+  const area = { viewport:{width:1440,height:1000}, footprint:{width:100,height:100,offsetX:0,offsetY:0} };
+  const point = { x:550, y:370 };
+  const saved = geometry.parseLauncherAnchor(JSON.stringify(geometry.launcherAnchorAt(point, area)));
+  assert.deepEqual(geometry.launcherPosition(saved, area), point);
+  const resized = geometry.launcherPosition(saved, { ...area, viewport:{width:390,height:700} });
+  assert(resized.x > 24 && resized.x < 266 && resized.y > 24 && resized.y < 576);
+  assert.deepEqual(geometry.launcherPosition(saved, area), point);
+});
+
+test('free horizontal coordinates are validated while legacy anchors remain compatible', () => {
+  assert.deepEqual(geometry.parseLauncherAnchor('{"edge":"left","x":0.4,"y":0.5}'), { edge:'left', x:0.4, y:0.5 });
+  for (const x of [-0.01, 1.01, '0.5', null]) {
+    assert.equal(geometry.parseLauncherAnchor(JSON.stringify({ edge:'right', x, y:0.5 })), null);
+  }
+});

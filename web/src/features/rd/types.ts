@@ -11,15 +11,34 @@ export type SourceBatchRunner = (caseId: string, items: SourceBatchItem[], key: 
 export interface SourceClassification { items: Array<{ id: string; role: SourceRole | 'unknown'; reason: string; method: 'filename' | 'model' | 'unknown' }>; warnings: string[] }
 export type SourceAnalysisRunner = (caseId: string, modelChange?: { selection: ModelSelection; onSaved: () => void }) => Promise<boolean>;
 export interface SourceEvidence { source_id: string; quote: string; kind?: 'source_filename'; name_sha256?: string }
+export interface DocumentEvidenceLocation {
+  id: string; label: string; body_index?: number; row?: number; line?: number;
+}
+export interface EvidenceLocationResult {
+  source_id: string; quote: string; status: 'located' | 'ambiguous' | 'not_found' | 'unavailable';
+  locations: DocumentEvidenceLocation[]; reason?: string; source_name?: string; source_version?: number;
+  source_sha256?: string; source_state?: string; coordinate_space?: 'original' | 'normalized';
+  normalized_sha256?: string; analysis_id?: string | null;
+}
+export interface EvidencePreview extends EvidenceLocationResult {
+  selected_location_id: string | null;
+  blocks: Array<DocumentEvidenceLocation & { text: string; segments: Array<{ text: string; highlighted: boolean }> }>;
+}
+export interface RequirementRecommendation { text: string; proposed_value: string; evidence: SourceEvidence[] }
+export interface RequirementReview {
+  decision: 'accept' | 'reject' | 'manual'; actual_value: string; reason: string;
+  analysis_id?: string | null; requirement_revision: number; input_revision?: number; actor: string; created_at: string;
+  recommendation?: RequirementRecommendation | null;
+}
 export interface SourceAnalysis {
   id: string; status: 'proposed' | 'adopted' | 'stale'; input_revision: number; adopted_input_revision?: number;
   created_at: string; source_hashes: Record<string, string>; model_selection: ModelSelection;
   context: Record<ContextKey, { value: string; status: 'proposed' | 'unresolved' | 'already_confirmed' | 'conflict'; reason: string; evidence: SourceEvidence[]; adoption_kind?: 'refresh_source_refs' }>;
-  requirements: Array<{ title: string; content: string; source_ids: string[]; evidence: SourceEvidence[]; requirement_id?: string }>;
+  requirements: Array<{ title: string; content: string; source_ids: string[]; evidence: SourceEvidence[]; requirement_id?: string; recommendation?: RequirementRecommendation | null }>;
   warnings: string[];
 }
 export interface Source { id: string; role: 'tech' | 'spec' | 'reference'; name: string; sha256: string; size: number; version: number; created_at: string; document_category?: SourceRole; client_id?: string }
-export interface Requirement { id: string; title: string; content: string; source_ids: string[]; created_at?: string; version?: number; revision?: number; history?: unknown[] }
+export interface Requirement { id: string; title: string; content: string; source_ids: string[]; created_at?: string; version?: number; revision?: number; history?: unknown[]; review?: RequirementReview | null }
 export interface Decision { id?: string; kind?: 'route' | 'stage' | 'selection' | 'taskbook_scope' | 'requirement_confirmation' | 'engineering_stage'; stage?: StageId; verdict?: 'approved' | 'rejected'; axis?: 'product' | 'composition'; value?: string; rationale: string; source_ids?: string[]; artifact_ids?: string[]; created_at?: string; actor_id?: string; actor?: string; input_revision?: number; invalidated_at?: string; invalidated_reason?: string; scope?: string; bundle_id?: string; bundle_digest?: string; review_mode?: string; electronic_signature?: boolean }
 export interface PlanNode { id: string; action_id: string; action_version: string; depends_on: string[]; required: boolean; status?: string; result?: Record<string, unknown>; attempt?: number; started_at?: string | null; completed_at?: string | null; ended_at?: string | null }
 export interface Artifact { id: string; name: string; kind?: string; sha256?: string }
@@ -33,7 +52,7 @@ export interface ReuseCandidate { id: string; title: string; content: string; st
 export interface ResearchWorkflowTemplate { id: string; version: string; title: string; status: string; product_route: string; nodes: string[] }
 export interface TaskbookBinding { source_ids: string[]; id: string; revision: number; input_revision: number; workflow: ResearchWorkflowTemplate; document_template: Record<string, unknown>; scope: string; rationale: string; status: string; invalidated_at?: string; invalidated_reason?: string; fingerprint: string; adopted_at: string }
 export interface EngineeringRecord { prerequisite_record_ids: string[]; id: string; node_id: string; binding_id: string; input_revision: number; verdict: string; summary: string; actor?: string; created_at?: string }
-export interface ResearchCase { source_analysis?: SourceAnalysis; engineering_records?: EngineeringRecord[]; taskbook_binding?: TaskbookBinding | null; taskbook_binding_history?: TaskbookBinding[]; id: string; scenario_id: string; title: string; stage: StageId; status?: string; input_revision?: number; source_selection?: Partial<Record<'tech' | 'spec', string>>; context: Partial<ProjectContext>; model_selection?: ModelSelection; context_provenance?: Record<string, { kind: string; actor?: string; created_at?: string; source_ids?: string[]; evidence?: SourceEvidence[]; reason?: string }>; product_route: RouteDecision | null; composition_route: RouteDecision | null; sources: Source[]; requirements: Requirement[]; workpackages: Workpackage[]; decisions: Decision[]; warnings?: Array<{ code: string; message: string }>; clarifications?: Clarification[]; comparisons?: Comparison[]; deliveries?: DeliveryRecord[]; reuse_candidates?: ReuseCandidate[]; reuse_disposition?: Record<string, unknown> | null }
+export interface ResearchCase { source_analysis?: SourceAnalysis; engineering_records?: EngineeringRecord[]; taskbook_binding?: TaskbookBinding | null; taskbook_binding_history?: TaskbookBinding[]; id: string; scenario_id: string; title: string; stage: StageId; status?: string; input_revision?: number; source_selection?: Partial<Record<'tech' | 'spec', string>>; context: Partial<ProjectContext>; model_selection?: ModelSelection; context_provenance?: Record<string, { kind: string; analysis_id?: string | null; actor?: string; created_at?: string; source_ids?: string[]; evidence?: SourceEvidence[]; reason?: string }>; product_route: RouteDecision | null; composition_route: RouteDecision | null; sources: Source[]; requirements: Requirement[]; workpackages: Workpackage[]; decisions: Decision[]; warnings?: Array<{ code: string; message: string }>; clarifications?: Clarification[]; comparisons?: Comparison[]; deliveries?: DeliveryRecord[]; reuse_candidates?: ReuseCandidate[]; reuse_disposition?: Record<string, unknown> | null }
 /** Manual project descriptions; customer and product master-data integrations are not connected. */
 export interface ProjectProfile { brief: string; customer_name: string; product_name: string }
 export interface Project extends Partial<ProjectProfile> { id: string; title: string; version: number; owner_id: string; members: unknown[]; cases: ResearchCase[]; events: Array<Record<string, unknown>>; created_at?: string; updated_at?: string; can_delete?: boolean; delete_blocked_reason?: string }
@@ -75,7 +94,7 @@ export interface Workpackage { definition_version?: string; business_node_id?: s
 export interface WorkpackageDefinition { business_node_id?: string; lifecycle_policy_version?: string }
 export type AssistantTarget = 'current' | 'sources' | 'requirements' | 'routes' | 'workpackages' | 'process' | 'artifacts' | 'history';
 export interface AssistantMessage { id: string; seq: number; role: 'user' | 'assistant'; content: string; mode?: 'local_guidance' | 'model'; created_at: string; input_revision: number; answered_version: number; stale: boolean }
-export interface AssistantResponse { messages: AssistantMessage[]; suggestions: Array<{ id: string; label: string; target: AssistantTarget }>; context: { stage: StageId; project_version: number; input_revision?: number }; history?: { total: number; limit: number; has_more: boolean; next_before: number | null; notice?: string }; reply?: AssistantMessage; navigation?: { target: AssistantTarget } }
+export interface AssistantResponse { messages: AssistantMessage[]; suggestions: Array<{ id: string; label: string; target: AssistantTarget }>; context: { stage: StageId; project_version: number; input_revision?: number }; history?: { total: number; limit: number; has_more: boolean; next_before: number | null; notice?: string }; reply?: AssistantMessage; navigation?: { target: AssistantTarget; page_ref?: import('./platformNavigation').PageReference } }
 
 /** P2 immutable flow designer and execution bundle contract. */
 export interface FlowNode { id: string; action_id?: string; action_version?: string; resource_id?: string; resource_version?: number | string; title?: string; role?: string; deliverables?: string[]; position?: { x: number; y: number }; input_bindings?: Record<string, unknown>; required?: boolean }

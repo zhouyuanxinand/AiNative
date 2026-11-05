@@ -103,7 +103,7 @@ try {
   await page.getByRole('button', { name: '资源工作台', exact: true }).click();
   await page.getByLabel('资源名称', { exact: true }).fill('未保存的测试资源');
   await gear.click();
-  const leave = page.getByRole('dialog', { name: '离开前保存填写', exact: true });
+  const leave = page.getByRole('dialog', { name: '未保存的填写', exact: true });
   await leave.getByRole('button', { name: '继续编辑', exact: true }).click();
   assert.equal(await page.getByLabel('资源名称', { exact: true }).inputValue(), '未保存的测试资源');
   await gear.click(); await leave.getByRole('button', { name: '放弃填写并切换', exact: true }).click();

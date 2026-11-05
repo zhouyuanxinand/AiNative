@@ -6,6 +6,7 @@ engineering facts, impersonate recipients, publish knowledge or start workers.
 from __future__ import annotations
 
 import hashlib
+import re
 from copy import deepcopy
 
 from .catalog import STAGE_IDS
@@ -20,8 +21,19 @@ def _version(record):
     return deepcopy({key: value for key, value in record.items() if key != "history"})
 
 
+def _is_placeholder(value):
+    """Match an empty value, or a bare placeholder with an optional metric label."""
+    value = value.strip()
+    return not value or re.fullmatch(
+        r"(?:[^:：\n。.!！?？;；，,]{1,200}[:：]\s*)?"
+        r"(?:待澄清|待确认|待定|待补充|未明确|待填写|待采纳|待核对|【人工填写】)"
+        r"(?:\s*[（(][^()（）\n]*[)）])?[。．.!！?？;；,，\s]*",
+        value,
+    ) is not None
+
+
 class CaseRecords:
-    COMMANDS = {"open_clarification", "answer_clarification", "adopt_clarification", "save_comparison", "record_delivery", "prepare_reuse", "record_engineering_node"}
+    COMMANDS = {"open_clarification", "answer_clarification", "adopt_clarification", "save_comparison", "record_delivery", "prepare_reuse", "record_engineering_node", "review_requirement"}
 
     def __init__(self, store):
         self.store = store
@@ -55,14 +67,14 @@ class CaseRecords:
         return [{"id": item["id"], "revision": item["revision"], "sha256": _hash({key: item[key] for key in ("id", "revision", "title", "content", "source_ids")})}
                 for item in case["requirements"]]
 
-    def save_requirement(self, case, data, actor, *, clarification_id=None):
+    def save_requirement(self, case, data, actor, *, clarification_id=None, review=None):
         self.store._evidence(case, data.get("source_ids"))
         rid = data.get("id")
         previous = self._requirement(case, rid) if rid else None
         values = {"title": _text(data.get("title"), "需求标题", 200, True),
                   "content": _text(data.get("content"), "需求内容", 20000, True), "source_ids": list(dict.fromkeys(data["source_ids"]))}
         unchanged = previous and all(previous[key] == values[key] for key in ("title", "content")) and set(previous["source_ids"]) == set(values["source_ids"])
-        if unchanged and clarification_id is None:
+        if unchanged and clarification_id is None and review is None:
             return {"requirement_id": previous["id"], "input_revision": case["input_revision"], "invalidated_decision_ids": []}
         history = deepcopy(previous["history"]) if previous else []
         if previous and not history:
@@ -76,12 +88,91 @@ class CaseRecords:
         history.append(entry)
         requirement = {"id": rid or _id(), **values, "revision": revision, "history": history}
         if previous:
+            for field in ("analysis_id", "evidence", "review_history"):
+                if field in previous:
+                    requirement[field] = deepcopy(previous[field])
             case["requirements"][case["requirements"].index(previous)] = requirement
         else:
             case["requirements"].append(requirement)
-        invalidated = self.store._invalidate_inputs(case, "用户明确修改或采用了需求及其依据，需要重新确认。")
+        invalidated = self.store._invalidate_inputs(case, "用户明确修改或采用了需求及其依据，需要重新确认。",
+            reviewed_requirement_id=rid if review or clarification_id else None, retain_review_stage=review is not None)
+        if review:
+            decision = {**review, "actor": actor, "created_at": entry["created_at"], "requirement_revision": revision, "input_revision": case["input_revision"]}
+            requirement["review"] = decision
+            requirement.setdefault("review_history", []).append(deepcopy(decision))
         return {"requirement_id": requirement["id"], "requirement_revision": revision,
                 "input_revision": case["input_revision"], "invalidated_decision_ids": invalidated}
+
+    def review_requirement(self, case, data, actor):
+        if case["stage"] not in {"input", "requirements"}:
+            raise RdError(409, "需求确认后只读；请先建立新的需求修订。")
+        if set(data) - {"case_id", "requirement_id", "requirement_revision", "analysis_id", "decision", "actual_value", "reason"}:
+            raise RdError(422, "只接受当前需求的逐项决定，原文和推荐依据由服务端读取。")
+        row = self._requirement(case, data.get("requirement_id"))
+        expected = data.get("requirement_revision")
+        if type(expected) is not int or expected != row["revision"]:
+            raise RdError(409, "需求版本已变化，请保留草稿并核对新版本。")
+        kind = data.get("decision")
+        if kind not in ("accept", "reject", "manual"):
+            raise RdError(422, "请选择采纳、不采纳或手工填写。")
+        analysis = case.get("source_analysis") or {}
+        aid = data.get("analysis_id")
+        matches = [item for item in analysis.get("requirements", []) if item.get("requirement_id") == row["id"] and item.get("status") != "rejected"]
+        if aid or kind != "manual" or matches:
+            if not aid or aid != analysis.get("id") or analysis.get("status") != "adopted" or analysis.get("adopted_input_revision") != case["input_revision"]:
+                raise RdError(409, "需求分析版本已变更或未采用，请先核对当前资料。")
+            if analysis["source_hashes"] != {source["id"]: source["sha256"] for source in self.store._active_sources(case)}:
+                raise RdError(409, "增强建议的来源已变化，请重新分析。")
+        if len(matches) > 1:
+            raise RdError(422, "多条原文指向同一需求，请先澄清对应关系。")
+        recommendation = matches[0].get("recommendation") if matches else None
+        if kind != "manual" and not recommendation:
+            raise RdError(422, "此项没有可核实的增强建议，可直接填写实际结果或办理澄清。")
+        reason = _text(data.get("reason", ""), "不采纳原因" if kind == "reject" else "决定说明", 4000, kind == "reject")
+        source_ids = list(row["source_ids"])
+        refs = []
+        if recommendation:
+            refs = list(dict.fromkeys(e["source_id"] for e in recommendation["evidence"]))
+            self.store._evidence(case, refs)
+        if kind == "manual":
+            actual = _text(data.get("actual_value"), "实际结果", 20000, True)
+            if actual == "不适用" and not reason:
+                raise RdError(422, "请说明不适用的原因。")
+        else:
+            actual = recommendation["proposed_value"] if kind == "accept" else row["content"]
+            if "actual_value" in data and data["actual_value"] != actual:
+                raise RdError(422, "此决定不能改写实际结果；如需修改请明确保存手工填写。")
+            if kind == "accept":
+                source_ids = list(dict.fromkeys([*source_ids, *refs]))
+        previous = row.get("review") or {}
+        review = {"decision": kind, "reason": reason, "actual_value": actual, "analysis_id": aid, "recommendation": deepcopy(recommendation),
+                  "recommendation_sources": self._sources(case, refs)}
+        if previous.get("requirement_revision") == row["revision"] and all(previous.get(k) == v for k, v in review.items()):
+            return {"requirement_id": row["id"], "requirement_revision": row["revision"], "decision": kind}
+        result = self.save_requirement(case, {"id": row["id"], "title": row["title"], "content": actual, "source_ids": source_ids}, actor, review=review)
+        return {**result, "decision": kind}
+
+    @staticmethod
+    def check_requirement_reviews(case):
+        analysis = case.get("source_analysis") or {}
+        rows = {r["id"]: r for r in case["requirements"]}
+        if analysis.get("status") != "adopted":
+            analyses = [analysis, *reversed(case.get("source_analysis_history", []))]
+            for candidate in analyses:
+                if any(item.get("recommendation") for item in candidate.get("requirements", []) if item.get("status") != "rejected"):
+                    raise RdError(409, "含增强建议的分析尚未采用或来源已变化，请先重新核对。")
+                if candidate.get("adopted_at"):
+                    break
+        for candidate in analysis.get("requirements", []):
+            if candidate.get("status") == "rejected" or not candidate.get("recommendation"):
+                continue
+            row = rows.get(candidate.get("requirement_id"))
+            review = (row or {}).get("review") or {}
+            if not row or review.get("analysis_id") != analysis["id"] or review.get("requirement_revision") != row["revision"]:
+                raise RdError(422, f"「{candidate['title']}」的增强建议尚未处理，请明确采纳、不采纳或填写实际结果。")
+        for row in rows.values():
+            if _is_placeholder(row.get("content", "")):
+                raise RdError(422, f"「{row['title']}」缺少明确采用值，请先完成需求澄清。")
 
     def open_clarification(self, case, data, actor):
         if case["stage"] not in {"input", "requirements"}:
@@ -138,9 +229,12 @@ class CaseRecords:
         return {**result, "clarification_id": record["id"], "clarification_revision": record["revision"]}
 
     @staticmethod
-    def invalidate_inputs(case, reason):
+    def invalidate_inputs(case, reason, *, reviewed_requirement_id=None):
         for record in case["clarifications"]:
             if record["status"] in {"open", "answered"} and not record.get("invalidated_at"):
+                if reviewed_requirement_id and record["requirement_id"] != reviewed_requirement_id and record["input_revision"] == case["input_revision"] - 1:
+                    record["input_revision"] = case["input_revision"]
+                    continue
                 record.update(invalidated_at=_now(), invalidated_reason=reason)
         for record in case["comparisons"]:
             if not record.get("invalidated_at"):
@@ -354,6 +448,8 @@ class CaseRecords:
         stage = case["stage"]
         if stage == "requirements" and any(record["required"] and record["status"] != "adopted" for record in case["clarifications"]):
             raise RdError(422, "必需澄清尚未明确采用，不能确认需求。")
+        if stage == "requirements":
+            self.check_requirement_reviews(case)
         if stage == "delivery":
             current = [record for record in case["deliveries"] if record["input_revision"] == case["input_revision"]]
             if not current or current[-1]["outcome"] != "accepted":

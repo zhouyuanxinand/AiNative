@@ -86,7 +86,7 @@ export function HelpResourcePage({ kind }: { kind: HelpResourceKind }) {
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const previousTitle = document.title;
-    document.title = `${resource.title} · 研制任务书平台`;
+    document.title = `${resource.title} · AI Native研发管理平台`;
     return () => { document.title = previousTitle; };
   }, [resource.title]);
   useEffect(() => {
@@ -105,7 +105,7 @@ export function HelpResourcePage({ kind }: { kind: HelpResourceKind }) {
 
   return <div className="help-page">
     <header className="help-page-header">
-      <a className="help-page-brand" href="/">研制任务书平台</a>
+      <a className="help-page-brand" href="/">AI Native研发管理平台</a>
       <a className="help-home-link" href="/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m10 5-7 7 7 7M3 12h18" /></svg>返回平台</a>
     </header>
     <main className="help-page-main">

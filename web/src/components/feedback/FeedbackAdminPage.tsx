@@ -60,7 +60,7 @@ export function FeedbackAdminPage({ embedded = false, visible = true }: { embedd
   useEffect(() => {
     active.current = true;
     const title = document.title;
-    if (!embedded) document.title = '问题反馈管理 · 研制任务书平台';
+    if (!embedded) document.title = '问题反馈管理 · AI Native研发管理平台';
     const onPopState = () => {
       const next = filtersFromURL();
       if (JSON.stringify(committedFilters.current) === JSON.stringify(next)) return;
@@ -130,7 +130,7 @@ export function FeedbackAdminPage({ embedded = false, visible = true }: { embedd
   return <div className={`feedback-admin-page ${embedded ? 'feedback-admin-embedded' : ''}`}>
     {!embedded && <header className="feedback-page-header"><div className="feedback-page-brand">
       <span className="feedback-page-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3h14v14H9l-4 4V3Z"/><path d="M9 7h6M9 11h6"/></svg></span>
-      <div><h1>问题反馈管理</h1><p>研制任务书平台 · 生成效果与处理记录</p></div></div>
+      <div><h1>问题反馈管理</h1><p>AI Native研发管理平台 · 生成效果与处理记录</p></div></div>
       <div className="auth-settings-admin-actions"><span className="feedback-timezone">北京时间 · UTC+8</span><PlatformAuthSettings admin /></div>
     </header>}
     <div className="feedback-page-main">

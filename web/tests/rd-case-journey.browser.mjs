@@ -93,6 +93,7 @@ try {
     if (!['GET', 'HEAD'].includes(request.method())) apiWrites.push({ method: request.method(), path });
     try {
       if (path === '/api/current-user') return route.fulfill({ json: { auth_enabled: false, authenticated: false, user: null } });
+      if (path === '/api/rd/assistant/weather' && request.method() === 'GET') return route.fulfill({ status: 503, json: { error: '隔离天气服务不可用，不影响案例办理。' } });
       if (path === '/api/product_catalog') return route.fulfill({ json: { product_types: [{ value: context.product_type, label: '液冷产品-液冷管路', enabled: true, domains: [{ value: 'military', label: '军品' }] }] } });
       if (path === '/api/models') return route.fulfill({ json: { success: true, models: [current().model_selection] } });
       if (path === '/api/rd/session') {
@@ -273,7 +274,8 @@ try {
   await page.getByRole('button', { name: '编辑需求', exact: true }).click();
   await page.getByLabel('需求内容', { exact: true }).fill('工作压力：0.3 MPa。保留原文来源并补充核对说明。');
   const assistantLauncher = page.getByRole('button', { name: '打开小航助手', exact: true });
-  assert(await assistantLauncher.evaluate(element => !!element.closest('.rd-journey-heading-actions')));
+  assert(await assistantLauncher.evaluate(element => element.classList.contains('rd-floating-launcher') && !element.closest('.rd-journey-heading-actions')), 'case editors use the floating character instead of a heading action');
+  assert.equal(await page.locator('.rd-journey-heading-actions').getByRole('button', { name: '打开小航助手', exact: true }).count(), 0, 'the heading no longer contains an assistant button');
   await assistantLauncher.click();
   const assistantDialog = page.getByRole('dialog', { name: `${current().title} · 小航助手`, exact: true });
   await assistantDialog.getByRole('textbox', { name: '询问当前案例', exact: true }).fill('跨步骤保留的助手草稿，不发送。');

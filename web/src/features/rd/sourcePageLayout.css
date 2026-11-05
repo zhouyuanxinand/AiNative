@@ -48,6 +48,10 @@
 .rd-source-workspace .rd-input-workface .rd-section-head { align-items: center; flex-wrap: wrap; gap: 4px 16px; margin-bottom: 16px; }
 .rd-source-workspace .rd-input-workface .rd-section-head h3 { margin: 0; font-size: 16px; }
 .rd-source-workspace .rd-input-workface .rd-section-head > p { margin: 0; font-size: 12px; color: var(--color-text-secondary); }
+.rd-input-sources-summary { display: flex; align-items: center; gap: 12px; }
+.rd-input-sources-summary > span { font-size: 12px; color: var(--color-text-secondary); }
+.rd-input-sources-heading > .ant-btn { margin-left: auto; }
+.rd-source-workspace .rd-input-workface .rd-input-sources.is-collapsed > .rd-section-head { margin-bottom: 0; }
 .rd-source-workspace .rd-upload-form { margin-bottom: 16px; }
 .rd-source-workspace .rd-current-files > h4 { margin: 0 0 4px; }
 .rd-source-workspace .rd-source-row { padding: 10px 0; }

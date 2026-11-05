@@ -18,11 +18,11 @@ export function useAssistantLauncherDrag(launcher: RefObject<HTMLButtonElement>,
     const button = launcher.current;
     if (!button) return null;
     const rect = button.getBoundingClientRect();
-    const visual = [rect, ...Array.from(button.querySelectorAll('.rd-floating-figure,.rd-floating-launcher-label')).map(node => node.getBoundingClientRect())];
+    const visual = [rect, ...Array.from(button.querySelectorAll('.rd-floating-figure')).map(node => node.getBoundingClientRect())];
     const left = Math.min(...visual.map(box => box.left)), top = Math.min(...visual.map(box => box.top));
     const right = Math.max(...visual.map(box => box.right)), bottom = Math.max(...visual.map(box => box.bottom));
     const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-    const measured: LauncherGeometry = { viewport: { width: window.innerWidth, height: Math.max(0, viewportHeight - 96) }, footprint: { width: right - left, height: bottom - top, offsetX: left - rect.left, offsetY: top - rect.top } };
+    const measured: LauncherGeometry = { viewport: { width: window.innerWidth, height: Math.max(0, viewportHeight) }, footprint: { width: right - left, height: bottom - top, offsetX: left - rect.left, offsetY: top - rect.top } };
     geometry.current = measured;
     return measured;
   }
@@ -31,8 +31,8 @@ export function useAssistantLauncherDrag(launcher: RefObject<HTMLButtonElement>,
     setDockedEdge(next.hidden ? next.edge : null);
     try { window.localStorage.setItem(POSITION_KEY, JSON.stringify(next)); } catch { /* Position remains usable when browser storage is unavailable. */ }
   }
-  function snap(point: LauncherPoint, area: LauncherGeometry, edge: LauncherAnchor['edge'] | null = null) {
-    const next = { ...launcherAnchorAt(point, area), ...(edge ? { edge, hidden: true } : {}) };
+  function place(point: LauncherPoint, area: LauncherGeometry, edge: LauncherAnchor['edge'] | null = null) {
+    const next = { ...launcherAnchorAt(point, area), ...(edge ? { edge, x: edge === 'left' ? 0 : 1, hidden: true } : {}) };
     remember(next); setPosition(launcherPosition(next, area));
   }
 
@@ -82,7 +82,7 @@ export function useAssistantLauncherDrag(launcher: RefObject<HTMLButtonElement>,
     if (!session || session.pointerId !== event.pointerId) return;
     gesture.current = null;
     suppressClick.current = session.moved && !cancelled;
-    if (session.moved && area) snap(session.current, area, cancelled ? null : launcherDockEdge(event.clientX, area.viewport.width));
+    if (session.moved && area) place(session.current, area, cancelled ? null : launcherDockEdge(event.clientX, area.viewport.width));
     setLauncherDragging(false);
     setLauncherPressed(false); setDockingEdge(null);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
@@ -105,10 +105,11 @@ export function useAssistantLauncherDrag(launcher: RefObject<HTMLButtonElement>,
     if (!area) return;
     let next: LauncherAnchor = { ...anchor.current, hidden: false };
     if (event.key === 'Home') next = { ...DEFAULT_ANCHOR };
-    else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') next = { ...next, edge: event.key === 'ArrowLeft' ? 'left' : 'right' };
     else {
       const current = launcherPosition(next, area), step = event.shiftKey ? 72 : 24;
-      next = launcherAnchorAt({ ...current, y: current.y + (event.key === 'ArrowUp' ? -step : step) }, area);
+      const dx = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0;
+      const dy = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0;
+      next = launcherAnchorAt({ x: current.x + dx, y: current.y + dy }, area);
     }
     remember(next); setPosition(launcherPosition(next, area));
   }

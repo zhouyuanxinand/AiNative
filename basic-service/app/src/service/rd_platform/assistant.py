@@ -15,6 +15,7 @@ from jonhon_taskbook.usage_context import model_user_scope
 
 from .catalog import CONTEXT_FIELDS, STAGES
 from .store import RdError
+from .navigation import navigation_for_target, validate_case_reference
 
 HISTORY_LIMIT = 20
 PENDING_SECONDS = 60
@@ -261,13 +262,21 @@ class CaseAssistant:
                             "next_before": messages[0]["seq"] if len(rows) > HISTORY_LIMIT else None,
                             "notice": "每页最多20条，完整对话已持久保存，可按游标查看更早记录。旧版本回复仅供追溯，不是当前依据。"}}
 
-    def ask(self, actor, pid, cid, message, key, topic=""):
+    def ask(self, actor, pid, cid, message, key, topic="", *, page_ref=None):
         actor, project, case = self._authorized(actor, pid, cid)
         message = _text(message, "问题", 2000, True)
         key = _text(key, "请求标识", 128, True)
         topic = _text(topic, "主题", 100)
-        fingerprint = hashlib.sha256(_json({"message": message, "topic": topic}).encode()).hexdigest()
+        reference = validate_case_reference(project, case, page_ref) if page_ref is not None else None
+        intent = {"message": message, "topic": topic}
+        # Omitted references retain the original fingerprint for existing receipts.
+        if reference is not None:
+            intent["page_ref"] = reference
+        fingerprint = hashlib.sha256(_json(intent).encode()).hexdigest()
         facts = _facts(project, case)
+        if reference is not None:
+            facts["page_ref"] = reference
+            facts["page_ref_scope"] = "当前页面位置提示，不是业务依据，不代表确认、批准或事实有效性。"
         target = _navigation(message, topic, facts)
         scope, request = (actor, pid, cid), (actor, pid, cid, key)
         saved, recovered = None, False
@@ -305,7 +314,8 @@ class CaseAssistant:
                 raise RdError(409, "此请求正在恢复为本地指引，请使用同一标识重试；晚到模型结果不再采用。")
             else:
                 reply = self._message(db, scope, "assistant", content, mode, facts)
-                saved = {"reply": reply, "navigation": {"target": target}}
+                navigation = navigation_for_target(target, pid, cid, reference) if reference is not None else {"target": target}
+                saved = {"reply": reply, "navigation": navigation}
                 db.execute("UPDATE rd_assistant_requests SET status='completed',response=? WHERE actor=? AND project_id=? AND case_id=? AND request_key=?", (_json(saved), *request))
         return self._response(actor, pid, cid, saved)
 

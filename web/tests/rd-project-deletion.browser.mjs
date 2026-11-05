@@ -61,6 +61,7 @@ await page.route('**/api/**', async route => {
     if (path === '/api/rd/session') return json({ actor_id: 'fixture-owner', local_mode: true });
     if (path === '/api/rd/catalog') return json({ stages: [], scenarios: [{ id: 'taskbook', title: '隔离项目流程' }], actions: [], workpackage_definitions: [], project_workflow_templates: [] });
     if (path === '/api/rd/projects') return json({ projects: clone(state.projects) });
+    if (path === '/api/rd/assistant/weather') return route.fulfill({ status: 503, json: { error: '隔离删除测试不加载天气服务' } });
     if (path.startsWith('/api/rd/projects/')) {
       const id = decodeURIComponent(path.slice('/api/rd/projects/'.length));
       const project = state.projects.find(item => item.id === id);

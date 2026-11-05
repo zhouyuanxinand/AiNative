@@ -56,6 +56,7 @@ from src.controller.review_editor_controller import router as review_editor_rout
 from src.controller.rd_controller import router as rd_router, configure_rd, start_rd_worker  # noqa: E402
 from src.controller.rd_derivation_controller import router as rd_derivation_router  # noqa: E402
 from src.controller.rd_weather_controller import router as rd_weather_router  # noqa: E402
+from src.service.rd_platform.navigation import SPA_PATHS  # noqa: E402
 from src.utils.config_loader import AppConfig, get_config  # noqa: E402
 
 logger = get_logger("src.main")
@@ -155,7 +156,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     """Application factory used by uvicorn and tests."""
     settings = config or get_config()
     application = FastAPI(
-        title="研发管理平台",
+        title="AI Native研发管理平台",
         description="研发案例、双路线决策、工作包编排与受控任务书生成。",
         version="1.0.0",
     )
@@ -206,6 +207,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         @application.get("/", response_class=HTMLResponse, include_in_schema=False)
         @application.get("/rd", response_class=HTMLResponse, include_in_schema=False)
         @application.get("/rd/projects/{project_id}", response_class=HTMLResponse, include_in_schema=False)
+        @application.get("/rd/projects/{project_id}/cases/{case_id}", response_class=HTMLResponse, include_in_schema=False)
         @application.get("/taskbook", response_class=HTMLResponse, include_in_schema=False)
         @application.get("/help/video", response_class=HTMLResponse, include_in_schema=False)
         @application.get("/help/manual", response_class=HTMLResponse, include_in_schema=False)
@@ -219,6 +221,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                     "Expires": "0",
                 },
             )
+
+        # Explicit business pages still pass through the OA middleware. Unknown
+        # paths, admin endpoints and API URLs must never become an HTML fallback.
+        for path in SPA_PATHS:
+            application.add_api_route(path, serve_spa_root, methods=["GET"],
+                                      response_class=HTMLResponse, include_in_schema=False)
 
         assets_dir = web_dir / "assets"
         if assets_dir.is_dir():

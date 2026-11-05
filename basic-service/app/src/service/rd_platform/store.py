@@ -582,20 +582,27 @@ class Store:
                 selected.add(sid)
         return [source for source in case["sources"] if source["role"] == "reference" or source["id"] in selected]
 
-    def _invalidate_inputs(self, case, reason):
+    def _invalidate_inputs(self, case, reason, *, reviewed_requirement_id=None, retain_review_stage=False):
+        analysis = case.get("source_analysis")
+        keep_analysis = reviewed_requirement_id and analysis and analysis["status"] == "adopted" and analysis.get("adopted_input_revision") == case["input_revision"]
         self.lifecycle.invalidate(case, reason)
         case["input_revision"] = case.get("input_revision", 1) + 1
-        if case.get("source_analysis"):
-            case["source_analysis"].update(status="stale", invalidated_reason=reason)
+        if keep_analysis:
+            # Reviewing one result changes the downstream baseline, not the source text of the other rows.
+            analysis.setdefault("initial_adopted_input_revision", analysis["adopted_input_revision"])
+            analysis["adopted_input_revision"] = case["input_revision"]
+        elif analysis:
+            analysis.update(status="stale", invalidated_reason=reason)
         invalidated = []
         for decision in case["decisions"]:
             if not decision.get("invalidated_at") and (decision.get("verdict") == "approved" or decision["kind"] == "route"):
                 decision.update(invalidated_at=_now(), invalidated_reason=reason)
                 invalidated.append(decision["id"])
         self._stale_taskbook_binding(case, reason)
-        case["stage"] = "input"
+        if not retain_review_stage:
+            case["stage"] = "input"
         case["product_route"] = case["composition_route"] = None
-        self.records.invalidate_inputs(case, reason)
+        self.records.invalidate_inputs(case, reason, reviewed_requirement_id=reviewed_requirement_id)
         self._warnings(case)
         return invalidated
 
@@ -747,6 +754,11 @@ class Store:
             raise RdError(404, "资料分析提案不存在。")
         if proposal["status"] != "proposed" or proposal["input_revision"] != case["input_revision"]:
             raise RdError(409, "分析提案已采用或输入已变化，请重新分析。")
+        selected = data.get("accept_recommendations", [])
+        candidates = proposal["requirements"]
+        if (not isinstance(selected, list) or any(type(index) is not int or not 0 <= index < len(candidates)
+                or not candidates[index].get("recommendation") for index in selected) or len(set(selected)) != len(selected)):
+            raise RdError(422, "选中的增强建议与本次分析不符，请重新核对。")
         sources = self._active_sources(case)
         if proposal["source_hashes"] != {source["id"]: source["sha256"] for source in sources}:
             raise RdError(409, "来源已变化，请重新分析。")
@@ -793,8 +805,23 @@ class Store:
             invalidated.extend(result["invalidated_decision_ids"])
         proposal.update(status="adopted", adopted_at=_now(), adopted_by=actor, adopted_input_revision=case["input_revision"])
         proposal.pop("invalidated_reason", None)
+        # Apply only opt-ins alongside the originals, in the enclosing command transaction.
+        # A re-analysis must not replace a previous human decision or clarified value.
+        by_id = {item["id"]: item for item in case["requirements"]}
+        for index in selected:
+            candidate = candidates[index]
+            requirement = by_id.get(candidate.get("requirement_id"))
+            if (not requirement or requirement.get("review") or requirement["content"] != candidate["content"]
+                    or requirement.get("revision", 1) > 1):
+                raise RdError(409, "此项已修订、已办理或原文对应不唯一。请取消勾选，在需求确认中单独核对。")
+            result = self.records.review_requirement(case, {
+                "analysis_id": proposal["id"], "requirement_id": requirement["id"],
+                "requirement_revision": requirement.get("revision", requirement.get("version", 1)), "decision": "accept",
+            }, actor)
+            invalidated.extend(result.get("invalidated_decision_ids", []))
         self._warnings(case)
         return {"analysis_id": proposal["id"], "changed_fields": changed, "requirement_ids": requirements,
+                "accepted_recommendation_ids": [candidates[index]["requirement_id"] for index in selected],
                 "input_revision": case["input_revision"], "invalidated_decision_ids": list(dict.fromkeys(invalidated))}
 
     def _route_decision(self, case, data, actor):
@@ -1356,6 +1383,21 @@ class Store:
             if source is None:
                 raise RdError(404, "资料不存在。")
             return self._checked_path(source)
+
+    def evidence_locations(self, actor, pid, cid):
+        from .evidence_locations import evidence_locations
+        with self._connection() as db:
+            case = deepcopy(self._case(self._load(db, pid, _actor(actor)), cid))
+        result = evidence_locations(case, self.asset_root / "source_analysis" / pid / cid, self._checked_path)
+        result["project_id"] = pid
+        return result
+
+    def evidence_preview(self, actor, pid, cid, **selection):
+        from .evidence_locations import evidence_preview
+        with self._connection() as db:
+            case = deepcopy(self._case(self._load(db, pid, _actor(actor)), cid))
+        return evidence_preview(case, self.asset_root / "source_analysis" / pid / cid,
+                                self._checked_path, **selection)
 
     def artifact_path(self, actor, pid, cid, wid, aid):
         with self._connection() as db:

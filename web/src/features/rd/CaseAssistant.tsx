@@ -3,12 +3,14 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useApplicationLeaveGuard } from '../../hooks/useApplicationLeaveGuard';
 import { makeRequestKey, rdAskAssistant, rdAssistant } from './api';
 import { mergeAssistantHistory } from './assistantHistory';
+import { assistantNavigationTarget, currentCasePageReference, type AssistantNavigation } from './assistant/nativeNavigation';
+import type { PageReference } from './platformNavigation';
 import { formatTime, messageOf, stageTitle } from './presentation';
-import type { AssistantResponse, AssistantTarget, Project, ResearchCase } from './types';
+import type { AssistantResponse, Project, ResearchCase } from './types';
 import './FloatingAssistant.css';
 
 export function CaseAssistant({ project, researchCase, visible, onClose, onNavigate, onDirtyChange, onBusyChange }: {
-  project: Project; researchCase: ResearchCase; visible: boolean; onClose: () => void; onNavigate: (target: AssistantTarget) => void; onDirtyChange: (dirty: boolean) => void; onBusyChange: (busy: boolean) => void;
+  project: Project; researchCase: ResearchCase; visible: boolean; onClose: () => void; onNavigate: (target: AssistantNavigation) => void; onDirtyChange: (dirty: boolean) => void; onBusyChange: (busy: boolean) => void;
 }) {
   const [data, setData] = useState<AssistantResponse | null>(null);
   const [draft, setDraft] = useState('');
@@ -26,7 +28,7 @@ export function CaseAssistant({ project, researchCase, visible, onClose, onNavig
   const preserveScroll = useRef<{ height: number; top: number } | null>(null);
   const scope = useRef(`${project.id}/${researchCase.id}`);
   scope.current = `${project.id}/${researchCase.id}`;
-  const retry = useRef({ text: '', key: '' });
+  const retry = useRef<{ text: string; key: string; pageRef?: PageReference }>({ text: '', key: '' });
   const locked = useRef(false);
   const input = useRef<HTMLTextAreaElement>(null);
   const log = useRef<HTMLDivElement>(null);
@@ -72,14 +74,15 @@ export function CaseAssistant({ project, researchCase, visible, onClose, onNavig
     if (locked.current) return;
     const message = draft.trim();
     if (!message) { setSendError('请先填写要询问的问题。'); input.current?.focus(); return; }
-    if (retry.current.text !== message) retry.current = { text: message, key: makeRequestKey() };
+    if (retry.current.text !== message) retry.current = { text: message, key: makeRequestKey(), pageRef: currentCasePageReference(window.location.href, project.id, researchCase.id) };
     locked.current = true; setSending(true); setLoading(false); setSendError(''); reading.current?.abort(); olderReading.current?.abort(); setLoadingOlder(false);
     const controller = new AbortController(); writing.current = controller;
     try {
-      const response = await rdAskAssistant(project.id, researchCase.id, message, undefined, retry.current.key, controller.signal);
+      const response = await rdAskAssistant(project.id, researchCase.id, message, undefined, retry.current.key, controller.signal, retry.current.pageRef);
       if (!controller.signal.aborted) {
         scrollToLatest.current = true; setData(current => mergeAssistantHistory(current, response)); setDraft(''); retry.current = { text: '', key: '' };
-        if (response.navigation) onNavigate(response.navigation.target);
+        const target = assistantNavigationTarget(response.navigation, project.id, researchCase.id);
+        if (target) onNavigate(target);
         input.current?.focus();
       }
     } catch (reason) { if (!controller.signal.aborted) setSendError(messageOf(reason)); }

@@ -74,6 +74,7 @@ try {
       if (path === '/api/rd/projects/' + emptyProject.id) return route.fulfill({ json: emptyProject });
       if (path === '/api/rd/assistant/weather') return route.fulfill({ json: { status: 'unavailable', location: '隔离测试', notice: '天气不属于卡片验证范围。' } });
       if (path === '/api/models') return route.fulfill({ json: { success: true, models: [] } });
+      if (path === '/api/rd/projects/cards-fixture/cases/pending/evidence-locations') return route.fulfill({ json: { items: [] } });
       if (path === '/api/product_catalog') return route.fulfill({ json: { product_types: [{ value: 'liquid_cooling_pipeline', label: '液冷产品-液冷管路', enabled: true, domains: [{ value: 'military', label: '军品' }] }] } });
       if (path.endsWith('/assistant')) return route.fulfill({ json: { messages: [], suggestions: [], context: { stage: 'input', project_version: 1, input_revision: 3 } } });
     }

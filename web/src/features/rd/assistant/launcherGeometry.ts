@@ -1,8 +1,8 @@
 export interface LauncherPoint { x: number; y: number }
-export interface LauncherAnchor { edge: 'left' | 'right'; y: number; hidden?: boolean }
+export interface LauncherAnchor { edge: 'left' | 'right'; x?: number; y: number; hidden?: boolean }
 export interface LauncherGeometry {
   viewport: { width: number; height: number };
-  /** Visual bounds relative to the button, including the character above it. */
+  /** Character bounds relative to the button; speech bubbles have their own placement. */
   footprint: { width: number; height: number; offsetX: number; offsetY: number };
 }
 
@@ -21,20 +21,21 @@ export function clampLauncherPosition(point: LauncherPoint, geometry: LauncherGe
 
 export function launcherPosition(anchor: LauncherAnchor, geometry: LauncherGeometry): LauncherPoint {
   const area = bounds(geometry);
-  return { x: anchor.edge === 'left' ? area.left : area.right, y: area.top + anchor.y * (area.bottom - area.top) };
+  const x = anchor.x ?? (anchor.edge === 'left' ? 0 : 1);
+  return { x: area.left + x * (area.right - area.left), y: area.top + anchor.y * (area.bottom - area.top) };
 }
 
 export function launcherAnchorAt(point: LauncherPoint, geometry: LauncherGeometry): LauncherAnchor {
   const area = bounds(geometry), clamped = clampLauncherPosition(point, geometry);
   const center = clamped.x + geometry.footprint.offsetX + geometry.footprint.width / 2;
-  return { edge: center < geometry.viewport.width / 2 ? 'left' : 'right', y: area.bottom === area.top ? 0 : (clamped.y - area.top) / (area.bottom - area.top) };
+  return { edge: center < geometry.viewport.width / 2 ? 'left' : 'right', x: area.right === area.left ? 0 : (clamped.x - area.left) / (area.right - area.left), y: area.bottom === area.top ? 0 : (clamped.y - area.top) / (area.bottom - area.top) };
 }
 
 export function crossedLauncherDragThreshold(dx: number, dy: number): boolean {
   return Math.hypot(dx, dy) >= 6;
 }
 
-/** Docking is explicit: normal snap-to-side placement does not hide the pet. */
+/** Only a pointer released in this edge strip docks the freely positioned pet. */
 export function launcherDockEdge(pointerX: number, viewportWidth: number): LauncherAnchor['edge'] | null {
   if (pointerX <= 24) return 'left';
   if (pointerX >= viewportWidth - 24) return 'right';
@@ -45,7 +46,10 @@ export function parseLauncherAnchor(value: string | null): LauncherAnchor | null
   if (!value) return null;
   try {
     const anchor = JSON.parse(value) as Partial<LauncherAnchor> | null;
-    if (anchor && (anchor.edge === 'left' || anchor.edge === 'right') && typeof anchor.y === 'number' && Number.isFinite(anchor.y) && anchor.y >= 0 && anchor.y <= 1) return { edge: anchor.edge, y: anchor.y, ...(anchor.hidden === true ? { hidden: true } : {}) };
+    if (anchor && (anchor.edge === 'left' || anchor.edge === 'right') && typeof anchor.y === 'number' && Number.isFinite(anchor.y) && anchor.y >= 0 && anchor.y <= 1
+      && (anchor.x === undefined || (typeof anchor.x === 'number' && Number.isFinite(anchor.x) && anchor.x >= 0 && anchor.x <= 1))) {
+      return { edge: anchor.edge, ...(anchor.x === undefined ? {} : { x: anchor.x }), y: anchor.y, ...(anchor.hidden === true ? { hidden: true } : {}) };
+    }
   } catch { /* Invalid UI preferences use the default corner. */ }
   return null;
 }

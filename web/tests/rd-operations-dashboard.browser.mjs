@@ -58,6 +58,7 @@ async function check(name, run) { await run(); checks.push(name); }
 try {
   await page.goto(base + '/__operations-fixture');
   await page.evaluate(async () => {
+    window.history.replaceState(null, '', '/operations');
     const refresh = await import('/@react-refresh'); refresh.default.injectIntoGlobalHook(window); window.$RefreshReg$ = () => {}; window.$RefreshSig$ = () => type => type; window.__vite_plugin_react_preamble_installed__ = true;
     const React = (await import('/node_modules/.vite/deps/react.js')).default;
     const { createRoot } = (await import('/node_modules/.vite/deps/react-dom_client.js')).default;
@@ -66,10 +67,12 @@ try {
     for (const css of ['/src/styles.css', '/src/features/rd/rd.css', '/src/features/rd/rdApplicationShell.css', '/src/features/rd/platformManagement.css']) await import(css);
     window.operationsFixture = { calls: [], refreshes: 0 };
     function Fixture() {
+      const [mount, setMount] = React.useState(0);
+      window.operationsFixture.remount = () => setMount(value => value + 1);
       const [props, setProps] = React.useState({ projects: [], loading: false, error: '' });
       React.useLayoutEffect(() => { window.operationsFixture.currentProps = props; }, [props]);
       window.operationsFixture.setProps = patch => setProps(current => ({ ...current, ...patch }));
-      return React.createElement(PlatformTheme, null, React.createElement('div', { className: 'rd-shell rd-application-shell', style: { display: 'block' } }, React.createElement(OperationsDashboard, { ...props, onRefresh: () => { window.operationsFixture.refreshes++; }, onOpenCase: (...args) => window.operationsFixture.calls.push(args) })));
+      return React.createElement(PlatformTheme, null, React.createElement('div', { className: 'rd-shell rd-application-shell', style: { display: 'block' } }, React.createElement(OperationsDashboard, { key: mount, ...props, onRefresh: () => { window.operationsFixture.refreshes++; }, onOpenCase: (...args) => window.operationsFixture.calls.push(args) })));
     }
     createRoot(document.getElementById('fixture')).render(React.createElement(Fixture));
   });
@@ -118,6 +121,24 @@ try {
     await page.getByRole('button', { name: '重置筛选', exact: true }).first().click();
     await page.getByText('第三方检查', { exact: true }).first().waitFor();
     await snap('03-filter-reset');
+  });
+
+  await check('semantic URL retains operating filters and ledger tab across remount', async () => {
+    await select('运行状态', '已阻塞');
+    await page.getByRole('tab', { name: '运行风险与协调', exact: true }).click();
+    const location = new URL(page.url());
+    assert.equal(location.pathname, '/operations');
+    assert.equal(location.searchParams.get('operations_status'), 'blocked');
+    assert.equal(location.searchParams.get('operations_tab'), 'risks');
+    assert.equal(location.searchParams.has('operations_owner'), false, 'defaults stay out of the URL');
+    assert.equal(location.searchParams.has('management_tab'), false, 'other page filters stay out of the URL');
+    await page.evaluate(() => { window.history.replaceState(null, '', location.href); window.operationsFixture.remount(); });
+    await page.getByRole('tab', { name: '运行风险与协调', exact: true }).waitFor();
+    assert.equal(await page.getByRole('tab', { name: '运行风险与协调', exact: true }).getAttribute('aria-selected'), 'true');
+    assert.equal(await page.getByText('第三方检查', { exact: true }).count(), 0);
+    await page.getByRole('button', { name: '重置筛选', exact: true }).first().click();
+    await page.getByRole('tab', { name: '交付与工期', exact: true }).click();
+    assert.equal(new URL(page.url()).search, '');
   });
 
   await check('loading and failure retain uncertainty and stale records, refresh can recover', async () => {

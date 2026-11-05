@@ -83,9 +83,10 @@ try {
 
   await field.fill('  CY-200  ');
   await page.getByRole('navigation', { name: '研发平台导航', exact: true }).getByRole('button', { name: '我的工作', exact: true }).click();
-  const leave = page.getByRole('dialog', { name: '离开前保存填写', exact: true });
+  const leave = page.getByRole('dialog', { name: '未保存的填写', exact: true });
   await leave.waitFor();
-  assert.equal(new URL(page.url()).searchParams.get('case'), 'series-case');
+  const guardedLocation = new URL(page.url());
+  assert.equal(guardedLocation.pathname.match(/\/flows\/([^/]+)/)?.[1] || guardedLocation.searchParams.get('case'), 'series-case');
   assert.equal(calls.length, 0);
   await leave.getByRole('button', { name: '继续编辑', exact: true }).click();
   assert.equal(await field.inputValue(), '  CY-200  ');
@@ -116,8 +117,8 @@ try {
   assert.equal(await page.getByRole('heading', { name: '需求与澄清', level: 1, exact: true }).isVisible(), true, 'a normal save keeps the requirements workface');
   await page.screenshot({ path: join(output, '04-confirmed-no-editor.png'), fullPage: true });
   await page.getByRole('navigation', { name: '研发平台导航', exact: true }).getByRole('button', { name: '我的工作', exact: true }).click();
-  await page.waitForFunction(() => !new URL(location.href).searchParams.has('project'));
-  assert.equal(await page.getByRole('dialog', { name: '离开前保存填写', exact: true }).count(), 0, 'successful confirmation clears the dirty guard');
+  await page.waitForFunction(() => location.pathname === '/work' || (location.pathname === '/' && !new URL(location.href).searchParams.has('project')));
+  assert.equal(await page.getByRole('dialog', { name: '未保存的填写', exact: true }).count(), 0, 'successful confirmation clears the dirty guard');
   checks.push('success trims and saves only series, hides its editor, retains workface and clears dirty state');
 
   project = base('AUTO-88');

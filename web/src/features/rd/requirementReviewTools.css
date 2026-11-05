@@ -1,0 +1,8 @@
+.rd-requirement-review-tools {display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:12px 0;min-width:0}
+.rd-requirement-review-tools>.ant-input-affix-wrapper {width:min(340px,100%)}
+.rd-requirement-filter-buttons {display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.rd-requirement-filter-buttons .ant-btn {font-variant-numeric:tabular-nums}
+.rd-review-result-count {font-size:12px;color:var(--color-text-secondary);margin:8px 0}
+.rd-review-current-row>td {background:var(--color-bg-subtle)!important}
+.rd-req-table tr[data-row-key]:focus-visible {outline:2px solid var(--color-action);outline-offset:-2px}
+@media(max-width:700px) {.rd-requirement-review-tools>.ant-input-affix-wrapper {width:100%}.rd-requirement-filter-buttons {flex:1 0 100%}}

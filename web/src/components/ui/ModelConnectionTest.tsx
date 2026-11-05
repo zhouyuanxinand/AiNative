@@ -13,9 +13,20 @@ const checkedTime = (value: string) => {
 };
 const modelKey = (model: TestableModel, index: number) => `${index}:${model.id}:${model.model}`;
 
-export function ModelConnectionTest({ credentials, disabled }: {
+/** Deliberately excludes credentials, response text and error details. */
+export interface CompletedModelProbe {
+  success: boolean;
+  model: string;
+  modelId: string;
+  provider: string;
+  checkedAt: string;
+  responseTimeMs: number;
+}
+
+export function ModelConnectionTest({ credentials, disabled, onProbeResult }: {
   credentials: CredentialOverrides;
   disabled: boolean;
+  onProbeResult?: (result: CompletedModelProbe) => void;
 }) {
   const request = useRef<{ controller: AbortController; version: number; task: ProbeTask }>();
   const version = useRef(0);
@@ -97,9 +108,14 @@ export function ModelConnectionTest({ credentials, disabled }: {
         const name = modelName.trim();
         const chosen = models.find((item, index) => modelKey(item, index) === selection && item.model === name);
         const matches = models.filter(item => item.model === name);
-        const modelId = chosen?.id || (matches.length === 1 ? matches[0].id : undefined);
+        const identity = chosen || (matches.length === 1 ? matches[0] : undefined);
+        const modelId = identity?.id || undefined;
         const response = await testModelConnection(credentials, name, modelId, controller.signal);
-        if (version.current === currentVersion) setResult(response);
+        if (version.current === currentVersion) {
+          setResult(response);
+          onProbeResult?.({ success: response.success, model: response.model, modelId: modelId || '',
+            provider: identity?.provider || '', checkedAt: response.checked_at, responseTimeMs: response.response_time_ms });
+        }
       }
     } catch (reason) {
       if (version.current !== currentVersion) return;

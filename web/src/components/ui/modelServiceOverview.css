@@ -1,0 +1,12 @@
+.model-service-overview{display:flex;flex-direction:column;align-items:flex-start;gap:16px;width:100%;min-width:0}
+.model-service-overview>div:first-child p{margin:0}
+.model-service-readings{display:grid;gap:14px;width:100%;margin:0;font-size:13px;line-height:1.7}
+.model-service-readings>div{display:grid;grid-template-columns:112px minmax(0,1fr);gap:12px}
+.model-service-readings dt{color:var(--color-text-secondary)}
+.model-service-readings dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.model-service-readings dd>:is(strong,small,span,time){display:block}
+.model-service-readings strong{font-weight:500;color:var(--color-text)}
+.model-service-readings small{font-size:12px;color:var(--color-text-secondary)}
+.model-service-overview .model-service-receipt-note{margin:0;font-size:12px}
+.model-service-read-error p{margin:0 0 8px}
+@media(max-width:700px){.model-service-readings>div{grid-template-columns:1fr;gap:2px}}

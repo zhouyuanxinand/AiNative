@@ -41,7 +41,21 @@
 .rd-req-review-modal .rd-req-lookup {margin:0 24px 12px}
 .rd-req-review-scroll {min-height:0;flex:1;overflow:auto;overscroll-behavior:contain;padding:0 24px 24px}
 .rd-req-review-scroll .ant-table-thead>tr>th {position:sticky;top:0;z-index:1}
+.rd-req-review-filters {padding:0 24px;flex:none}
+.rd-req-review-filters .rd-requirement-review-tools {margin:0 0 12px}
+.rd-req-review-adopt {display:flex;align-items:center;gap:16px;padding:12px 24px;border-top:1px solid var(--color-border);background:var(--color-bg-surface);flex:none}
+.rd-req-review-adopt>div {flex:1;min-width:0;font-size:12px;color:var(--color-text-secondary)}
+.rd-req-review-adopt p {margin:0;line-height:1.6}
+.rd-req-review-adopt>button {flex:none}
+.rd-analysis-scroll {max-height:clamp(320px,54vh,640px);overflow:auto;scrollbar-gutter:stable}
+.rd-analysis-scroll:focus-visible {outline:2px solid var(--color-action);outline-offset:2px}
+.rd-analysis-grid .ant-table-content {overflow:visible!important}
+.rd-analysis-grid .ant-table-thead>tr>th {position:sticky;top:0;z-index:1}
 @media(max-width:700px) {
+  .rd-req-review-filters {padding:0 12px}
+  .rd-req-review-adopt {padding:10px 12px;flex-wrap:wrap;gap:8px}
+  .rd-req-review-adopt>div {flex-basis:100%}
+  .rd-req-review-adopt>button {margin-left:auto}
   .rd-req-review-modal .ant-modal-header {padding:14px 12px 4px}
   .rd-req-review-tools {padding:6px 12px 10px;gap:8px}
   .rd-req-review-tools .ant-input-affix-wrapper {width:auto;order:3;flex:1 0 100%}
@@ -57,6 +71,9 @@
   .rd-req-table td:nth-child(2)::before {content:'原文指标'}
   .rd-req-table td:nth-child(3)::before {content:'公司自有组件指标'}
   .rd-req-table td:nth-child(4)::before {content:'需求澄清'}
+  .rd-analysis-grid td:nth-child(4)::before {content:'AI 推荐'}
+  .rd-analysis-grid td:nth-child(5)::before {content:'证据来源'}
+  .rd-analysis-grid td:nth-child(6)::before {content:'需求澄清'}
   .rd-requirement-list td:nth-child(2)::before {content:'当前需求'}
   .rd-requirement-list td:nth-child(3)::before {content:'来源文件'}
   .rd-requirement-list td:nth-child(4)::before {content:'办理'}

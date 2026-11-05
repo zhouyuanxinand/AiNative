@@ -42,15 +42,22 @@ const step = name => nav().getByRole('button', { name, exact: true });
 const sideView = name => page.getByRole('navigation', { name: '当前业务流程视图', exact: true }).getByRole('button', { name, exact: true });
 const overview = () => page.getByRole('button', { name: '成果概览', exact: true });
 const returnToEditor = () => page.getByRole('button', { name: '返回办理', exact: true });
-const leaveDialog = () => page.getByRole('dialog', { name: '离开前保存填写', exact: true });
-const params = () => new URL(page.url()).searchParams;
+const leaveDialog = () => page.getByRole('dialog', { name: '未保存的填写', exact: true });
+function routeFacts(url) {
+  const path = url.pathname.match(/^\/projects\/([^/]+)(?:\/flows\/([^/]+)(?:\/([^/]+))?)?$/);
+  const part = path?.[3], surface = { overview: 'current', materials: 'sources', requirements: 'requirements', selection: 'routes', preparation: 'preparation', execution: 'workpackages', delivery: 'delivery', reuse: 'reuse', decision: 'decision' }[part];
+  return { project: path?.[1] ? decodeURIComponent(path[1]) : null, case: path?.[2] ? decodeURIComponent(path[2]) : null,
+    case_view: part === 'process' ? 'process' : ['evidence', 'history'].includes(part) ? 'evidence' : 'current', step: surface ?? null,
+    evidence: part === 'history' ? 'history' : part === 'evidence' ? 'artifacts' : null,
+    q: url.searchParams.get('q'), page: url.searchParams.get('page'), workpackage: url.searchParams.get('workpackage') };
+}
 async function viewed(name) { await step(name).and(page.locator('[aria-current="step"]')).waitFor(); }
 async function assertRoute(expected) {
-  await page.waitForFunction(values => Object.entries(values).every(([key, value]) => {
-    const actual = new URL(location.href).searchParams.get(key);
-    return (key === 'case_view' ? actual || 'current' : actual) === value;
-  }), expected);
-  for (const [key, value] of Object.entries(expected)) assert.equal(key === 'case_view' ? params().get(key) || 'current' : params().get(key), value, `${key} identifies the visible page`);
+  await page.waitForURL(url => Object.entries(expected).every(([key, value]) => routeFacts(url)[key] === value));
+  const url = new URL(page.url());
+  assert.equal(url.searchParams.has('rd_view'), false, 'legacy navigation is replaced by a semantic path');
+  assert.equal(url.searchParams.has('case'), false, 'case identity is in the path');
+  for (const [key, value] of Object.entries(expected)) assert.equal(routeFacts(url)[key], value, `${key} identifies the visible page`);
 }
 async function capture(name) { await page.screenshot({ path: join(output, name + '.png') }); screenshots.push(name + '.png'); }
 async function goHome() { await page.getByRole('button', { name: '我的工作', exact: true }).click(); await page.getByRole('heading', { name: '我的工作', level: 1, exact: true }).waitFor(); }
@@ -69,6 +76,7 @@ try {
       if (path === '/api/rd/catalog') return route.fulfill({ json: catalog });
       if (path === '/api/rd/catalog/items') return route.fulfill({ json: { items: [], total: 0, page: 1, page_size: 5, total_pages: 1 } });
       if (path === '/api/models') return route.fulfill({ json: { success: true, models: [] } });
+      if (path.endsWith('/evidence-locations')) return route.fulfill({ json: { items: [] } });
       if (path === '/api/product_catalog') return route.fulfill({ json: { product_types: [{ value: 'liquid_cooling_pipeline', label: '液冷产品-液冷管路', enabled: true, domains: [{ value: 'military', label: '军品' }] }] } });
       if (path === '/api/rd/assistant/weather') return route.fulfill({ json: { status: 'unavailable', location: '隔离测试', notice: '导航测试不读取天气。' } });
       if (path.endsWith('/assistant')) return route.fulfill({ json: { messages: [], suggestions: [], context: { stage: 'input', project_version: 1, input_revision: 3 } } });
@@ -155,7 +163,7 @@ try {
   checks.push('step, auxiliary and same-case history switches preserve unsaved fields without business writes');
 
   checkpoint = 'cross-module blocked Back preserves history and project list filters';
-  await page.goto(base + '/?rd_view=projects&q=' + encodeURIComponent('隔离导航') + '&page=2');
+  await page.goto(base + '/?rd_view=projects&q=' + encodeURIComponent('隔离导航') + '&page=2&sort=oldest');
   await page.getByRole('button', { name: project.title, exact: true }).click();
   await page.getByRole('article', { name: researchCase.title, exact: true }).getByRole('button', { name: '继续办理', exact: true }).click();
   await viewed('需求确认');
@@ -168,7 +176,8 @@ try {
   assert.equal(await draft.inputValue(), '后退取消后应完整保留');
   await page.goBack(); await leaveDialog().getByRole('button', { name: '放弃填写并切换', exact: true }).click();
   await page.getByRole('article', { name: researchCase.title, exact: true }).waitFor();
-  await assertRoute({ project: project.id, case: null, q: '隔离导航', page: '2' });
+  await assertRoute({ project: project.id, case: null, q: null, page: null });
+  assert.equal(await page.evaluate(() => history.state.rdDirectoryStates.projects.q), '隔离导航', 'project filters move to history while viewing a project');
   await page.goForward(); await viewed('需求确认');
   await page.getByText('补充或修订需求记录', { exact: true }).click();
   assert.equal(await draft.inputValue(), '', 'confirmed leave unmounts and discards only the unsaved local fields');

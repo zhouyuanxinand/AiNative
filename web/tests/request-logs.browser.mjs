@@ -160,7 +160,7 @@ try {
   await page.getByText('开始生成研制任务书', { exact: true }).waitFor();
   assert.equal(await page.getByRole('heading', { name: '请求全过程', exact: true }).isVisible(), true);
   await page.goto(`${base}/logs`);
-  await page.getByRole('link', { name: '返回研制任务书平台', exact: true }).waitFor();
+  await page.getByRole('link', { name: '返回AI Native研发管理平台', exact: true }).waitFor();
   await page.getByText('服务实时快照', { exact: true }).waitFor();
   assert.deepEqual(errors, []);
   console.log('Request log browser passed: archive list/detail, status/Beijing time, URL filters/history, full cursor pagination, append deduplication, failures/retry/expired/empty, running-to-success polling, inactive stop, realtime compatibility, mobile screenshots.');

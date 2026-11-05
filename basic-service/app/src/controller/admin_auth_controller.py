@@ -45,7 +45,7 @@ def _login_error(message: str, status=403):
     response = HTMLResponse(
         '<!doctype html><html lang="zh-CN"><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        '<title>管理员登录 · 研制任务书平台</title>'
+        '<title>管理员登录 · AI Native研发管理平台</title>'
         '<style>body{margin:0;background:#f5f5f7;color:#1d1d1f;font:16px/1.7 system-ui,"Microsoft YaHei",sans-serif}'
         'main{max-width:560px;margin:12vh auto;padding:32px;background:white;border:1px solid #dedee3;border-radius:14px}'
         'h1{font-size:22px}a{color:#0066cc}p{overflow-wrap:anywhere}@media(max-width:640px){main{margin:8vh 16px;padding:24px}}</style>'

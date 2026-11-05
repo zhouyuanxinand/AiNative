@@ -184,7 +184,7 @@ try {
   assert.match(await page.title(), /运行日志 · 管理员页面/);
   await page.goto(`${base}/logs`);
   await page.getByRole('heading', { name: '运行日志', exact: true }).waitFor();
-  await page.getByRole('link', { name: '返回研制任务书平台', exact: true }).waitFor();
+  await page.getByRole('link', { name: '返回AI Native研发管理平台', exact: true }).waitFor();
   assert.deepEqual(errors, []);
   console.log('Unified admin browser passed without URLSearchParams.size: all four sidebar views, URL history, filter/editor drafts, polling lifecycle, API errors/empty/recovery, Beijing time, keyboard/select, mobile, settings and legacy routes.');
 } finally { await browser.close(); }

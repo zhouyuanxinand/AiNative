@@ -101,5 +101,7 @@ def test_local_mode_does_not_invent_an_oa_identity():
     with TestClient(app) as client:
         assert client.get("/api/current-user").json()["auth_enabled"] is False
         assert client.get("/api/auth/me").status_code == 401
+        client.cookies.set("jtb_rd_local_client", "local-project-and-chat-owner")
         assert client.post("/api/system/logout").json() == {"success": True}
+        assert client.cookies.get("jtb_rd_local_client") == "local-project-and-chat-owner"
         assert client.get("/logged-out").status_code == 200

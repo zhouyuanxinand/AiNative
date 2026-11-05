@@ -1,15 +1,18 @@
-import { Button } from 'antd';
+import { EditOutlined } from '@ant-design/icons';
+import { Button, Tooltip } from 'antd';
 import { ProjectDeleteButton } from './ProjectDeleteButton';
 import { projectCaseCardModel } from './projectCaseCardModel';
 import { formatTime } from './presentation';
 import type { Project } from './types';
 import './projectOverviewCard.css';
+import { ProjectOwner } from './ProjectDirectory';
 
-export function ProjectOverviewCard({ project, disabled, onOpen, onContinue, onDelete }: {
+export function ProjectOverviewCard({ project, disabled, onOpen, onContinue, onEdit, onDelete }: {
   project: Project;
   disabled: boolean;
   onOpen: () => void;
   onContinue: (caseId: string) => void;
+  onEdit: (project: Project) => void;
   onDelete: (project: Project) => void;
 }) {
   // Include every flow in the overview, even those below the two-item preview.
@@ -22,6 +25,7 @@ export function ProjectOverviewCard({ project, disabled, onOpen, onContinue, onD
       <h3><button type="button" onClick={onOpen}>{project.title}</button></h3>
       <div className="rd-project-entry-actions">
         <Button type="link" htmlType="button" className="rd-link-button" onClick={onOpen}>查看项目 <span aria-hidden="true">↗</span></Button>
+        <Tooltip title="编辑项目"><Button type="text" htmlType="button" className="rd-project-edit" icon={<EditOutlined />} aria-label={`编辑项目：${project.title}`} disabled={disabled} onClick={() => onEdit(project)} /></Tooltip>
         <ProjectDeleteButton project={project} disabled={disabled} onRequest={onDelete} />
       </div>
     </header>
@@ -37,7 +41,7 @@ export function ProjectOverviewCard({ project, disabled, onOpen, onContinue, onD
         <div className={attention ? 'has-attention' : undefined}><dt>需关注</dt><dd>{attention}</dd></div>
       </dl>
       <dl className="rd-project-overview-meta">
-        <div><dt>项目负责人</dt><dd>{project.owner_id?.trim() || '未设置'}</dd></div>
+        <div><dt>项目负责人</dt><dd><ProjectOwner project={project} /></dd></div>
         <div><dt>最近更新</dt><dd>{updated === '—' ? '未记录' : <time dateTime={project.updated_at}>{updated}</time>}</dd></div>
       </dl>
     </div>

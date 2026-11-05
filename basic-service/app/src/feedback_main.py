@@ -47,7 +47,7 @@ def create_app(
     admin_store: AdminAccessStore | None = None, verifier: TokenVerifier | None = None,
 ) -> FastAPI:
     """Build the isolated management app without starting generation workers."""
-    application = FastAPI(title="研制任务书平台管理", version="1.0.0")
+    application = FastAPI(title="AI Native研发管理平台 · 管理", version="1.0.0")
     application.state.config = config or get_config()
     application.state.auth_settings_admin = True
     application.state.auth_settings_requires_admin = True

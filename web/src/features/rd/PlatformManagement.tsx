@@ -1,7 +1,7 @@
-import { Button } from 'antd';
+import { Button, Tabs } from 'antd';
 import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { PlatformAuthSettings } from '../../components/ui/PlatformAuthSettings';
-import { ServiceCredentialsSettings } from '../../components/ui/ServiceCredentialsSettings';
+import { ModelServiceOverview } from '../../components/ui/ModelServiceOverview';
 import { loadModelCatalog } from '../../api/catalog';
 import { StyledSelect } from '../../components/ui/StyledSelect';
 import { sourceUrl } from './api';
@@ -10,6 +10,7 @@ import type { BusinessWorkflowTemplate, Catalog, CaseWorkspaceView, Project, Res
 import './platformManagement.css';
 import { FlowManagement } from './FlowManagement';
 import { useDirectoryState } from './useDirectoryState';
+import { ProjectProfiles, type ProfileKind } from './ProjectProfiles';
 const OperationsDashboard = lazy(() => import('./OperationsDashboard').then(module => ({ default: module.OperationsDashboard })));
 
 interface Props {
@@ -56,10 +57,13 @@ export function PlatformManagement({ view, projects, catalog, loading, error, on
       throw new Error(`凭证已生效，但模型目录刷新失败：${reason instanceof Error ? reason.message : '请稍后重试'}。可重新打开设置测试连接。`);
     }
   }
-  const directory = useDirectoryState(view, { q: '', kind: 'all', page: '1' });
+  const directory = useDirectoryState(view, { q: '', kind: 'all', page: '1', tab: 'tasks', item: '' });
   const { state, page, update } = directory;
+  const managementTab = ['customer', 'product'].includes(state.tab) ? state.tab as ProfileKind : 'tasks';
+  const showTasks = view === 'management' && managementTab === 'tasks';
   const query = state.q, filter = ['all', 'attention', 'completed'].includes(state.kind) ? state.kind : 'all';
-  const [candidateId, setCandidateId] = useState('');
+  const candidateId = directory.state.item;
+  const setCandidateId = (item: string) => directory.update({ item }, false);
   const cases = useMemo(() => projects.flatMap(project => project.cases.map(researchCase => ({ project, researchCase }))), [projects]);
   const candidates = useMemo(() => cases.flatMap(item => (item.researchCase.reuse_candidates ?? []).map(candidate => ({ ...item, candidate }))), [cases]);
   const rows = view === 'knowledge' ? candidates.filter(item => rowMatches(query, item.candidate.title, item.candidate.content, item.project.title))
@@ -80,8 +84,10 @@ export function PlatformManagement({ view, projects, catalog, loading, error, on
   return <main className="rd-page-content rd-management-page">
     <div className="rd-page-title"><div><h1>{title}</h1><p>{description}</p></div>{view !== 'system' && <div className="rd-management-refresh"><Button type="default" htmlType="button" className="rd-button" disabled={loading} onClick={onRefresh}>{loading ? '读取中…' : '刷新项目'}</Button>{view === 'flows' && <Button type="default" htmlType="button" className="rd-button" onClick={onOpenWorkspace}>打开能力工作台 ↗</Button>}</div>}</div>
     {view !== 'system' && <div className="rd-management-data-state">{loading && <p className="rd-loading" role="status">正在读取项目状态…{projects.length > 0 && '现有记录继续保留。'}</p>}{error && <div className="rd-error rd-banner" role="alert"><p>项目状态读取失败：{error}</p><p>{projects.length ? '当前显示上次读取的项目记录，请刷新后核对。' : '本次项目状态尚未取得，不能据此判断没有记录。'}</p><Button type="link" htmlType="button" className="rd-link-button" onClick={onRefresh}>重新读取项目</Button></div>}</div>}
-    {['management', 'knowledge'].includes(view) && <div className="rd-management-tools"><div className="rd-field rd-management-search-field"><label htmlFor="rd-management-search">搜索{title}记录</label><div className="rd-search"><input id="rd-management-search" value={directory.input} placeholder={view === 'knowledge' ? '搜索候选名称、内容或项目' : '搜索项目或工作名称'} onCompositionStart={() => directory.setComposing(true)} onCompositionEnd={event => { directory.setComposing(false); directory.setInput(event.currentTarget.value); }} onChange={event => directory.setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing && !directory.composing) { event.preventDefault(); directory.commit(); } }} />{directory.input && <button type="button" aria-label="清空搜索" onClick={() => { directory.commit(''); document.getElementById('rd-management-search')?.focus(); }}>×</button>}</div></div>{view !== 'knowledge' && <div className="rd-field rd-management-filter"><label id="rd-management-filter-label">工作范围</label><StyledSelect aria-labelledby="rd-management-filter-label" value={filter} onChange={value => update({ kind: value })} options={ [{ value: 'all', label: '全部工作' }, { value: 'attention', label: '存在运行问题' }, { value: 'completed', label: '已完成案例' }]} /></div>}</div>}
-    {view === 'management' && <><section className="rd-management-surface"><h2>项目与工作</h2><p className="rd-management-note">仅展示当前身份有权访问的项目。客户与产品为项目登记信息，工作包问题不代表全部工程风险。</p><div className="rd-management-table"><table><thead><tr><th>项目 / 工作</th><th>客户 / 产品</th><th>当前阶段</th><th>需要关注</th><th>办理</th></tr></thead><tbody>{visibleCases.map(({ project, researchCase }) => {
+    {view === 'management' && <Tabs className="rd-profile-tabs" activeKey={managementTab} onChange={tab => update({ tab }, false)} items={[{ key: 'customer', label: '客户画像' }, { key: 'product', label: '产品画像' }, { key: 'tasks', label: '项目与任务' }]} />}
+    {view === 'management' && managementTab !== 'tasks' && <ProjectProfiles key={managementTab} kind={managementTab} projects={projects} loading={loading} error={error} onOpenCase={onOpenCase} />}
+    {(showTasks || view === 'knowledge') && <div className="rd-management-tools"><div className="rd-field rd-management-search-field"><label htmlFor="rd-management-search">搜索{title}记录</label><div className="rd-search"><input id="rd-management-search" value={directory.input} placeholder={view === 'knowledge' ? '搜索候选名称、内容或项目' : '搜索项目或工作名称'} onCompositionStart={() => directory.setComposing(true)} onCompositionEnd={event => { directory.setComposing(false); directory.setInput(event.currentTarget.value); }} onChange={event => directory.setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing && !directory.composing) { event.preventDefault(); directory.commit(); } }} />{directory.input && <button type="button" aria-label="清空搜索" onClick={() => { directory.commit(''); document.getElementById('rd-management-search')?.focus(); }}>×</button>}</div></div>{view !== 'knowledge' && <div className="rd-field rd-management-filter"><label id="rd-management-filter-label">工作范围</label><StyledSelect aria-labelledby="rd-management-filter-label" value={filter} onChange={value => update({ kind: value })} options={ [{ value: 'all', label: '全部工作' }, { value: 'attention', label: '存在运行问题' }, { value: 'completed', label: '已完成案例' }]} /></div>}</div>}
+    {showTasks && <><section className="rd-management-surface"><h2>项目与工作</h2><p className="rd-management-note">仅展示当前身份有权访问的项目。客户与产品为项目登记信息，工作包问题不代表全部工程风险。</p><div className="rd-management-table"><table><thead><tr><th>项目 / 工作</th><th>客户 / 产品</th><th>当前阶段</th><th>需要关注</th><th>办理</th></tr></thead><tbody>{visibleCases.map(({ project, researchCase }) => {
       const blocked = researchCase.workpackages.filter(item => ['blocked', 'failed'].includes(item.status));
       return <tr key={`${project.id}/${researchCase.id}`}><td><strong>{project.title}</strong><small>{researchCase.title}</small></td><td>{project.customer_name || '未登记客户'}<small>{project.product_name || '未登记产品'}</small></td><td>{stageTitle(researchCase.stage)}</td><td>{blocked.length ? <span className="rd-warning-text">{blocked.length} 个工作包需处理</span> : '暂无运行问题'}<small>{researchCase.requirements.length} 条需求 · {researchCase.sources.length} 份资料</small></td><td><Button type="link" htmlType="button" className="rd-link-button" onClick={() => open(project, researchCase)}>进入工作 →</Button></td></tr>;
     })}</tbody></table></div>{projectRowsKnown && !rows.length && <Empty>{query || filter !== 'all' ? '没有符合条件的工作，可调整搜索与筛选。' : '还没有项目工作。发起研发工作后，可在这里按项目查看进展。'}</Empty>}</section>{pageControls}</>}
@@ -107,6 +113,6 @@ export function PlatformManagement({ view, projects, catalog, loading, error, on
         })}</ul>
       </section>}
     </>}
-    {view === 'system' && <div className="rd-system-sections"><section className="rd-management-surface"><div><h2>账号与登录</h2><p>设置 OA／问学登录及应用入口。</p></div><PlatformAuthSettings /></section><section className="rd-management-surface"><div><h2>模型服务</h2><p>维护模型连接，测试服务并管理已保存的凭证。</p>{modelCatalogStatus && <p role="status">{modelCatalogStatus}</p>}</div><ServiceCredentialsSettings triggerVariant="button" onSaved={refreshConfiguredModels} /></section><section className="rd-management-surface"><div><h2>管理员工作区</h2><p>管理员名单、运行日志、用户反馈和操作资料。</p></div><a className="rd-button" href="/admin">打开管理员页面 ↗</a></section><section className="rd-management-surface"><div><h2>能力与数据接入</h2><p>本地 Workspace 管理当前能力；外部平台接入契约在工作台查看。</p></div><Button type="default" htmlType="button" className="rd-button" onClick={onOpenWorkspace}>打开能力工作台 ↗</Button></section></div>}
+    {view === 'system' && <div className="rd-system-sections"><section className="rd-management-surface"><div><h2>账号与登录</h2><p>设置 OA／问学登录及应用入口。</p></div><PlatformAuthSettings /></section><section className="rd-management-surface"><ModelServiceOverview onSaved={refreshConfiguredModels} />{modelCatalogStatus && <p role="status">{modelCatalogStatus}</p>}</section><section className="rd-management-surface"><div><h2>管理员工作区</h2><p>管理员名单、运行日志、用户反馈和操作资料。</p></div><a className="rd-button" href="/admin">打开管理员页面 ↗</a></section><section className="rd-management-surface"><div><h2>能力与数据接入</h2><p>本地 Workspace 管理当前能力；外部平台接入契约在工作台查看。</p></div><Button type="default" htmlType="button" className="rd-button" onClick={onOpenWorkspace}>打开能力工作台 ↗</Button></section></div>}
   </main>;
 }

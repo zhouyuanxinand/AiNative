@@ -46,3 +46,20 @@ def test_spa_entry_routes_do_not_capture_api_paths(monkeypatch, tmp_path):
     assert response.status_code == 404
     assert response.headers["content-type"].startswith("application/json")
     assert response.json() == {"detail": "Not Found"}
+
+
+def test_semantic_pages_and_nested_case_routes_support_direct_refresh(monkeypatch, tmp_path):
+    paths = ["/work", "/projects", "/research", "/research/customers", "/research/products",
+             "/flows", "/knowledge", "/operations", "/workspace", "/settings", "/projects/p1",
+             "/projects/p1/flows/c1", "/rd/projects/p1/cases/c1"]
+    paths.extend("/projects/p1/flows/c1/" + page for page in (
+        "overview", "materials", "requirements", "selection", "preparation", "execution",
+        "delivery", "reuse", "decision", "process", "evidence", "history"))
+    with _client(monkeypatch, tmp_path) as client:
+        for path in paths:
+            result = client.get(path)
+            assert result.status_code == 200, (path, result.text)
+            assert result.headers["content-type"].startswith("text/html")
+            assert result.headers["cache-control"] == "no-store, no-cache, must-revalidate"
+        for path in ("/projects/p1/flows/c1/unknown", "/api/rd/navigation/missing", "/unknown"):
+            assert client.get(path).status_code == 404

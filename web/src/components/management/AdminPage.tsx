@@ -65,7 +65,7 @@ export function AdminPage() {
     alive.current = true;
     document.body.classList.add('admin-page');
     const title = document.title;
-    document.title = '管理员登录 · 研制任务书平台';
+    document.title = '管理员登录 · AI Native研发管理平台';
     const invalidated = (event: Event) => {
       request.current?.abort(); request.current = undefined;
       authorized.current = false; setSession(null); setConfirmLogout(false); setChecking(false);
@@ -111,7 +111,7 @@ export function AdminPage() {
   if (!session) {
     const denied = failure?.status === 403;
     const canLogin = failure?.status === 401 || denied;
-    return <main className="admin-access-page"><div className="admin-access-brand"><strong>JONHON</strong><span>研制任务书平台</span></div>
+    return <main className="admin-access-page"><div className="admin-access-brand"><strong>JONHON</strong><span>AI Native研发管理平台</span></div>
       <section className="admin-access-panel" aria-labelledby="admin-access-title" aria-busy={checking}>
         <h1 id="admin-access-title">{checking ? '正在验证管理员身份' : denied ? '当前账号没有管理员权限' : canLogin ? '登录管理员页面' : '暂时无法验证管理员身份'}</h1>
         {checking ? <p role="status">正在检查 OA 登录状态与管理员名单…</p> : <>
@@ -163,7 +163,7 @@ function AdminWorkspace({ session, logoutPending, logoutError, onLogout }: { ses
   }, []);
 
   useEffect(() => {
-    document.title = `${labels[view]} · 管理员页面 · 研制任务书平台`;
+    document.title = `${labels[view]} · 管理员页面 · AI Native研发管理平台`;
   }, [view]);
 
   function navigate(event: MouseEvent<HTMLAnchorElement>, next: AdminView) {
@@ -179,7 +179,7 @@ function AdminWorkspace({ session, logoutPending, logoutError, onLogout }: { ses
 
   return <div className="admin-shell">
     <aside className="admin-sidebar" aria-label="管理员侧边栏">
-      <div className="admin-brand"><strong>JONHON</strong><span>研制任务书平台</span></div>
+      <div className="admin-brand"><strong>JONHON</strong><span>AI Native研发管理平台</span></div>
       <button type="button" className="admin-menu-toggle" aria-controls="admin-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(value => !value)}>
         管理菜单 <span aria-hidden="true">{menuOpen ? '−' : '+'}</span>
       </button>
@@ -193,7 +193,7 @@ function AdminWorkspace({ session, logoutPending, logoutError, onLogout }: { ses
     </aside>
     <div className="admin-workspace">
       <header className="admin-header">
-        <div><h1>管理员页面</h1><p>研制任务书平台 · 反馈、运行与资料管理</p></div>
+        <div><h1>管理员页面</h1><p>AI Native研发管理平台 · 反馈、运行与资料管理</p></div>
         <div className="admin-header-actions"><span className="admin-current-user" aria-label="当前管理员">{session.user.display_name || session.user.username}<small>{session.user.username}</small></span>
           {session.can_manage_admins && <PlatformAuthSettings admin disabled={logoutPending} />}
           <a className="feedback-button" href="/admin/home" aria-disabled={logoutPending || undefined}

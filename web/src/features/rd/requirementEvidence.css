@@ -1,0 +1,8 @@
+.rd-evidence-location { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.rd-evidence-location-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.rd-evidence-location-id { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border: 1px solid var(--color-border); border-radius: 4px; background: var(--color-bg-subtle); font: 600 12px/1.6 var(--font-family-mono); text-decoration: none; }
+.rd-evidence-location-id:hover, .rd-evidence-location-id:focus-visible { border-color: currentColor; }
+.rd-evidence-location-id { color: var(--color-action); cursor: pointer; }
+.rd-evidence-location-label { color: var(--color-text-secondary); font-size: 12px; line-height: 1.6; }
+.rd-evidence-location-message { color: var(--color-text-secondary); font-size: 12px; }
+.rd-evidence-location .rd-link-button { font-size: 12px; padding: 0; }

@@ -8,7 +8,7 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'file:///C:/U
 const base = process.env.TEST_BASE_URL || 'http://127.0.0.1:18370';
 const output = process.env.SCREENSHOT_DIR || 'docs/rd-platform/verification/screenshots/2026-11-03-workflow-templates/direct-canvas';
 await mkdir(output, { recursive: true });
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined });
 const checks = [], failures = [], errors = [], apiRequests = [];
 const initial = { nodes: [
   { id: 'input', title: '资料受理', role: '研发工程师', required: true, deliverables: ['受理记录'], position: { x: 40, y: 40 } },
@@ -84,12 +84,69 @@ async function allNodesVisible(page) {
 }
 const scale = page => page.locator('.rd-graph-plane').evaluate(el => new DOMMatrixReadOnly(getComputedStyle(el).transform).a);
 async function check(name, action, fixture) {
+  if (process.env.TEST_CASE && !name.includes(process.env.TEST_CASE)) return;
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   try { await mount(page, fixture); await action(page); checks.push(name); console.log('PASS', name); }
   catch (error) { failures.push({ name, message: error.message }); await snap(page, 'failure-' + failures.length); await writeFile(join(output, 'failure-' + failures.length + '.json'), JSON.stringify({ name, message: error.message, graph: await graph(page), text: await page.locator('body').innerText() }, null, 2)); console.error('FAIL', name, error.message); }
   finally { await page.close(); }
 }
 try {
+  await check('readonly fixed view-node control remains at the stage corner across selection zoom scroll pan and mobile', async page => {
+    const view = page.getByRole('button', { name: '查看节点', exact: true });
+    const canvas = page.getByLabel('流程节点画布', { exact: true });
+    const settle = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    async function fixedCorner() {
+      assert.equal(await view.count(), 1, 'readonly has exactly one persistent view-node button');
+      const bounds = await toolbar(page).evaluate(element => {
+        const tool = element.getBoundingClientRect(), stage = element.closest('.rd-canvas-stage').getBoundingClientRect();
+        return { x: tool.left - stage.left, y: tool.top - stage.top, right: tool.right, viewport: innerWidth };
+      });
+      assert(Math.abs(bounds.x - 12) < 1 && Math.abs(bounds.y - 12) < 1, `view toolbar stays 12px from stage top-left, got ${bounds.x},${bounds.y}`);
+      assert(bounds.right <= bounds.viewport + 1, 'view toolbar remains within the viewport');
+    }
+    const unchanged = await graph(page);
+    await allNodesVisible(page); await fixedCorner();
+    for (const id of ['custom', 'extra']) {
+      await node(page, id).click(); await fixedCorner();
+      assert.equal(await view.isEnabled(), true); assert.equal(await view.getAttribute('aria-expanded'), 'false');
+      await view.click(); await inspector(page).waitFor();
+      assert.equal(await inspector(page).getByLabel('节点标题', { exact: true }).inputValue(), initial.nodes.find(item => item.id === id).title, 'view opens the currently selected node');
+      assert.equal(await inspector(page).getByLabel('节点标题', { exact: true }).isDisabled(), true);
+      assert.equal(await view.getAttribute('aria-expanded'), 'true'); await fixedCorner();
+      await page.getByRole('button', { name: '关闭节点属性', exact: true }).click();
+      assert.equal(await view.getAttribute('aria-expanded'), 'false');
+    }
+    const originalScale = await scale(page);
+    for (let index = 0; index < 4; index++) await page.getByRole('button', { name: '放大画布', exact: true }).click();
+    await settle(); assert(await scale(page) > originalScale); await fixedCorner();
+    await canvas.evaluate(element => element.scrollTo(120, 100)); await settle();
+    assert(await canvas.evaluate(element => element.scrollLeft > 0 && element.scrollTop > 0), 'exercise horizontal and vertical canvas scrolling');
+    await fixedCorner();
+    const start = await canvas.evaluate(element => {
+      const box = element.getBoundingClientRect();
+      for (const offset of [60, 110, 160]) {
+        const x = box.right - offset, y = box.bottom - 70;
+        if (!document.elementFromPoint(x, y)?.closest('button,[role="button"]')) return { x, y, left: element.scrollLeft, top: element.scrollTop };
+      }
+      return null;
+    });
+    assert(start, 'fixture supplies a blank canvas point for real pointer panning');
+    await page.mouse.move(start.x, start.y); await page.mouse.down(); await page.mouse.move(start.x - 45, start.y - 35, { steps: 5 });
+    await fixedCorner(); await page.mouse.up(); await settle();
+    assert(await canvas.evaluate((element, before) => element.scrollLeft > before.left && element.scrollTop > before.top, start), 'pointer panning changes the viewport');
+    await fixedCorner();
+    await page.getByRole('button', { name: '适应', exact: true }).click(); await allNodesVisible(page);
+    await clickEdge(page, '选择连线 资料受理 → 资料一致性检查');
+    assert.equal(await view.isDisabled(), true, 'selecting an edge disables node inspection without removing its fixed button'); await fixedCorner();
+    await node(page, 'input').click(); assert.equal(await view.isEnabled(), true);
+    await page.setViewportSize({ width: 390, height: 760 }); await allNodesVisible(page); await fixedCorner();
+    assert.equal(await view.isVisible(), true); await view.click(); await inspector(page).waitFor();
+    assert.equal(await inspector(page).getByLabel('节点标题', { exact: true }).inputValue(), '资料受理');
+    await page.getByRole('button', { name: '关闭节点属性', exact: true }).click(); await snap(page, '12-readonly-fixed-view-mobile');
+    assert.deepEqual(await graph(page), unchanged, 'readonly inspection and viewport manipulation never change the graph');
+    await reset(page, { nodes: [], edges: [] }); await fixedCorner();
+    assert.equal(await view.isDisabled(), true, 'an empty graph keeps the fixed inspection control disabled');
+  }, { readOnly: true });
   await check('direct node selection, protected delete, add, edit, copy, delete and undo', async page => {
     assert.equal(await page.getByText('查找节点与连线（辅助）', { exact: true }).count(), 0);
     assert.equal(await inspector(page).count(), 0, 'properties do not occupy permanent sidebar');
@@ -247,7 +304,7 @@ try {
     assert(await canvas.evaluate(el => el.scrollWidth <= el.clientWidth + 1 && el.scrollHeight <= el.clientHeight + 1));
     await snap(page, '11-readonly-single-node-narrow');
   }, { graph: single, readOnly: true });
-  const receipt = { passed: failures.length === 0 && errors.length === 0 && apiRequests.length === 0, checks, failures, errors, apiRequests, mode: 'isolated real React canvas', actualBusinessWrites: 0 };
+  const receipt = { passed: checks.length > 0 && failures.length === 0 && errors.length === 0 && apiRequests.length === 0, checks, failures, errors, apiRequests, mode: 'isolated real React canvas', actualBusinessWrites: 0 };
   await writeFile(join(output, 'direct-canvas-receipt.json'), JSON.stringify(receipt, null, 2)); console.log(JSON.stringify(receipt)); assert(receipt.passed);
   for (let index = 1; index <= checks.length; index++) for (const extension of ['png', 'json']) await unlink(join(output, `failure-${index}.${extension}`)).catch(error => { if (error.code !== 'ENOENT') throw error; });
 } finally { await browser.close(); }

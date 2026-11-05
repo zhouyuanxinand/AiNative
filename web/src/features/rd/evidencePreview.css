@@ -1,0 +1,22 @@
+.rd-evidence-preview-dialog .ant-modal-body { display: flex; flex-direction: column; max-height: min(78dvh, 880px); min-height: 0; overflow: hidden; }
+.rd-evidence-preview-header, .rd-evidence-preview-quote, .rd-evidence-preview-locations, .rd-evidence-preview-actions { flex: 0 0 auto; }
+.rd-evidence-preview-source { margin: 0 0 6px; font-weight: 600; overflow-wrap: anywhere; }
+.rd-evidence-preview-header .rd-muted { margin: 4px 0 12px; font-size: 12px; }
+.rd-evidence-preview-quote { padding: 10px 12px; background: var(--color-bg-subtle); border-left: 3px solid var(--color-border); }
+.rd-evidence-preview-quote > span { color: var(--color-text-secondary); font-size: 12px; }
+.rd-evidence-preview-quote blockquote { margin: 4px 0 0; max-height: 90px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rd-evidence-preview-locations { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 0; max-height: 96px; overflow: auto; font-size: 12px; }
+.rd-evidence-preview-locations [aria-current="location"] { color: var(--color-action); border-color: currentColor; }
+.rd-evidence-preview-content { flex: 1 1 auto; min-height: 100px; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--color-border); border-radius: 4px; }
+.rd-evidence-preview-block { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 12px; padding: 12px; border-bottom: 1px solid var(--color-border); }
+.rd-evidence-preview-block.is-selected { background: var(--color-bg-subtle); box-shadow: inset 3px 0 var(--color-action); }
+.rd-evidence-preview-coordinate { color: var(--color-text-secondary); font: 12px/1.8 var(--font-family-mono); }
+.rd-evidence-preview-block p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; }
+.rd-evidence-preview-block mark { color: var(--color-text-primary); background: var(--color-warning-bg); box-decoration-break: clone; }
+.rd-evidence-preview-actions { justify-content: space-between; margin-top: 12px; }
+.rd-evidence-preview-error { overflow: auto; }
+@media (max-width: 600px) {
+  .rd-evidence-preview-dialog .ant-modal-body { max-height: 76dvh; }
+  .rd-evidence-preview-block { grid-template-columns: minmax(0, 1fr); gap: 3px; padding: 10px; }
+  .rd-evidence-preview-quote blockquote { max-height: 62px; }
+}

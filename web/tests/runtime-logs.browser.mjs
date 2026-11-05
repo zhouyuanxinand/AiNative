@@ -74,7 +74,7 @@ await page.route('**/api/logs/latest?*', async route => {
 
 try {
   await page.goto(homeUrl);
-  await page.getByRole('heading', { name: '研制任务书平台', exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'AI Native研发管理平台', exact: true }).waitFor();
   assert.equal(await page.locator('button[data-page="runtime-logs"]').count(), 0, 'home navigation does not expose logs as a business page');
   assert.equal(await page.getByRole('button', { name: '运行日志', exact: true }).count(), 0, 'home has no runtime-log navigation button');
   assert.equal(requests.length, 0, 'home does not load the diagnostics log feed');
@@ -85,7 +85,7 @@ try {
 
   assert.equal(await page.locator('#workspace-shell').count(), 0, 'standalone logs do not mount the task workspace');
   assert.equal(await page.locator('.top-nav, #sidebar').count(), 0, 'standalone logs have no business navigation or task sidebar');
-  assert.equal(await page.getByRole('link', { name: '返回研制任务书平台', exact: true }).getAttribute('href'), '/');
+  assert.equal(await page.getByRole('link', { name: '返回AI Native研发管理平台', exact: true }).getAttribute('href'), '/');
 
   assert.ok(requests.length >= 1, 'latest logs are requested when the page opens');
   for (const request of requests) {

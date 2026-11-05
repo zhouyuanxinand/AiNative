@@ -26,7 +26,10 @@ proposal.context.product_type = { value: 'liquid_cooling_pipeline', status: 'pro
 proposal.context.product_domain = { value: 'military', status: 'proposed', reason: '规范明确军品质量体系。', evidence: [{ source_id: 'spec', quote: '适用于军品。' }] };
 proposal.context.development_process = { value: '改型II', status: 'proposed', reason: '来源明确研制流程。', evidence: [{ source_id: 'tech', quote: '研制流程：改型II。' }] };
 proposal.context.product_series = { value: 'YLZJ', status: 'already_confirmed', reason: '保留现有系列。', evidence: [] };
+proposal.requirements[0].recommendation = { text: '补充验收工况', proposed_value: '额定工况下核验工作温度。',
+  evidence: [{ source_id: 'spec', quote: '额定工况下核验工作温度。' }] };
 let failAnalysis = true, failAdopt = true, failSave = false, failDelete = false;
+let holdAnalysis = true, holdSave = false, releaseAnalysis, releaseSave;
 const modelChoices = [
   { provider: 'smartvision', name: 'azure/gpt-5.4', id: 'fixture-azure', vendor: '微软 Azure', configured: true },
   { provider: 'smartvision', name: 'dashscope/qwen3.5-plus', id: 'fixture-dashscope', vendor: '阿里云 DashScope', configured: true },
@@ -47,6 +50,7 @@ try {
     if (path === '/api/rd/catalog') return route.fulfill({ json: { stages: [], scenarios: [{ id: 'taskbook', title: '研制任务书' }], actions: [], workpackage_definitions: [] } });
     if (path === '/api/rd/projects') return route.fulfill({ json: { projects: [project] } });
     if (path === '/api/rd/projects/analysis-fixture') return route.fulfill({ json: project });
+    if (path.endsWith('/evidence-locations') && request.method() === 'GET') return route.fulfill({ json: { items: [] } });
     if (path.endsWith('/assistant')) return route.fulfill({ json: { messages: [], suggestions: [], context: { stage: 'input', project_version: project.version, input_revision: project.cases[0].input_revision } } });
     if (path.endsWith('/sources/classify')) {
       const body = request.postDataJSON();
@@ -57,6 +61,7 @@ try {
       assert.equal(request.method(), 'POST');
       const call = { key: request.headers()['idempotency-key'], body: request.postDataJSON(), projectVersion: project.version, model: structuredClone(project.cases[0].model_selection) };
       analysisRequests.push(call); writeOrder.push({ kind: 'analysis', ...call });
+      if (holdAnalysis) { holdAnalysis = false; await new Promise(resolve => { releaseAnalysis = resolve; }); }
       await new Promise(resolve => setTimeout(resolve, 150));
       if (failAnalysis) { failAnalysis = false; return route.fulfill({ status: 502, json: { error: '模型服务暂不可用，资料已保留。' } }); }
       project.version += 1;
@@ -89,6 +94,7 @@ try {
         return route.fulfill({ json: project });
       }
       if (body.command === 'save_context') {
+        if (holdSave) { holdSave = false; await new Promise(resolve => { releaseSave = resolve; }); }
         assert.equal(body.expected_version, project.version, 'model save uses the current project version');
         assert.equal(body.data.case_id, 'case-fixture');
         assert.deepEqual(Object.keys(body.data.model_selection).sort(), ['id', 'name', 'provider']);
@@ -100,6 +106,9 @@ try {
         return route.fulfill({ json: project });
       }
       assert.equal(body.command, 'adopt_source_analysis');
+      if (!commands.some(call => call.body.command === 'delete_source') && project.version === 2) {
+        assert.deepEqual(body.data.accept_recommendations, [0], 'opt-in is explicit and bound to the analyzed row');
+      }
       assert.equal(body.data.analysis_id, project.cases[0].source_analysis.id);
       assert.equal(body.data.case_id, 'case-fixture');
       if (failAdopt) { failAdopt = false; return route.fulfill({ status: 503, json: { error: '采用服务暂不可用，请重试。' } }); }
@@ -126,19 +135,48 @@ try {
   await sourceStep().click().catch(async error => { console.error('Page errors:', errors, 'Body:', await page.locator('body').innerText()); throw error; });
   const panel = page.getByRole('region', { name: '资料分析', exact: true });
   await panel.waitFor();
+  const materials = page.getByRole('region', { name: '编制资料', exact: true });
+  const materialsToggle = () => materials.getByRole('button', { name: /^(展开|收起)编制资料$/ });
+  const checkMaterialsExpanded = async expanded => {
+    assert.equal(await materialsToggle().getAttribute('aria-expanded'), String(expanded));
+    assert.equal(await materials.getByRole('button', { name: '选择资料文件', exact: true }).and(materials.locator('button')).isVisible(), expanded);
+  };
+  await checkMaterialsExpanded(true);
   assert.equal(await page.locator('input[id^="rd-context-"]').count(), 0, 'business context is not a manual input form');
   assert.equal(await panel.locator('dt').count(), 2, 'development process and product series remain on the source-analysis page');
   assert.equal(await panel.getByText('资料未明确', { exact: true }).count(), 1);
   assert.equal(await panel.locator('dt').filter({ hasText: /^(产品类型|质量管理体系分类|封面阶段|组织范围)$/ }).count(), 0, 'project creation parameters are not repeated as source-analysis cards');
   const analyze = panel.getByRole('button', { name: '分析上传资料', exact: true });
   await analyze.evaluate(element => { element.click(); element.click(); });
+  await panel.getByText('已提交分析，正在等待分析结果。服务尚未返回可细分的处理阶段，可能需要数分钟。', { exact:true }).waitFor();
+  await panel.getByRole('timer', { name:'本次等待时长', exact:true }).getByText('已等待 0 分 1 秒', { exact:true }).waitFor();
+  assert.equal(await panel.getByRole('progressbar').count(),0, 'analysis does not invent measurable progress');
+  if (output) await page.screenshot({ path:join(output,'analysis-waiting-elapsed.png') });
+  releaseAnalysis();
+  checks.push('真实等待计时、无伪造百分比、分析失败保留资料并明确重试');
   await page.getByRole('alert').filter({ hasText: '模型服务暂不可用' }).first().waitFor();
   assert.equal(await page.getByRole('alert').filter({ hasText: '模型服务暂不可用' }).count(), 1, 'analysis failure is shown once in the page error area');
   assert.equal(analysisRequests.length, 1, 'duplicate click is locked');
+  await panel.getByText(/本次未取得新的分析结果/).waitFor();
+  await checkMaterialsExpanded(true);
   assert.equal(await panel.getByRole('button', { name: '确认采用', exact: true }).count(), 0);
   await analyze.focus(); await page.keyboard.press('Enter');
-  await panel.getByText('待核对采用', { exact: true }).waitFor();
+  await panel.getByRole('button', { name: '确认采用', exact: true, disabled: false }).waitFor();
   assert.equal(analysisRequests.length, 2);
+  await checkMaterialsExpanded(false);
+  assert.equal(await materials.locator('input[type="file"]').count(), 1, 'collapsed upload content remains mounted');
+  const topActions = panel.locator('.rd-analysis-controls');
+  const topReanalyze = topActions.getByRole('button', { name: '重新分析资料', exact: true });
+  const topAdopt = topActions.getByRole('button', { name: '确认采用', exact: true });
+  const [reanalyzeBox, adoptBox] = await Promise.all([topReanalyze.boundingBox(), topAdopt.boundingBox()]);
+  assert(reanalyzeBox && adoptBox && adoptBox.x >= reanalyzeBox.x + reanalyzeBox.width && Math.abs(adoptBox.y - reanalyzeBox.y) <= 1, 'adopt follows reanalyze on the same top action row');
+  assert.equal(await panel.getByRole('button', { name: '确认采用', exact: true }).count(), 1, 'no duplicate adoption action below the result');
+  await materialsToggle().focus(); await page.keyboard.press('Enter');
+  await checkMaterialsExpanded(true);
+  await materialsToggle().click();
+  await checkMaterialsExpanded(false);
+  if (output) await page.screenshot({ path: join(output, 'analysis-collapsed-actions-desktop.png') });
+  checks.push('分析失败保持展开，成功收起且上传组件保持挂载；键盘展开；采用紧邻重新分析右侧且无底部重复按钮');
   assert.equal(analysisRequests[0].key, analysisRequests[1].key, 'analysis retry keeps its idempotency key');
   assert.deepEqual(analysisRequests[1].body, { expected_version: 1 });
   assert.equal(commands.length, 0, 'preview must not silently adopt');
@@ -148,22 +186,60 @@ try {
   assert(!((await panel.innerText()).includes('liquid_cooling_pipeline')), 'internal enum is not exposed as a field value');
   // Ignore the single colspan cell that describes an empty table.
   const previewRows = panel.locator('tbody tr').filter({ has: page.getByRole('cell').nth(3) });
-  assert.equal(await previewRows.count(), 5);
-  for (const name of ['指标', '原文指标', '公司自有组件指标', '需求澄清']) {
+  assert.equal(await previewRows.count(), proposal.requirements.length);
+  for (const name of ['指标', '原文指标', '公司自有组件指标', 'AI 推荐', '证据来源', '需求澄清']) {
     assert.equal(await panel.getByRole('columnheader', { name, exact: true }).count(), 1, `preview column: ${name}`);
   }
   const reviewButton = panel.getByRole('button', { name: '全屏审阅', exact: true });
+  const previewSearch = panel.getByRole('textbox', { name: '搜索需求', exact: true });
+  await previewSearch.fill('原文要求 6');
+  assert.equal(await previewRows.count(),1, 'ordinary preview supports local search');
+  assert.equal(await previewRows.locator('.rd-req-metric > span').innerText(),'06', 'preview search retains the source row number');
+  await panel.getByRole('button', {name:'清除搜索',exact:true}).click();
+  assert.equal(await previewSearch.evaluate(el=>el===document.activeElement),true, 'search clear returns focus to input');
   const review = page.getByRole('dialog', { name: '需求清单审阅', exact: true });
   const searchReview = review.getByLabel('搜索需求', { exact: true });
-  await panel.getByRole('button', { name: '下一页', exact: true }).click();
-  assert.equal(await previewRows.count(), 3);
-  await panel.getByText('核对来源原文', { exact: true }).first().click();
+  const recommendationChoice = panel.getByRole('checkbox', { name: '选用此建议' });
+  assert.equal(await recommendationChoice.isChecked(), false);
+  await recommendationChoice.check();
+  assert.equal(commands.length, 0, 'selecting a suggestion does not write a business decision');
+  assert.equal(await page.locator('.rd-case-page > .rd-project-header').count(), 0, 'case workface removes the redundant project toolbar');
+  assert.equal(await page.locator('.rd-case-page > .rd-project-business-context').count(), 0, 'case workface starts with workflow navigation instead of repeated background');
+  await panel.getByRole('button', { name: '客户画像', exact: true }).click();
+  const customerProfile = page.getByRole('dialog', { name: '客户画像', exact: true });
+  await customerProfile.waitFor();
+  assert.equal(await customerProfile.locator('input, textarea').count(), 0, 'project portrait lookup is a read-only projection');
+  if (output) await page.screenshot({ path: join(output, 'customer-profile-inspector.png') });
+  await customerProfile.getByRole('button', { name: '返回办理', exact: true }).click();
+  await customerProfile.waitFor({ state: 'hidden' });
+  assert(await recommendationChoice.isChecked(), 'closing a portrait preserves the chosen suggestion');
+  await panel.getByRole('button', { name: '产品画像', exact: true }).click();
+  const productProfile = page.getByRole('dialog', { name: '产品画像', exact: true });
+  await productProfile.waitFor();
+  await page.keyboard.press('Escape');
+  await productProfile.waitFor({ state: 'hidden' });
+  assert.equal(commands.length, 0, 'portrait lookup does not adopt a requirement or write a profile');
+  const sixthSource = panel.getByText('核对来源原文', { exact: true }).nth(5);
+  await sixthSource.click();
   await panel.getByRole('blockquote').filter({ hasText: '第 6 条' }).waitFor();
   await reviewButton.click();
   await review.waitFor();
   await searchReview.fill('原文要求 1');
   await review.locator('tbody tr').filter({ hasText: '原文要求 1' }).waitFor();
-  assert.equal(await review.locator('tbody tr').count(), 1, 'full review searches across all preview pages');
+  assert.equal(await review.locator('tbody tr').count(), 1, 'full review searches the entire source list');
+  assert.equal(await review.getByRole('checkbox', { name: '选用此建议' }).isChecked(), true, 'full-screen review shares the preview selection');
+  await review.getByRole('checkbox', { name: '选用此建议' }).uncheck();
+  await review.getByRole('checkbox', { name: '选用此建议' }).check();
+  await searchReview.fill('');
+  await review.getByRole('button', {name:'已选建议（1）',exact:true}).click();
+  assert.equal(await review.locator('tbody tr[data-row-key]').count(),1, 'fullscreen selected filter preserves original indexes');
+  await review.getByRole('button', {name:'下一项待处理',exact:true}).click();
+  assert.equal(await review.locator('tr[data-row-key="1"]').evaluate(el=>el===document.activeElement),true);
+  await review.getByRole('button', {name:'全部（8）',exact:true}).click();
+  await searchReview.fill('原文要求 1');
+  await review.getByText('筛选仅影响显示；确认采用将采用全部 8 项原文需求、可采用的识别信息和已选 1 条建议。', { exact:true }).waitFor();
+  await review.getByText('建议依据', { exact: true }).click();
+  await review.getByRole('blockquote').filter({ hasText: '额定工况下核验工作温度' }).waitFor();
   assert(!/5℃|70℃/.test(await review.locator('tbody tr').getByRole('cell').nth(2).innerText()), 'the company indicator cannot copy an unverified source value');
   await searchReview.fill('无匹配指标的搜索词');
   await review.getByText(/没有匹配的需求/).waitFor();
@@ -174,22 +250,29 @@ try {
     await page.screenshot({ path: join(output, 'requirement-review-desktop.png') });
   }
   await page.keyboard.press('Escape'); await review.waitFor({ state: 'hidden' });
-  assert.equal(await previewRows.count(), 3, 'returning from full review retains the preview page');
+  assert.equal(await previewRows.count(), 8, 'returning from full review retains the entire list');
   await panel.getByRole('blockquote').filter({ hasText: '第 6 条' }).waitFor();
-  checks.push('需求清单四列、分页原文核对、跨页检索、退出保留阅读位置');
-  await panel.getByRole('button', { name: '上一页', exact: true }).click();
+  assert(await recommendationChoice.isChecked(), 'returning from review keeps the selected suggestion');
+  assert(await sixthSource.evaluate(el => el.parentElement.open), 'returning keeps the open original quote');
+  checks.push('需求清单全量纵览、原文与建议出处核对、逐行选择、全屏检索和原位返回');
   if (output) {
     await panel.evaluate(element => { const shell = document.querySelector('.rd-application-shell'); shell.scrollTop += element.getBoundingClientRect().top - 110; });
     await page.screenshot({ path: join(output, 'source-analysis-proposal.png') });
   }
-  await panel.getByRole('button', { name: '确认采用', exact: true }).click();
-  await page.getByRole('alert').filter({ hasText: '采用服务暂不可用' }).first().waitFor();
+  await reviewButton.click(); await review.waitFor();
+  await searchReview.fill('原文要求 1');
+  await review.getByRole('button', { name: '确认采用', exact: true }).evaluate(element=>{ element.click(); element.click(); });
+  await review.getByRole('status').filter({ hasText:'采用服务暂不可用' }).waitFor();
+  await page.getByRole('alert', { includeHidden:true }).filter({ hasText: '采用服务暂不可用' }).first().waitFor({state:'attached'});
   assert.equal(project.cases[0].requirements.length, 0, 'failed adoption does not update UI business records');
-  await panel.getByRole('button', { name: '确认采用', exact: true }).click();
+  assert.equal(await review.getByRole('checkbox', { name:'选用此建议' }).isChecked(),true, 'fullscreen adoption failure preserves selection');
+  await review.getByRole('button', { name: '确认采用', exact: true }).click();
+  await review.waitFor({state:'hidden'});
   await page.getByRole('navigation', { name: '办理步骤', exact: true }).getByRole('button', { name: '需求确认', exact: true }).and(page.locator('[aria-current="step"]')).waitFor();
   await page.waitForFunction(() => document.activeElement?.id === 'rd-case-workarea');
   await sourceStep().click();
-  await panel.getByText('已采用', { exact: true }).waitFor();
+  await panel.getByText('识别结果已采用，可继续核对并确认需求。', { exact: true }).waitFor();
+  checks.push('普通预览搜索及清除焦点、全屏共享选择与筛选、明确全部采用范围、全屏失败保留选择并同键重试');
   assert.equal(commands[0].key, commands[1].key, 'adoption retry keeps its key');
   assert.equal(project.cases[0].stage, 'input', 'adoption does not invent stage approval');
   assert.equal(project.cases[0].context.cover_phase, '', 'missing information stays unresolved');
@@ -219,7 +302,7 @@ try {
   project.version++;
   await page.reload(); await sourceStep().click();
   const metricRow = index => previewRows.filter({ hasText: `原文要求 ${index}` });
-  const detail = index => metricRow(index).getByRole('cell').nth(3);
+  const detail = index => metricRow(index).getByRole('cell').nth(5);
   await detail(1).getByText('待答复', { exact: true }).waitFor();
   await detail(1).getByText('确认环境温度适用条件', { exact: true }).waitFor();
   assert(!(await detail(1).innerText()).includes(companyReply), 'another requirement with the same question must not leak its answer');
@@ -234,6 +317,9 @@ try {
   await detail(4).getByText('当前版本无澄清', { exact: true }).waitFor();
   await detail(4).getByText(/历史澄清/).click();
   assert((await detail(4).innerText()).includes('旧版工况回复'), 'older replies are explicitly available as history');
+  await panel.getByRole('button', {name:'待澄清（2）',exact:true}).click();
+  assert.equal(await previewRows.count(),2, 'clarification filter excludes adopted and stale records');
+  await panel.getByRole('button', {name:'全部（8）',exact:true}).click();
   await reviewButton.click(); await review.waitFor();
   await searchReview.fill(companyReply);
   await review.locator('tbody tr').filter({ hasText: '原文要求 3' }).waitFor();
@@ -272,14 +358,25 @@ try {
   project.cases[0].source_analysis.status = 'proposed';
   await page.reload();
   await sourceStep().click();
-  await panel.getByText('待重新分析', { exact: true }).waitFor();
+  await panel.getByText('这份识别结果已过期。资料或项目信息已变化，请重新分析后再采用。', { exact: true }).waitFor();
+  await checkMaterialsExpanded(true);
   assert.equal(await panel.getByRole('button', { name: '确认采用', exact: true }).isDisabled(), true);
+  await reviewButton.click(); await review.waitFor();
+  assert.equal(await review.getByRole('button', {name:'确认采用',exact:true}).isDisabled(),true, 'fullscreen keeps stale analysis locked');
+  assert.equal(await review.getByRole('checkbox', {name:'选用此建议'}).isDisabled(),true, 'fullscreen cannot select stale recommendations');
+  await review.getByRole('button', {name:'来源待复核（8）',exact:true}).click();
+  assert.equal(await review.locator('tbody tr[data-row-key]').count(),8);
+  await review.getByRole('button', {name:'退出全屏',exact:true}).click(); await review.waitFor({state:'hidden'});
+  checks.push('当前澄清筛选排除历史和已采用记录；全屏过期分析与建议保持禁用');
   await panel.getByRole('button', { name: '重新分析资料', exact: true }).click();
-  await panel.getByText('待核对采用', { exact: true }).waitFor();
+  await panel.getByRole('button', { name: '确认采用', exact: true, disabled: false }).waitFor();
+  await checkMaterialsExpanded(false);
   assert.equal(await panel.getByRole('button', { name: '确认采用', exact: true }).isEnabled(), true);
   await page.setViewportSize({ width: 390, height: 844 });
   await panel.evaluate(element => { const shell = document.querySelector('.rd-application-shell'); shell.scrollTop += element.getBoundingClientRect().top - 16; });
   assert(await page.locator('.rd-application-shell').evaluate(element => element.scrollWidth <= element.clientWidth + 1), 'narrow layout has no horizontal page overflow');
+  const [narrowReanalyze, narrowAdopt] = await Promise.all([topReanalyze.boundingBox(), topAdopt.boundingBox()]);
+  assert(narrowReanalyze && narrowAdopt && narrowAdopt.x >= narrowReanalyze.x + narrowReanalyze.width && Math.abs(narrowAdopt.y - narrowReanalyze.y) <= 1, '390px action row keeps adoption to the right of reanalysis');
   if (output) await page.screenshot({ path: join(output, 'source-analysis-narrow.png') });
   await reviewButton.click(); await review.waitFor();
   assert(await review.evaluate(element => {
@@ -321,7 +418,7 @@ try {
   await panel.getByRole('button', { name: '确认采用', exact: true }).click();
   await page.getByRole('navigation', { name: '办理步骤', exact: true }).getByRole('button', { name: '需求确认', exact: true }).and(page.locator('[aria-current="step"]')).waitFor();
   await sourceStep().click();
-  await panel.getByText('已采用', { exact: true }).waitFor();
+  await panel.getByText('识别结果已采用，可继续核对并确认需求。', { exact: true }).waitFor();
   assert.equal(commands.at(-1).body.data.analysis_id, 'analysis-refresh');
   assert.equal(researchCase.context.product_type, 'liquid_cooling_pipeline');
   assert.equal(researchCase.context.development_process, '改型II');
@@ -347,7 +444,11 @@ try {
   assert.equal(await panel.getByRole('button', { name: '确认采用', exact: true }).isDisabled(), true, 'a model draft cannot adopt an old analysis result');
 
   const pendingWrites = writeOrder.length;
+  await checkMaterialsExpanded(false);
+  await materialsToggle().click();
   await page.getByLabel('选择资料文件', { exact: true }).setInputFiles({ name: '待上传模型联动验收.txt', mimeType: 'text/plain', buffer: Buffer.from('仅用于浏览器夹具，不上传真实资料。') });
+  await checkMaterialsExpanded(true);
+  assert.equal(await materialsToggle().isDisabled(), true, 'pending uploads stay visible until handled');
   assert.equal(await analyzeSelected().isDisabled(), true, 'a pending file still blocks analysis with a changed model');
   assert.equal(await panel.getByRole('button', { name: '确认采用', exact: true }).isDisabled(), true);
   await analyzeSelected().evaluate(element => element.click());
@@ -358,12 +459,15 @@ try {
   await analyzeSelected().click({ trial: true });
   checks.push('模型改值可直接分析、无独立保存；旧结果采用及待上传文件保护保留');
 
-  failSave = true;
+  failSave = true; holdSave = true;
   const modelSaveStart = saveCalls().length, modelAnalysisStart = analysisRequests.length;
   const versionBeforeModelSave = project.version;
   const firstWrite = page.waitForRequest(request => request.method() === 'POST' && /\/(?:commands|analysis)$/.test(new URL(request.url()).pathname));
   await analyzeSelected().evaluate(element => { element.click(); element.click(); });
   assert.equal(new URL((await firstWrite).url()).pathname.endsWith('/commands'), true, 'a changed model is saved before any analysis request');
+  await panel.getByText('正在保存模型设置，尚未开始分析。', {exact:true}).waitFor();
+  if (output) await page.screenshot({path:join(output,'analysis-saving-model.png')});
+  releaseSave();
   await page.getByRole('alert').filter({ hasText: '模型设置保存暂不可用' }).first().waitFor();
   assert.equal(saveCalls().length, modelSaveStart + 1, 'duplicate clicks submit a single model save');
   assert.equal(analysisRequests.length, modelAnalysisStart, 'save failure does not invoke analysis');
@@ -372,9 +476,12 @@ try {
   assert.equal(await analyzeSelected().isEnabled(), true);
   if (output) await page.screenshot({ path: join(output, 'model-save-failure.png') });
 
-  failAnalysis = true;
+  failAnalysis = true; holdAnalysis = true;
   const retryOrder = writeOrder.length;
   await analyzeSelected().evaluate(element => { element.click(); element.click(); });
+  await panel.getByText('已提交分析，正在等待分析结果。服务尚未返回可细分的处理阶段，可能需要数分钟。', { exact:true }).waitFor();
+  assert.equal(await panel.getByText('正在保存模型设置，尚未开始分析。', {exact:true}).count(),0, 'confirmed model save advances the known waiting phase');
+  releaseAnalysis();
   await page.getByRole('alert').filter({ hasText: '模型服务暂不可用' }).first().waitFor();
   assert.equal(saveCalls().length, modelSaveStart + 2, 'retry saves once before the first analysis');
   assert.equal(saveCalls().at(-1).key, saveCalls().at(-2).key, 'model-save retry keeps its idempotency key');
@@ -392,7 +499,7 @@ try {
     page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/analysis')),
     analyzeSelected().evaluate(element => { element.click(); element.click(); }),
   ]);
-  await panel.locator('.rd-analysis-meta').getByText('分析模型：' + modelChoices[0].name, { exact: true }).waitFor();
+  await panel.getByRole('button', { name: '确认采用', exact: true, disabled: false }).waitFor();
   assert.equal(saveCalls().length, modelSaveStart + 2, 'analysis failure retry does not save the unchanged model again');
   assert.equal(analysisRequests.length, modelAnalysisStart + 2, 'duplicate retry clicks start one analysis');
   assert.equal(analysisRequests.at(-1).key, analysisAfterSave.key, 'analysis retry keeps its original idempotency key');
@@ -407,7 +514,7 @@ try {
     page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/analysis')),
     analyzeSelected().evaluate(element => { element.click(); element.click(); }),
   ]);
-  await panel.locator('.rd-analysis-meta').getByText('分析模型：' + modelChoices[1].name, { exact: true }).waitFor();
+  await panel.getByRole('button', { name: '确认采用', exact: true, disabled: false }).waitFor();
   assert.equal(saveCalls().length, directSaveStart + 1);
   assert.equal(analysisRequests.length, directAnalysisStart + 1);
   assert.deepEqual(writeOrder.slice(directOrder).map(item => item.kind), ['save_context', 'analysis']);
@@ -458,11 +565,16 @@ try {
   const heading = page.locator('.rd-case-heading');
   assert((await heading.innerText()).includes('已固定的研制任务书生成 · V1'), 'the heading reads the real adoption template_version');
   assert.equal((await page.locator('body').innerText()).includes('Vundefined'), false);
-  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  // Project management actions remain on the overview, not on each case workface.
+  const sourceCardsUrl = page.url();
+  await locationNav.getByRole('button', { name: project.title, exact: true }).click();
+  await page.locator('.rd-project-header').getByRole('button', { name: '刷新', exact: true }).click();
   const refreshNotice = page.getByText('已刷新。未保存的填写继续保留。', { exact: true });
   await refreshNotice.waitFor();
   assert.equal(await page.locator('.rd-notice.rd-banner').filter({ hasText: '已刷新。未保存的填写继续保留。' }).count(), 0, 'refresh success uses a transient message instead of a page banner');
   await refreshNotice.waitFor({ state: 'hidden' });
+  await page.goto(sourceCardsUrl);
+  await panel.waitFor();
   const longLink = sourceLink(longSourceName);
   const nameCharacters = Array.from(longSourceName);
   assert(nameCharacters.length > 30);
@@ -494,8 +606,9 @@ try {
   if (output) await page.screenshot({ path: join(output, 'source-file-cards-narrow.png') });
   await page.setViewportSize({ width: 1440, height: 1000 });
   const assistantLauncher = page.getByRole('button', { name: '打开小航助手', exact: true });
-  assert.equal(await assistantLauncher.evaluate(element => !!element.closest('.rd-journey-heading-actions')), true, 'the source page keeps the assistant entry beside its return action');
-  assert.equal(await page.locator('.rd-floating-launcher').isVisible(), false, 'the source page has no floating launcher over its controls');
+  assert.equal(await assistantLauncher.evaluate(element => !!element.closest('.rd-journey-heading-actions')), false, 'the source page has no assistant button in the heading');
+  assert.equal(await assistantLauncher.count(), 1, 'the character is the single assistant entry');
+  assert.equal(await page.locator('.rd-floating-launcher .rd-floating-figure').isVisible(), true, 'the source page displays the floating character');
   const sourceAnalyze = panel.getByRole('button', { name: '分析上传资料', exact: true });
   await sourceAnalyze.click({ trial: true });
   assert.equal(await sourceAnalyze.evaluate(element => { const box = element.getBoundingClientRect(), hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2); return hit === element || element.contains(hit); }), true, 'the closed assistant does not cover the analysis action');
@@ -509,13 +622,13 @@ try {
   assert.equal(await page.locator('.rd-floating-launcher').isVisible(), true, 'other workspaces retain the floating assistant launcher');
   await assistantLauncher.click();
   await assistantDialog.waitFor();
-  assert.equal(await assistantDialog.getByRole('textbox', { name: '询问当前案例', exact: true }).inputValue(), '布局验收草稿，仅保留，不发送。', 'switching assistant entry placement preserves its existing conversation draft');
+  assert.equal(await assistantDialog.getByRole('textbox', { name: '询问当前案例', exact: true }).inputValue(), '布局验收草稿，仅保留，不发送。', 'switching workspaces preserves the character assistant conversation draft');
   await assistantDialog.getByRole('textbox', { name: '询问当前案例', exact: true }).fill('');
   await assistantDialog.getByRole('button', { name: '收起小航助手', exact: true }).click();
   await assistantDialog.waitFor({ state: 'hidden' });
   await sourceStep().click();
   await panel.waitFor();
-  checks.push('真实模板版本、唯一顶栏位置导航、Unicode文件卡与类型图标、桌面两列和390px单列；助手内联开合及其他工作面悬浮入口保留草稿');
+  checks.push('真实模板版本、唯一顶栏位置导航、Unicode文件卡与类型图标、桌面两列和390px单列；小航统一由悬浮小人触发，标题无助手按钮，跨工作面保留草稿');
 
   const deleteDialog = page.getByRole('dialog', { name: '删除资料', exact: true });
   const referenceName = cardSources[2].name;

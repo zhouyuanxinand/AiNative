@@ -50,9 +50,9 @@ export function Header() {
   return (
     <div className="header">
       <div className="header-row">
-        <div className="header-brand-slot" aria-label="研制任务书平台" data-platform-slot>
+        <div className="header-brand-slot" aria-label="AI Native研发管理平台" data-platform-slot>
           <div className="brand-copy">
-            <h1>研制任务书平台</h1>
+            <h1>AI Native研发管理平台</h1>
             <p>Engineering Taskbook Intelligence</p>
           </div>
         </div>

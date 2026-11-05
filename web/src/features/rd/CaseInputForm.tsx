@@ -1,6 +1,6 @@
 import { PlatformButton } from '../../components/ui/PlatformButton';
 import { Button, Tooltip } from 'antd';
-import { DeleteOutlined, FileWordOutlined, FilePdfOutlined, FileExcelOutlined, FilePptOutlined, FileImageOutlined, FileTextOutlined, FileOutlined } from '@ant-design/icons';
+import { DownOutlined, RightOutlined, DeleteOutlined, FileWordOutlined, FilePdfOutlined, FileExcelOutlined, FilePptOutlined, FileImageOutlined, FileTextOutlined, FileOutlined } from '@ant-design/icons';
 import { useEffect, useRef, useState } from 'react';
 import { FeedbackConfirmDialog } from '../../components/feedback/FeedbackDialog';
 import { StyledSelect } from '../../components/ui/StyledSelect';
@@ -45,6 +45,12 @@ export function CaseInputForm({ project, researchCase, busy, error, command, onA
   const [modelError, setModelError] = useState('');
   const [modelRevision, setModelRevision] = useState(0);
   const [queuePending, setQueuePending] = useState(false);
+  const analysis = researchCase.source_analysis;
+  const analysisRevision = analysis?.status === 'adopted' ? analysis.adopted_input_revision : analysis?.input_revision;
+  const currentAnalysisKey = analysis && analysis.status !== 'stale' && analysisRevision === researchCase.input_revision
+    ? `${analysis.id}:${analysisRevision}` : '';
+  const [sourcesExpanded, setSourcesExpanded] = useState(() => !currentAnalysisKey);
+  const sourcesOpen = sourcesExpanded || queuePending;
   const [deleteTarget, setDeleteTarget] = useState<Source | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteFailed, setDeleteFailed] = useState(false);
@@ -58,6 +64,8 @@ export function CaseInputForm({ project, researchCase, busy, error, command, onA
   const deleteReason = researchCase.status === 'completed' ? '流程已完成，不能删除资料'
     : researchCase.workpackages.some(item => ['submitted', 'running'].includes(item.status)) ? '工作包执行中，请完成后再删除资料' : '';
   useEffect(() => { onDirtyChange(modelDirty || queuePending); }, [modelDirty, queuePending, onDirtyChange]);
+  useEffect(() => { setSourcesExpanded(!currentAnalysisKey); }, [researchCase.id, currentAnalysisKey]);
+  useEffect(() => { if (queuePending) setSourcesExpanded(true); }, [queuePending]);
   useEffect(() => {
     if (modelDirty) return;
     const nextModel = normalizeModelSelection(researchCase.model_selection);
@@ -111,7 +119,11 @@ export function CaseInputForm({ project, researchCase, busy, error, command, onA
     }
   }
   function analyzeWithModel(caseId: string) {
-    if (!modelDirty) return onAnalyze(caseId);
+    const finish = (success: boolean) => {
+      if (success) setSourcesExpanded(false);
+      return success;
+    };
+    if (!modelDirty) return onAnalyze(caseId).then(finish);
     const selected = normalizeModelSelection(model);
     const actor = recentActorRef.current;
     const epoch = recentIdentityEpoch.current;
@@ -137,7 +149,7 @@ export function CaseInputForm({ project, researchCase, busy, error, command, onA
           setRecentModels([]);
         }
       });
-    } });
+    } }).then(finish);
   }
   function renderSource(source: Source) {
     const current = isCurrentSource(source, researchCase.source_selection);
@@ -165,13 +177,19 @@ export function CaseInputForm({ project, researchCase, busy, error, command, onA
     } finally { deleteLock.current = false; setDeleting(false); }
   }
   return <div className="rd-input-workface">
-    <section className="rd-section rd-input-sources" aria-labelledby="rd-input-sources-title">
-      <div className="rd-section-head"><h3 id="rd-input-sources-title">编制资料</h3></div>
+    <section className={`rd-section rd-input-sources${sourcesOpen ? '' : ' is-collapsed'}`} aria-labelledby="rd-input-sources-title">
+      <div className="rd-section-head rd-input-sources-heading">
+        <div className="rd-input-sources-summary"><h3 id="rd-input-sources-title">编制资料</h3><span>{activeSources.length} 份</span></div>
+        <Button type="text" icon={sourcesOpen ? <DownOutlined /> : <RightOutlined />} aria-label={sourcesOpen ? '收起编制资料' : '展开编制资料'} aria-expanded={sourcesOpen} aria-controls="rd-input-sources-content" disabled={queuePending} onClick={() => setSourcesExpanded(value => !value)}>{sourcesOpen ? '收起' : '展开'}</Button>
+      </div>
+      {/* Keep upload files, classification and retry state mounted when collapsed. */}
+      <div id="rd-input-sources-content" hidden={!sourcesOpen}>
       <BatchSourceUpload projectId={project.id} projectVersion={project.version} researchCase={researchCase} modelSelection={model} busy={busy} onBatchUpload={onBatchUpload} onQueueChange={setQueuePending} />
       <div className="rd-current-files"><h4 ref={fileListHeading} tabIndex={-1}>当前资料{activeSources.length > 0 && <span>{activeSources.length} 份</span>}</h4>{activeSources.length ? <div className="rd-source-file-grid">{activeSources.map(renderSource)}</div> : <p className="rd-quiet-state">尚未添加资料。选择文件并上传后，会显示在这里。</p>}</div>
       {historicalSources.length > 0 && <details className="rd-source-history"><summary>历史资料 <span>{historicalSources.length} 份</span></summary><div className="rd-source-file-grid">{historicalSources.map(renderSource)}</div></details>}
+      </div>
     </section>
-    <SourceAnalysisPanel project={project} researchCase={researchCase} busy={busy} blockedByDraft={modelDirty || queuePending} pendingUpload={queuePending} command={command} onAnalyze={analyzeWithModel} onReviewClarification={onReviewClarification} renderModelControls={analyzeButton => <div className="rd-context-form rd-analysis-model-settings">
+    <SourceAnalysisPanel project={project} researchCase={researchCase} busy={busy} error={error} blockedByDraft={modelDirty || queuePending} pendingUpload={queuePending} command={command} onAnalyze={analyzeWithModel} onReviewClarification={onReviewClarification} renderModelControls={analyzeButton => <div className="rd-context-form rd-analysis-model-settings">
       <div className="rd-analysis-controls"><div className="rd-field rd-analysis-model-field">
         <label id="rd-model-label" htmlFor="rd-model">编制模型</label>
         <StyledSelect id="rd-model" aria-labelledby="rd-model-label" aria-describedby={modelError ? 'rd-model-error' : undefined} value={modelKey} options={modelOptions} onChange={selectModel} disabled={busy} />

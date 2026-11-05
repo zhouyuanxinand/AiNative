@@ -33,7 +33,7 @@ export function Sidebar({ onCredentialsSaved }: { onCredentialsSaved: () => Prom
             />
           </div>
           <div className="brand-copy">
-            <h1>研制任务书平台</h1>
+            <h1>AI Native研发管理平台</h1>
             <p>Engineering Taskbook Intelligence</p>
           </div>
         </div>

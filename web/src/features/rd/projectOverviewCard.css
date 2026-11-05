@@ -1,6 +1,8 @@
 .rd-project-entries { align-items: start; }
 .rd-project-entry.rd-project-overview-card > header { align-items: center; padding-bottom: 12px; }
 .rd-project-overview-card > header > h3 { flex: 1; }
+.rd-project-overview-card .rd-project-edit { flex-shrink: 0; width: 32px; height: 32px; padding: 0; color: var(--color-action); }
+.rd-project-overview-card .rd-project-edit:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 3px; }
 .rd-project-overview-body { padding: 0 22px 18px; }
 .rd-project-overview-profile,
 .rd-project-overview-meta { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px 20px; margin: 0; font-size: 12px; line-height: 1.6; }
@@ -19,6 +21,7 @@
 .rd-project-overview-counts .has-attention dd { color: var(--color-warning); }
 .rd-project-overview-card .rd-project-cases { background: var(--color-bg-subtle); }
 @media(max-width:700px) {
+  .rd-project-overview-card .rd-project-edit { width: 40px; height: 40px; }
   .rd-project-entry.rd-project-overview-card > header { flex-wrap: wrap; padding: 16px 18px 12px; gap: 8px; }
   .rd-project-overview-card > header > h3 { min-width: 120px; }
   .rd-project-overview-body { padding: 0 18px 16px; }

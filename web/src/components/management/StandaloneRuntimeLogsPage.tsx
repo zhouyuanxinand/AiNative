@@ -5,7 +5,7 @@ import './standaloneRuntimeLogs.css';
 export function StandaloneRuntimeLogsPage() {
   useEffect(() => {
     const previousTitle = document.title;
-    document.title = '最新运行日志 · 研制任务书平台';
+    document.title = '最新运行日志 · AI Native研发管理平台';
     document.body.dataset.page = 'runtime-logs';
     document.body.classList.add('runtime-logs-page');
 
@@ -35,7 +35,7 @@ export function StandaloneRuntimeLogsPage() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="m15 18-6-6 6-6" />
           </svg>
-          返回研制任务书平台
+          返回AI Native研发管理平台
         </a>
       </header>
       <main className="runtime-logs-page-main">

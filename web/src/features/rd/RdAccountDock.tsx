@@ -26,7 +26,7 @@ export function RdAccountDock({ onExpand, onOpenSettings, settingsActive, settin
         : <span className="rd-account-dock-login-actions"><a className="rd-account-dock-link" href="/auth/login" target="_blank" rel="noopener noreferrer" title="前往 OA／问学登录（新标签页）">前往统一登录 ↗</a><button type="button" className="rd-account-dock-refresh" onClick={retry} aria-label="刷新登录状态" title="登录后刷新状态"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.4 6M20 4v7h-7" /></svg></button></span>}
     </div>
     <div className="rd-account-dock-actions">
-      {user && <SidebarLogout onFailure={onExpand} />}
+      {(user || local) && <SidebarLogout onFailure={onExpand} local={local} />}
       <button type="button" className="rd-account-settings" title="系统管理" aria-label="系统管理" aria-current={settingsActive ? 'page' : undefined} disabled={settingsDisabled} onClick={onOpenSettings}><RdNavigationIcon name="settings" /></button>
     </div>
     {state.status === 'error' && <p className="rd-account-dock-error" role="alert">{state.error}</p>}

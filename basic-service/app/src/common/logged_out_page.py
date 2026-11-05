@@ -5,7 +5,7 @@ LOGGED_OUT_HTML = """<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>已退出本应用 · 研制任务书平台</title>
+  <title>已退出本应用 · AI Native研发管理平台</title>
   <style>
     :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont,
       "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -28,9 +28,9 @@ LOGGED_OUT_HTML = """<!doctype html>
 </head>
 <body>
   <main>
-    <p class="brand">研制任务书平台</p>
+    <p class="brand">AI Native研发管理平台</p>
     <h1>已退出本应用</h1>
-    <p class="description">当前浏览器的研制任务书登录会话已清除。</p>
+    <p class="description">您已离开当前应用。已保存的项目、文件与对话均已保留。</p>
     <a href="/">重新进入应用</a>
   </main>
 </body>

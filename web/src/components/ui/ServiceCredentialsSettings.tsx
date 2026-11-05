@@ -1,12 +1,12 @@
 import { PlatformButton } from './PlatformButton';
 /** Service settings follow the sister platforms' dialog, defaults and persistence behavior. */
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import {
   requestServiceCredentials, changeCredentialHistory, type CredentialHistoryEntry, type CredentialGroup, type CredentialOverrides,
   type CredentialValues, type ServiceCredentialsResponse,
 } from '../../api/serviceCredentials';
-import { ModelConnectionTest } from './ModelConnectionTest';
+import { ModelConnectionTest, type CompletedModelProbe } from './ModelConnectionTest';
 import { DefaultModelSettings } from './DefaultModelSettings';
 import { StyledSelect } from './StyledSelect';
 import { PlatformAuthSettings } from './PlatformAuthSettings';
@@ -32,7 +32,17 @@ const historyHost = (value: string) => {
   try { return new URL(value).host; } catch { return value; }
 };
 
-export function ServiceCredentialsSettings({ onSaved, triggerVariant = 'icon' }: { onSaved: () => Promise<void>; triggerVariant?: 'icon' | 'button' }) {
+export interface SettingsModelProbe extends CompletedModelProbe {
+  environmentId: string;
+  draft: boolean;
+}
+interface SettingsProps {
+  onSaved: () => Promise<void>;
+  triggerVariant?: 'icon' | 'button';
+  onProbeResult?: (result: SettingsModelProbe) => void;
+}
+
+export function ServiceCredentialsSettings({ onSaved, triggerVariant = 'icon', onProbeResult }: SettingsProps) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   return <>
@@ -47,11 +57,11 @@ export function ServiceCredentialsSettings({ onSaved, triggerVariant = 'icon' }:
     {open && createPortal(<CredentialsDialog onClose={() => {
       setOpen(false);
       trigger.current?.focus();
-    }} onSaved={onSaved} />, document.body)}
+    }} onSaved={onSaved} onProbeResult={onProbeResult} />, document.body)}
   </>;
 }
 
-function CredentialsDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () => Promise<void> }) {
+function CredentialsDialog({ onClose, onSaved, onProbeResult }: Pick<SettingsProps, 'onSaved' | 'onProbeResult'> & { onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const requestController = useRef<AbortController>();
   const loadVersion = useRef(0);
@@ -67,6 +77,13 @@ function CredentialsDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
   const [pendingAction, setPendingAction] = useState<'save' | 'activate' | 'delete' | null>(null);
   const [defaultModelSaving, setDefaultModelSaving] = useState(false);
   const [defaultModelDirty, setDefaultModelDirty] = useState(false);
+  // Native dialog cancel can arrive before React commits the reported dirty state.
+  // Keep the close/history guards current without waiting for the next render.
+  const defaultModelDirtyRef = useRef(false);
+  const reportDefaultModelDirty = useCallback((value: boolean) => {
+    defaultModelDirtyRef.current = value;
+    setDefaultModelDirty(value);
+  }, []);
   const [credentialVersion, setCredentialVersion] = useState(0);
   const saving = pendingAction !== null || defaultModelSaving;
   const [loaded, setLoaded] = useState(false);
@@ -85,7 +102,7 @@ function CredentialsDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
 
   function accept(result: ServiceCredentialsResponse) {
     setCredentialVersion(value => value + 1);
-    setDefaultModelDirty(false);
+    reportDefaultModelDirty(false);
     setProbeVersion(value => value + 1);
     setDefaults(result.defaults);
     setDraft(result.effective);
@@ -144,7 +161,7 @@ function CredentialsDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
   function close() {
     if (saving) return;
     setProbeVersion(value => value + 1);
-    if (dirty) setConfirmDiscard(true);
+    if (credentialsDirty || defaultModelDirtyRef.current) setConfirmDiscard(true);
     else dismiss();
   }
 
@@ -206,7 +223,7 @@ function CredentialsDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
 
   async function changeHistory(action: 'activate' | 'delete', confirmed = false) {
     if (busy || mutationPending.current || !selectedHistory || selectedHistory.active) return;
-    if (!confirmed && (action === 'delete' || dirty)) {
+    if (!confirmed && (action === 'delete' || credentialsDirty || defaultModelDirtyRef.current)) {
       setConfirmHistory({ id: selectedHistory.id, action });
       setConfirmDiscard(false);
       setError('');
@@ -283,7 +300,7 @@ function CredentialsDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
         {loaded && !loading && <section id={`credentials-panel-${active}`} role="tabpanel"
           aria-labelledby={`credentials-tab-${active}`} tabIndex={0}>
           <DefaultModelSettings key={credentialVersion} disabled={busy || credentialsDirty} credentialsDirty={credentialsDirty}
-            onDirty={setDefaultModelDirty} onBusy={setDefaultModelSaving} onSaved={onSaved} />
+            onDirty={reportDefaultModelDirty} onBusy={setDefaultModelSaving} onSaved={onSaved} />
           <section className="credentials-history" aria-labelledby="credentials-history-title">
             <h3 id="credentials-history-title">历史凭证</h3>
             {history.length > 0 ? <>
@@ -353,7 +370,8 @@ function CredentialsDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
             </div>)}
           </div>
           <p className="credentials-hint">默认值来自服务端部署配置。敏感字段可点击“显示”查看；不会写入浏览器本地存储。</p>
-          <ModelConnectionTest key={probeVersion} credentials={payloadFor(draft, overridden)} disabled={busy} />
+          <ModelConnectionTest key={probeVersion} credentials={payloadFor(draft, overridden)} disabled={busy}
+            onProbeResult={result => onProbeResult?.({ ...result, environmentId: history.find(item => item.active)?.id || '', draft: dirty })} />
         </section>}
         {confirmDiscard && <div className="credentials-discard" role="alert"><p>尚有未保存的修改，是否放弃？</p>
           <button type="button" onClick={() => setConfirmDiscard(false)}>继续编辑</button>

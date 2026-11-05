@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.common.platform_auth import external_origin, get_auth_settings, get_current_user
 from src.service.rd_platform.store import RdError, Store
+from src.service.rd_platform.navigation import PageReference, navigation_catalog, navigation_context
 
 logger = logging.getLogger(__name__)
 _COOKIE = "jtb_rd_local_client"
@@ -104,6 +105,7 @@ class AssistantQuestion(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     message: str = Field(min_length=1, max_length=2000)
     topic: str = Field(default="", max_length=100)
+    page_ref: PageReference | None = None
 
 
 class SourceAnalysisRequest(BaseModel):
@@ -248,6 +250,17 @@ def _resource_version(value: str) -> int:
     if not re.fullmatch(r"[1-9][0-9]{0,8}", value):
         raise HTTPException(422, "资源固定版本必须为正整数")
     return int(value)
+
+
+@router.get("/navigation/catalog")
+async def page_catalog():
+    return navigation_catalog()
+
+
+@router.post("/navigation/context")
+async def page_context(payload: PageReference, request: Request):
+    return await asyncio.to_thread(navigation_context, _store(request), _actor(request),
+                                   payload.model_dump(exclude_none=True))
 
 
 @router.get("/catalog")
@@ -395,6 +408,21 @@ async def source_file(pid: str, cid: str, sid: str, request: Request):
     return FileResponse(path, filename=source["name"], headers=_HEADERS)
 
 
+@router.get("/projects/{pid}/cases/{cid}/evidence-locations")
+async def evidence_locations(pid: str, cid: str, request: Request):
+    return await asyncio.to_thread(_store(request).evidence_locations, _actor(request), pid, cid)
+
+
+@router.get("/projects/{pid}/cases/{cid}/evidence-preview")
+async def evidence_preview(pid: str, cid: str, request: Request, source_id: str, quote: str,
+                           source_sha256: str, location_id: str, analysis_id: str | None = None,
+                           normalized_sha256: str | None = None):
+    result = await asyncio.to_thread(_store(request).evidence_preview, _actor(request), pid, cid,
+        source_id=source_id, quote=quote, analysis_id=analysis_id, source_sha256=source_sha256,
+        location_id=location_id, normalized_sha256=normalized_sha256)
+    return JSONResponse(result, headers=_HEADERS)
+
+
 @router.get("/projects/{pid}/cases/{cid}/workpackages/{wid}/artifacts/{aid}")
 async def artifact_file(pid: str, cid: str, wid: str, aid: str, request: Request):
     path = await asyncio.to_thread(_store(request).artifact_path, _actor(request), pid, cid, wid, aid)
@@ -458,7 +486,8 @@ async def assistant_history(pid: str, cid: str, request: Request, before: int | 
 @router.post("/projects/{pid}/cases/{cid}/assistant")
 async def assistant_ask(pid: str, cid: str, payload: AssistantQuestion, request: Request):
     return await asyncio.to_thread(_assistant(request).ask, _actor(request), pid, cid,
-                                  payload.message, _key(request), payload.topic)
+                                  payload.message, _key(request), payload.topic,
+                                  page_ref=payload.page_ref.model_dump(exclude_none=True) if payload.page_ref else None)
 
 
 @router.get("/contracts")

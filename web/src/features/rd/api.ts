@@ -1,4 +1,5 @@
 import type { ApplicationGrant, AssistantResponse, Catalog, DirectoryPage, Project, ProjectProfile, ResourceSummary, WorkspaceResource, WorkspaceResponse, WorkspaceSession, ModelSelection, SourceBatchItem, SourceClassification } from './types';
+import type { PageReference } from './platformNavigation';
 
 export class RdApiError extends Error {
   constructor(message: string, public readonly status: number) { super(message); this.name = 'RdApiError'; }
@@ -93,6 +94,13 @@ export const rdCreate = async (title: string, context: Record<string, string>, k
 export const rdCommand = async (project: Project, command: string, data: unknown, key: string) => unwrap(await request<Project | { project: Project }>(`/projects/${encode(project.id)}/commands`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify({ expected_version: project.version, command, data }) }));
 export const rdSaveProjectProfile = (project: Project, profile: Partial<ProjectProfile> & { title?: string }, key: string) => rdCommand(project, 'save_project_profile', profile, key);
 export const rdAnalyzeSources = async (project: Project, caseId: string, key: string) => unwrap(await request<Project | { project: Project }>(`/projects/${encode(project.id)}/cases/${encode(caseId)}/analysis`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify({ expected_version: project.version }) }, 300000));
+export const rdEvidenceLocations = (projectId: string, caseId: string, signal?: AbortSignal) => request<{ items: import('./types').EvidenceLocationResult[] }>(`/projects/${encode(projectId)}/cases/${encode(caseId)}/evidence-locations`, { signal }, 120000);
+export function rdEvidencePreview(projectId: string, caseId: string, location: import('./types').EvidenceLocationResult, locationId: string, signal?: AbortSignal) {
+  const query = new URLSearchParams({ source_id: location.source_id, quote: location.quote, source_sha256: location.source_sha256 || '', location_id: locationId });
+  if (location.analysis_id != null) query.set('analysis_id', location.analysis_id);
+  if (location.normalized_sha256) query.set('normalized_sha256', location.normalized_sha256);
+  return request<import('./types').EvidencePreview>(`/projects/${encode(projectId)}/cases/${encode(caseId)}/evidence-preview?${query}`, { signal }, 120000);
+}
 export async function rdUpload(project: Project, caseId: string, file: File, role: string, key: string) {
   const body = new FormData(); body.set('expected_version', String(project.version)); body.set('role', role); body.set('file', file);
   return unwrap(await request<Project | { project: Project }>(`/projects/${encode(project.id)}/cases/${encode(caseId)}/sources`, { method: 'POST', headers: { 'Idempotency-Key': key }, body }));
@@ -121,7 +129,17 @@ export const rdResourceSave = (resource: Partial<WorkspaceResource> & { operatio
 export const rdResourceGrant = (grant: { id: string; version: number | string; operation: 'grant' | 'revoke'; expected_revision: number; expires_at?: string | null }, key: string) => request<ApplicationGrant>('/workspace/grants', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(grant) });
 export const rdContracts = (signal?: AbortSignal) => request<Record<string, unknown>>('/contracts', { signal });
 export const rdAssistant = (pid: string, cid: string, signal?: AbortSignal, before?: number) => request<AssistantResponse>(`/projects/${encode(pid)}/cases/${encode(cid)}/assistant${before === undefined ? '' : `?before=${encode(String(before))}`}`, { signal });
-export const rdAskAssistant = (pid: string, cid: string, message: string, topic: string | undefined, key: string, signal?: AbortSignal) => request<AssistantResponse>(`/projects/${encode(pid)}/cases/${encode(cid)}/assistant`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify({ message, ...(topic ? { topic } : {}) }), signal });
+export const rdAskAssistant = (pid: string, cid: string, message: string, topic: string | undefined, key: string, signal?: AbortSignal, pageRef?: PageReference) => request<AssistantResponse>(`/projects/${encode(pid)}/cases/${encode(cid)}/assistant`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify({ message, ...(topic ? { topic } : {}), ...(pageRef ? { page_ref: pageRef } : {}) }), signal });
+export interface NavigationContext {
+  schema_version: 1;
+  page_ref: PageReference;
+  context: { project_version?: number; input_revision?: number; stage?: string; counts?: Record<string, number> };
+  navigation: PageReference[];
+  read_only: true;
+}
+export const rdNavigationContext = (pageRef: PageReference, signal?: AbortSignal) => request<NavigationContext>('/navigation/context', {
+  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pageRef), signal,
+});
 
 export const rdGovernanceSession = (signal?: AbortSignal) => request<import('./types').GovernanceSession>('/governance/session', { signal });
 export const rdWorkflowTemplates = (category: string, query: DirectoryQuery = {}, management = false, signal?: AbortSignal) => request<DirectoryPage<import('./types').BusinessWorkflowTemplate>>(`/workflow-templates?category=${encode(category)}&management=${management}&${directoryQuery(query)}`, { signal });

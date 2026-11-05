@@ -1,30 +1,47 @@
 /* The application shell owns vertical scrolling; wide work surfaces own horizontal scrolling. */
-.rd-application-shell{height:100vh;height:100dvh;min-height:0;overflow-y:auto;grid-template-columns:216px minmax(0,1fr);font-size:14px;line-height:1.6}
+.rd-application-shell{height:100vh;height:100dvh;min-height:0;overflow-y:auto;grid-template-columns:var(--rd-sidebar-width,216px) minmax(0,1fr);font-size:14px;line-height:1.6}
+.rd-application-shell>.rd-main{display:flex;flex-direction:column;min-height:100vh;min-height:100dvh}
+.rd-application-shell>.rd-main>.rd-topbar{flex-shrink:0}
+.rd-application-shell>.rd-main>.rd-page-content{width:100%;box-sizing:border-box;flex-shrink:0}
+.rd-platform-footer{width:100%;max-width:1680px;box-sizing:border-box;margin:auto auto 0;padding:0 32px;flex-shrink:0}
+.rd-platform-footer-inner{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:16px;min-height:68px;box-sizing:border-box;border-top:1px solid var(--color-border);padding:16px 0}
+.rd-platform-footer-brand{grid-column:2;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px 16px;min-width:0}
+.rd-platform-footer-brand>img{display:block;width:112px;max-width:100%;height:auto;flex-shrink:0}
+.rd-platform-vision{min-width:0;margin:0;font-size:13px;line-height:1.6;text-align:center;color:var(--color-text-secondary);overflow-wrap:anywhere}
+.rd-back-to-top.ant-btn{justify-self:end;display:inline-flex;align-items:center;gap:6px;height:36px;padding:6px 10px;font-size:13px;color:var(--color-action);white-space:nowrap}
+.rd-back-to-top svg{display:block;width:16px;height:16px}
 .rd-application-shell .rd-sidebar{padding:0 12px 16px;gap:16px;overflow:hidden;background:var(--color-nav-bg,#001529);border-right:1px solid var(--color-nav-border,#20354a);color:var(--color-nav-text,#c8d3df)}
+.rd-sidebar-resizer{position:absolute;top:0;right:0;bottom:0;width:12px;z-index:1;touch-action:none;cursor:col-resize;outline:none}
+.rd-sidebar-resizer::after{content:"";position:absolute;right:1px;top:50%;width:3px;height:44px;transform:translateY(-50%);border-radius:3px;background:var(--color-nav-text,#c8d3df);opacity:.45}
+.rd-sidebar-resizer:hover,.rd-sidebar-resizer:focus-visible{background:var(--color-nav-border,#20354a)}
+.rd-sidebar-resizer:hover::after,.rd-sidebar-resizer:focus-visible::after,.is-sidebar-resizing .rd-sidebar-resizer::after{background:var(--color-nav-accent,var(--color-action));opacity:1}
+.rd-sidebar-resizer:focus-visible{outline:2px solid var(--color-border-focus);outline-offset:-2px}
+.rd-application-shell.is-sidebar-resizing,.rd-application-shell.is-sidebar-resizing *{cursor:col-resize!important;user-select:none}
 .rd-application-shell .rd-sidebar-navigation{display:flex;flex:1;min-height:0;min-width:0;flex-direction:column;gap:20px;overflow:auto;scrollbar-color:var(--color-nav-border,#20354a) var(--color-nav-bg,#001529)}
 .rd-application-shell .rd-sidebar-navigation>nav,.rd-application-shell .rd-sidebar-case{flex-shrink:0}
 .rd-application-shell .rd-brand-row{display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:8px;min-height:64px;padding:0 4px;border-bottom:1px solid var(--color-nav-border,#20354a)}
 .rd-application-shell .rd-brand{padding:0;border:0;display:block;min-width:0}
-.rd-application-shell .rd-brand img{display:block;width:128px;height:auto}
+.rd-application-shell .rd-brand img{display:block;width:128px;max-width:100%;height:auto}
 .rd-application-shell .rd-sidebar-toggle,.rd-topbar-help a{display:flex;align-items:center;justify-content:center;width:32px;height:32px;padding:6px;border:1px solid var(--color-border);border-radius:var(--radius-control);background:var(--color-bg-surface);color:var(--color-text-secondary);flex-shrink:0;box-shadow:none}
 .rd-application-shell .rd-sidebar-toggle{background:transparent;border-color:var(--color-nav-border,#20354a);color:var(--color-nav-text,#c8d3df)}
 .rd-sidebar-toggle svg,.rd-topbar-help svg{width:18px;height:18px}
 .rd-application-shell .rd-sidebar-toggle:hover:not(:disabled){background:var(--color-nav-border,#20354a);border-color:var(--color-nav-border,#20354a);color:var(--color-bg-surface)}
 .rd-topbar-help a:hover{color:var(--color-action);background:var(--color-action-subtle);border-color:var(--color-border-focus)}
 .rd-application-shell .rd-sidebar nav{gap:4px;display:grid;padding:0}
-.rd-application-shell .rd-sidebar nav button{display:flex;justify-content:flex-start;gap:11px;min-height:40px;height:40px;padding:9px 12px;border:0;box-shadow:none;background:transparent;font-size:14px;font-weight:400;color:var(--color-nav-text,#c8d3df);border-radius:var(--radius-control);white-space:nowrap;text-align:left}
+.rd-application-shell .rd-sidebar nav button{display:flex;justify-content:flex-start;gap:11px;min-height:44px;height:44px;padding:9px 12px;border:0;box-shadow:none;background:transparent;font-size:var(--font-size-title-sm);font-weight:400;color:var(--color-nav-text,#c8d3df);border-radius:var(--radius-control);white-space:nowrap;text-align:left}
 .rd-application-shell .rd-sidebar nav button>svg{width:18px;height:18px;flex-shrink:0}
-.rd-application-shell .rd-sidebar nav button>.rd-nav-label{width:auto;font-size:14px}
+.rd-application-shell .rd-sidebar nav button>.rd-nav-label{width:auto;font-size:inherit}
 .rd-application-shell .rd-sidebar nav button.active{background:var(--color-nav-selected,var(--color-nav-hover));box-shadow:inset 3px 0 0 var(--color-nav-accent,var(--color-action));color:var(--color-bg-surface);font-weight:500}
 .rd-application-shell .rd-sidebar nav button:hover:not(:disabled){background:var(--color-nav-border,#20354a);color:var(--color-bg-surface)}
 .rd-application-shell .rd-sidebar nav button.active:hover{background:var(--color-nav-selected,var(--color-nav-hover))}
 .rd-application-shell .rd-sidebar nav button:focus-visible{outline-offset:-3px}
 .rd-application-shell .rd-sidebar-case{border-top:1px solid var(--color-nav-border,#20354a);padding:16px 0 0;margin:0}
-.rd-application-shell .rd-sidebar-case-label{font-size:12px;padding:0 12px;margin:0;color:var(--color-nav-text,#c8d3df)}
-.rd-application-shell .rd-sidebar-case-name{font-size:13px;padding:0 12px;margin:6px 0 12px;line-height:1.6;color:var(--color-bg-surface)}
+.rd-application-shell .rd-sidebar-case-label{font-size:var(--font-size-body);padding:0 12px;margin:0;color:var(--color-nav-text,#c8d3df)}
+.rd-application-shell .rd-sidebar-case-name{font-size:var(--font-size-body);padding:0 12px;margin:6px 0 12px;line-height:1.6;color:var(--color-bg-surface)}
+.rd-sidebar-context-kind{display:inline-block;margin-right:7px;font-size:var(--font-size-sm);font-weight:400;color:var(--color-nav-text,#c8d3df)}
 .rd-application-shell .rd-sidebar-case-hint{color:var(--color-nav-text,#c8d3df)}
-.rd-application-shell .rd-sidebar-case nav button{font-size:13px;padding-left:18px;min-height:36px;height:36px}
-.rd-application-shell .rd-sidebar-case nav button>span{width:auto;font-size:13px;text-align:left}
+.rd-application-shell .rd-sidebar-case nav button{font-size:15px;padding:7px 12px 7px 18px;min-height:40px;height:40px}
+.rd-application-shell .rd-sidebar-case nav button>span{width:auto;font-size:inherit;text-align:left}
 .rd-application-shell .rd-topbar{height:64px;min-height:64px;padding:8px 32px;gap:16px;box-shadow:0 1px 0 var(--color-border)}
 .rd-platform-heading{display:flex;flex-direction:column;min-width:0;gap:0}
 .rd-platform-heading strong{font-size:17px;font-weight:600;letter-spacing:0;line-height:1.5}
@@ -52,22 +69,25 @@
 .rd-application-shell.is-sidebar-collapsed .rd-brand-row{justify-content:center;padding:0}
 .rd-application-shell.is-sidebar-collapsed .rd-brand,.rd-application-shell.is-sidebar-collapsed .rd-nav-label,.rd-application-shell.is-sidebar-collapsed .rd-sidebar-case{display:none}
 .rd-application-shell.is-sidebar-collapsed .rd-sidebar nav button{justify-content:center;padding-inline:10px}
-@media(max-width:1100px){.rd-application-shell .rd-page-content{padding-inline:20px}.rd-application-shell .rd-topbar{padding-inline:20px}}
-@media(max-width:900px){.rd-application-shell .rd-page-title{align-items:stretch}}
+@media(max-width:1100px){.rd-application-shell .rd-page-content{padding-inline:20px}.rd-application-shell .rd-topbar{padding-inline:20px}.rd-platform-footer{padding-inline:20px}}
+@media(max-width:900px){.rd-application-shell .rd-page-title{align-items:stretch}.rd-platform-footer-inner{grid-template-columns:minmax(0,1fr) auto}.rd-platform-footer-brand{grid-column:1}}
 @media(max-width:700px){
-  .rd-application-shell,.rd-application-shell.is-sidebar-collapsed{display:block}
-  .rd-application-shell .rd-sidebar{position:static;height:auto;padding:0 16px 12px;gap:10px;border-right:0;border-bottom:1px solid var(--color-nav-border,#20354a)}
+  .rd-sidebar-resizer{display:none}
+  .rd-application-shell,.rd-application-shell.is-sidebar-collapsed{display:flex;flex-direction:column}
+  .rd-application-shell>.rd-main{flex:1 0 auto;min-height:0}
+  .rd-application-shell .rd-sidebar{position:static;align-self:stretch;flex-shrink:0;height:auto;padding:0 16px 12px;gap:10px;border-right:0;border-bottom:1px solid var(--color-nav-border,#20354a)}
+  .rd-platform-footer{padding-inline:16px}
   .rd-application-shell .rd-sidebar-navigation{flex:none;overflow:hidden;gap:12px}
   .rd-application-shell .rd-brand-row{min-height:56px;padding:0;justify-content:space-between}
   .rd-application-shell .rd-brand img{width:120px}
   .rd-application-shell .rd-sidebar nav{display:flex;overflow-x:auto;gap:4px;padding:0 0 6px}
-  .rd-application-shell .rd-sidebar nav button{font-size:13px;gap:7px;padding:9px 12px;min-height:40px;width:auto;flex-shrink:0}
-  .rd-application-shell .rd-sidebar nav button>.rd-nav-label{font-size:13px}
+  .rd-application-shell .rd-sidebar nav button{gap:7px;padding:9px 12px;width:auto;flex-shrink:0}
   .rd-application-shell .rd-sidebar-case{padding-top:12px}
   .rd-application-shell .rd-sidebar-case-label{display:none}
   .rd-application-shell .rd-sidebar-case-name{margin-top:0;padding:0}
   .rd-application-shell .rd-sidebar-case nav{padding-bottom:0}
-  .rd-application-shell .rd-topbar{position:static;flex-wrap:nowrap;padding:8px 16px;height:64px;min-height:64px}
+  .rd-application-shell .rd-topbar{position:static;flex-wrap:nowrap;padding:8px 16px;height:auto;min-height:52px}
+  .rd-platform-heading>span{display:none}
   .rd-platform-heading strong{font-size:17px}
   .rd-application-shell .rd-page-content{padding:20px 16px 32px}
   .rd-application-shell h1{font-size:22px}

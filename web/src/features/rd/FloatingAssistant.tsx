@@ -6,27 +6,27 @@ import { useAssistantLauncherDrag } from './assistant/useAssistantLauncherDrag';
 import { AssistantWeatherCard, WeatherIcon, useAssistantWeather, useWeatherNudge } from './assistant/AssistantWeather';
 import { WelcomeAssistant, type WelcomeAssistantHandle } from './assistant/WelcomeAssistant';
 import { useGreetingBubble } from './assistant/useGreetingBubble';
-import type { AssistantTarget, Project, ResearchCase } from './types';
+import type { Project, ResearchCase } from './types';
+import type { AssistantNavigation } from './assistant/nativeNavigation';
 import './FloatingAssistant.css';
 
 const ignoreBoolean = (_value: boolean) => {};
-const ignoreTarget = (_target: AssistantTarget) => {};
+const ignoreTarget = (_target: AssistantNavigation) => {};
 const viewportSize = () => ({ width: window.innerWidth, height: window.visualViewport?.height ?? window.innerHeight });
 
 export interface FloatingAssistantProps {
   project?: Project;
   researchCase?: ResearchCase;
-  onNavigate?: (target: AssistantTarget) => void;
+  onNavigate?: (target: AssistantNavigation) => void;
   onDirtyChange?: (dirty: boolean) => void;
   onBusyChange?: (busy: boolean) => void;
   onStartTask?: () => void;
   onOpenProjects?: () => void;
-  launcherContainer?: HTMLElement | null;
 }
 
 /** A visual shell only. The case conversation retains its original API and draft ownership. */
 export function FloatingAssistant({ project, researchCase, onNavigate = ignoreTarget,
-  onDirtyChange = ignoreBoolean, onBusyChange = ignoreBoolean, onStartTask, onOpenProjects, launcherContainer }: FloatingAssistantProps) {
+  onDirtyChange = ignoreBoolean, onBusyChange = ignoreBoolean, onStartTask, onOpenProjects }: FloatingAssistantProps) {
   const [open, setOpen] = useState(false);
   const [weatherExpanded, setWeatherExpanded] = useState(false);
   const [weatherPreview, setWeatherPreview] = useState(false);
@@ -46,15 +46,14 @@ export function FloatingAssistant({ project, researchCase, onNavigate = ignoreTa
   const restoreFocus = useRef(true);
   const activate = useCallback(() => setOpen(true), []);
   const close = useCallback(() => { setOpen(false); setWeatherExpanded(false); }, []);
-  const inlineLauncher = launcherContainer !== undefined;
-  const { position, launcherDragging, launcherPressed, dockedEdge, dockingEdge, reveal, launcherEvents } = useAssistantLauncherDrag(launcher, !open && !inlineLauncher, activate);
+  const { position, launcherDragging, launcherPressed, dockedEdge, dockingEdge, reveal, launcherEvents } = useAssistantLauncherDrag(launcher, !open, activate);
   const hasCase = Boolean(project && researchCase);
   const requestClose = useCallback(() => { if (hasCase) close(); else welcome.current?.requestClose(); }, [hasCase, close]);
-  const weather = useAssistantWeather(open || !inlineLauncher && !dockedEdge);
-  const nudge = useWeatherNudge(!open && !inlineLauncher && !dockedEdge && !launcherPressed && !launcherDragging && !busy && weather.data?.status === 'ok');
-  const canPreviewWeather = !open && !inlineLauncher && !dockedEdge && !launcherPressed && !launcherDragging && !busy;
+  const weather = useAssistantWeather(open || !dockedEdge);
+  const nudge = useWeatherNudge(!open && !dockedEdge && !launcherPressed && !launcherDragging && !busy && weather.data?.status === 'ok');
+  const canPreviewWeather = !open && !dockedEdge && !launcherPressed && !launcherDragging && !busy;
   const weatherSpeaking = canPreviewWeather && (weatherPreview || nudge.show);
-  const greetingVisible = useGreetingBubble(!open && !inlineLauncher && !dockedEdge && !launcherPressed && !launcherDragging && !busy && !weatherSpeaking);
+  const greetingVisible = useGreetingBubble(!open && !dockedEdge && !launcherPressed && !launcherDragging && !busy && !weatherSpeaking);
   const showWeather = useCallback(() => setWeatherExpanded(true), []);
   const changeBusy = useCallback((value: boolean) => { setBusy(value); onBusyChange(value); }, [onBusyChange]);
 
@@ -147,7 +146,7 @@ export function FloatingAssistant({ project, researchCase, onNavigate = ignoreTa
   const width = Math.min(420, viewport.width - margin * 2);
   const reserve = 96;
   const height = Math.max(120, Math.min(560, viewport.height - reserve - 24));
-  const floatingPosition = inlineLauncher ? null : position;
+  const floatingPosition = position;
   const leftSide = floatingPosition !== null && floatingPosition.x < viewport.width / 2;
   const left = leftSide ? margin : Math.max(margin, viewport.width - width - margin);
   const top = Math.max(12, Math.min(floatingPosition ? floatingPosition.y + 100 - height : viewport.height - reserve - height, viewport.height - height - 12));
@@ -155,36 +154,37 @@ export function FloatingAssistant({ project, researchCase, onNavigate = ignoreTa
   const weatherAnchorX = (position?.x ?? viewport.width - margin - figureSize) + figureSize / 2;
   const weatherAnchorY = position?.y ?? viewport.height - reserve - 24 - figureSize;
   const weatherLeft = Math.max(12, Math.min(weatherAnchorX - 120, viewport.width - 252));
-  const weatherAbove = weatherAnchorY > 240;
+  const weatherSpaceAbove = Math.max(0, weatherAnchorY - 28);
+  const weatherSpaceBelow = Math.max(0, viewport.height - weatherAnchorY - figureSize - 24);
+  const weatherAbove = weatherSpaceAbove >= weatherSpaceBelow;
+  const greetingBelow = position !== null && position.y < 96;
 
-  const launcherButton = <button ref={launcher} type="button" className={inlineLauncher ? 'rd-assistant-inline-launcher' : 'rd-floating-launcher'} hidden={open}
+  const launcherButton = <button ref={launcher} type="button" className="rd-floating-launcher" hidden={open}
     aria-label="打开小航助手" aria-expanded={open} aria-controls="rd-floating-assistant-panel"
-    aria-description={inlineLauncher ? undefined : '悬停或聚焦查看天气；点击或Enter打开对话。可拖至屏幕边缘收起，方向键移动，Escape收起，Home恢复默认位置'}
-    aria-hidden={!inlineLauncher && !!dockedEdge || undefined} tabIndex={!inlineLauncher && dockedEdge ? -1 : 0}
-    title={inlineLauncher ? '打开小航助手' : '悬停看天气 · 点击问小航 · 拖至边缘收起'}
+    aria-description="悬停或聚焦查看天气；点击或Enter打开对话。可拖至屏幕边缘收起，方向键移动，Escape收起，Home恢复默认位置"
+    aria-hidden={!!dockedEdge || undefined} tabIndex={dockedEdge ? -1 : 0}
+    title="悬停看天气 · 点击问小航 · 拖至边缘收起"
     style={floatingPosition ? { left: floatingPosition.x, top: floatingPosition.y, right: 'auto', bottom: 'auto' } : undefined}
-    {...(inlineLauncher ? { onClick: activate } : launcherEvents)}
+    {...launcherEvents}
     onPointerEnter={event => { if (event.pointerType === 'mouse') previewWeather(); }}
     onPointerLeave={event => leaveWeather(event.relatedTarget)}
     onFocus={event => { if (skipPreviewFocus.current) { skipPreviewFocus.current = false; return; } if (event.currentTarget.matches(':focus-visible')) previewWeather(); }}
     onBlur={event => leaveWeather(event.relatedTarget)}
     onKeyDown={event => {
       if (event.key === 'Escape' && weatherSpeaking) { event.preventDefault(); dismissWeatherBubble(); }
-      else if (!inlineLauncher) launcherEvents.onKeyDown(event);
+      else launcherEvents.onKeyDown(event);
     }}>
-    {inlineLauncher ? <><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></svg>小航助手</> : <>
       <span className="rd-floating-figure" aria-hidden="true"><XiaohangSprite paused={launcherPressed || launcherDragging || !!dockedEdge || open} /></span>
       <span className="rd-floating-launcher-label" aria-hidden={!greetingVisible} data-visible={greetingVisible}>小航<span>有事问我</span></span>
-    </>}
   </button>;
 
-  return createPortal(<div className={`rd-floating-assistant ${launcherDragging ? 'is-dragging' : ''} ${dockedEdge && !inlineLauncher ? 'is-docked' : ''} ${weatherSpeaking ? 'is-weather-speaking' : ''}`}>
-    {inlineLauncher ? launcherContainer && createPortal(launcherButton, launcherContainer) : launcherButton}
-    {!inlineLauncher && dockedEdge && !open && <button ref={dock} type="button" className={`rd-assistant-dock is-${dockedEdge}`} aria-label="唤回小航助手" title="唤回小航 · Home恢复默认位置"
+  return createPortal(<div className={`rd-floating-assistant ${launcherDragging ? 'is-dragging' : ''} ${dockedEdge ? 'is-docked' : ''} ${weatherSpeaking ? 'is-weather-speaking' : ''}${greetingBelow ? ' is-greeting-below' : ''}`}>
+    {launcherButton}
+    {dockedEdge && !open && <button ref={dock} type="button" className={`rd-assistant-dock is-${dockedEdge}`} aria-label="唤回小航助手" title="唤回小航 · Home恢复默认位置"
       style={{ top: Math.max(12, Math.min((position?.y ?? viewport.height - 180) + 12, viewport.height - 148)) }} onClick={reveal}
       onKeyDown={event => { if (event.key === 'Home') { launcherEvents.onKeyDown(event); reveal(); } }}><span aria-hidden="true">{dockedEdge === 'left' ? '›' : '‹'}</span><span>小航<span className="rd-assistant-dock-latin">AI</span>智能助手</span></button>}
-    {!inlineLauncher && dockingEdge && launcherDragging && <div className={`rd-assistant-dock-hint is-${dockingEdge}`} role="status" style={{ top: Math.max(16, Math.min(position?.y ?? 100, viewport.height - 150)) }}>松手收起</div>}
-    {weatherSpeaking && <div ref={weatherBubble} className={`rd-weather-nudge ${weatherAbove ? 'is-above' : 'is-below'}`} style={{ left: weatherLeft, top: weatherAbove ? weatherAnchorY - 14 : weatherAnchorY + figureSize + 12, '--weather-tail-x': `${Math.max(16, Math.min(weatherAnchorX - weatherLeft, 224))}px`, '--weather-available-height': `${Math.max(80, weatherAbove ? weatherAnchorY - 28 : viewport.height - weatherAnchorY - figureSize - 24)}px` } as CSSProperties}
+    {dockingEdge && launcherDragging && <div className={`rd-assistant-dock-hint is-${dockingEdge}`} role="status" style={{ top: Math.max(16, Math.min(position?.y ?? 100, viewport.height - 150)) }}>松手收起</div>}
+    {weatherSpeaking && <div ref={weatherBubble} className={`rd-weather-nudge ${weatherAbove ? 'is-above' : 'is-below'}`} style={{ left: weatherLeft, top: weatherAbove ? weatherAnchorY - 14 : weatherAnchorY + figureSize + 12, '--weather-tail-x': `${Math.max(16, Math.min(weatherAnchorX - weatherLeft, 224))}px`, '--weather-available-height': `${weatherAbove ? weatherSpaceAbove : weatherSpaceBelow}px` } as CSSProperties}
       onPointerEnter={() => clearPreviewTimers()} onPointerLeave={event => leaveWeather(event.relatedTarget)}
       onFocusCapture={() => clearPreviewTimers()} onBlurCapture={event => leaveWeather(event.relatedTarget)}
       onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); dismissWeatherBubble(true); } }}>

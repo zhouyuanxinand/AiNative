@@ -25,26 +25,44 @@ export interface EvidencePreview extends EvidenceLocationResult {
   blocks: Array<DocumentEvidenceLocation & { text: string; segments: Array<{ text: string; highlighted: boolean }> }>;
 }
 export interface RequirementRecommendation { text: string; proposed_value: string; evidence: SourceEvidence[] }
+export interface RequirementSpecSuggestion {
+  requirement_id: string; requirement_revision: number;
+  status: 'matched' | 'difference' | 'not_found' | 'needs_review';
+  text: string; proposed_value?: string; evidence: SourceEvidence[];
+}
+export interface RequirementSpecBatch {
+  id: string; status: 'current' | 'stale'; input_revision: number; created_at: string;
+  source_hashes: Record<string, string>; model_selection: ModelSelection;
+  items: RequirementSpecSuggestion[]; warnings: string[];
+}
+export interface ResearchCase { requirement_recommendations?: RequirementSpecBatch; source_analysis_history?: SourceAnalysis[] }
 export interface RequirementReview {
-  decision: 'accept' | 'reject' | 'manual'; actual_value: string; reason: string;
+  recommendation_batch_id?: string | null;
+  actual_value_source?: 'original';
+  decision: 'accept' | 'reject' | 'manual'; actual_value: string | null; reason: string;
   analysis_id?: string | null; requirement_revision: number; input_revision?: number; actor: string; created_at: string;
   recommendation?: RequirementRecommendation | null;
 }
 export interface SourceAnalysis {
-  id: string; status: 'proposed' | 'adopted' | 'stale'; input_revision: number; adopted_input_revision?: number;
+  id: string; status: 'proposed' | 'adopted' | 'stale'; input_revision: number; adopted_input_revision?: number; adopted_at?: string;
   created_at: string; source_hashes: Record<string, string>; model_selection: ModelSelection;
   context: Record<ContextKey, { value: string; status: 'proposed' | 'unresolved' | 'already_confirmed' | 'conflict'; reason: string; evidence: SourceEvidence[]; adoption_kind?: 'refresh_source_refs' }>;
-  requirements: Array<{ title: string; content: string; source_ids: string[]; evidence: SourceEvidence[]; requirement_id?: string; recommendation?: RequirementRecommendation | null }>;
+  requirements: Array<{ title: string; content: string; source_ids: string[]; evidence: SourceEvidence[]; requirement_id?: string; status?: string; recommendation?: RequirementRecommendation | null }>;
   warnings: string[];
 }
 export interface Source { id: string; role: 'tech' | 'spec' | 'reference'; name: string; sha256: string; size: number; version: number; created_at: string; document_category?: SourceRole; client_id?: string }
-export interface Requirement { id: string; title: string; content: string; source_ids: string[]; created_at?: string; version?: number; revision?: number; history?: unknown[]; review?: RequirementReview | null }
+export interface RequirementSpecificationResult {
+  actual_value_source: 'specification'; actual_value: string; recommendation_batch_id: string;
+  source_requirement_revision: number; requirement_revision: number; source_hashes: Record<string, string>;
+  input_revision: number; actor: string; created_at: string;
+}
+export interface Requirement { id: string; title: string; content: string; source_ids: string[]; created_at?: string; version?: number; revision?: number; history?: unknown[]; review?: RequirementReview | null; specification_result?: RequirementSpecificationResult }
 export interface Decision { id?: string; kind?: 'route' | 'stage' | 'selection' | 'taskbook_scope' | 'requirement_confirmation' | 'engineering_stage'; stage?: StageId; verdict?: 'approved' | 'rejected'; axis?: 'product' | 'composition'; value?: string; rationale: string; source_ids?: string[]; artifact_ids?: string[]; created_at?: string; actor_id?: string; actor?: string; input_revision?: number; invalidated_at?: string; invalidated_reason?: string; scope?: string; bundle_id?: string; bundle_digest?: string; review_mode?: string; electronic_signature?: boolean }
 export interface PlanNode { id: string; action_id: string; action_version: string; depends_on: string[]; required: boolean; status?: string; result?: Record<string, unknown>; attempt?: number; started_at?: string | null; completed_at?: string | null; ended_at?: string | null }
 export interface Artifact { id: string; name: string; kind?: string; sha256?: string }
 export interface Workpackage { id: string; definition_id: string; title: string; stage: StageId; status: string; plan_revision: number; nodes: PlanNode[]; snapshot?: Record<string, unknown>; run_id?: string; artifacts: Artifact[]; obligations: unknown[]; blocked_reasons: unknown[]; planned_start?: string | null; planned_end?: string | null; plan_note?: string; schedule_revision?: number; schedule_history?: Array<Record<string, unknown>>; started_at?: string | null; completed_at?: string | null; ended_at?: string | null }
 export interface RouteDecision { value: string; rationale: string; source_ids: string[]; actor: string; created_at: string; comparison_id?: string; comparison_revision?: number; comparison_sha256?: string }
-export interface Clarification { id: string; requirement_id: string; question: string; required: boolean; status: 'open' | 'answered' | 'adopted'; revision: number; input_revision: number; requirement_revision: number; source_ids: string[]; actor: string; created_at: string; answer: string | null; answer_source_ids: string[]; answered_by?: string | null; answered_at?: string | null; adoption?: { requirement_revision: number; input_revision?: number; requirement_content: string; actor: string; created_at: string } | null; history?: unknown[]; invalidated_at?: string; invalidated_reason?: string }
+export interface Clarification { id: string; requirement_id: string; question: string; required: boolean; status: 'open' | 'answered' | 'adopted'; revision: number; input_revision: number; requirement_revision: number; source_ids: string[]; actor: string; created_at: string; answer: string | null; answer_source_ids: string[]; answer_source_snapshots?: Array<Pick<Source, 'id' | 'role' | 'name' | 'version' | 'sha256'>>; answered_by?: string | null; answered_at?: string | null; adoption?: { requirement_revision: number; input_revision?: number; requirement_content: string; actor: string; created_at: string; recommendation_batch_id?: string; source_hashes?: Record<string, string> } | null; history?: unknown[]; invalidated_at?: string; invalidated_reason?: string }
 export interface ComparisonRow { requirement_id: string; assessment: 'match' | 'partial' | 'gap' | 'unknown'; candidate_value: string; reason: string; source_ids: string[] }
 export interface Comparison { id: string; kind: 'product' | 'document'; title: string; status: 'manual_record'; revision: number; input_revision: number; sha256: string; source_ids: string[]; rows: ComparisonRow[]; statistics: { matches: number; total: number; partial: number; gap: number; unknown: number; match_ratio: number }; history?: unknown[]; invalidated_at?: string; invalidated_reason?: string }
 export interface DeliveryRecord { id: string; status: 'manual_record'; outcome: 'accepted' | 'revision_required'; recipient: string; receipt: string; feedback: string; source_ids: string[]; artifact_ids: string[]; input_revision: number; actor: string; created_at: string; electronic_signature: false }

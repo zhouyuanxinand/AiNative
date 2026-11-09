@@ -1,0 +1,35 @@
+.rd-report-directory{min-width:0}
+.rd-report-directory .rd-flow-tool-actions{flex-wrap:wrap}
+.rd-report-type-filter{display:flex;align-items:center;gap:8px;min-width:0;font-size:var(--font-size-sm)}
+.rd-report-type-filter>label{white-space:nowrap;color:var(--color-text-secondary)}
+.rd-report-type-filter>.select-control{width:240px;min-width:0;margin-top:0}
+.rd-report-directory .rd-flow-tool-actions .rd-search{width:240px;height:32px;min-height:32px}
+.rd-report-directory .rd-flow-tool-actions .rd-search input{height:30px;min-height:0;min-width:0;padding:0;font-size:var(--font-size-body)}
+.rd-report-summary{margin:0 0 16px;font-size:var(--font-size-sm);color:var(--color-text-secondary)}
+.rd-report-product-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+.rd-report-product-card.ant-btn{display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:0;width:100%;height:auto;min-height:184px;padding:20px;text-align:left;white-space:normal;border-color:var(--color-border);border-radius:var(--radius-control);background:var(--color-bg-surface);color:var(--color-text-primary);box-shadow:none}
+.rd-report-product-card.ant-btn:hover{background:var(--color-action-subtle);border-color:var(--color-action)}
+.rd-report-product-name{display:block;margin-bottom:16px;font-size:calc(17px * var(--font-scale));line-height:1.5;font-weight:600;overflow-wrap:anywhere}
+.rd-report-domain-label{display:block;margin-bottom:4px;font-size:12px;color:var(--color-text-secondary)}
+.rd-report-domain-names{display:block;margin-bottom:20px;font-size:var(--font-size-body);line-height:1.7;overflow-wrap:anywhere}
+.rd-report-card-bottom{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-top:auto;padding-top:12px;border-top:1px solid var(--color-border);font-size:var(--font-size-sm);color:var(--color-text-secondary)}
+.rd-report-card-bottom b{font-weight:600;font-variant-numeric:tabular-nums;color:var(--color-text-primary)}
+.rd-report-card-open{display:inline-flex;align-items:center;gap:8px;color:var(--color-action)}
+.rd-report-back{margin:0 0 16px}
+.rd-report-product-heading{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px 16px;margin-bottom:24px}
+.rd-report-product-heading h3{margin:0;font-size:var(--font-size-title-md);font-weight:600;overflow-wrap:anywhere}
+.rd-report-product-heading>span,.rd-report-system>header>span{font-size:var(--font-size-sm);color:var(--color-text-secondary)}
+.rd-report-systems{display:grid;gap:24px}
+.rd-report-system{min-width:0}
+.rd-report-system>header{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+.rd-report-system h4{margin:0;font-size:var(--font-size-title-sm);font-weight:600;overflow-wrap:anywhere}
+.rd-report-system ul{list-style:none;margin:0;padding:0;border-top:1px solid var(--color-border)}
+.rd-report-system li{display:flex;align-items:center;flex-wrap:wrap;gap:12px 16px;min-width:0;padding:16px 0;border-bottom:1px solid var(--color-border)}
+.rd-report-file-icon{font-size:24px;color:var(--color-action)}
+.rd-report-file{display:flex;flex:1;flex-direction:column;gap:4px;min-width:120px;overflow-wrap:anywhere}
+.rd-report-file strong{font-size:var(--font-size-body);font-weight:500}
+.rd-report-file>span{font-size:var(--font-size-sm);color:var(--color-text-secondary)}
+.rd-report-page-number{align-self:center;white-space:nowrap}
+@media(max-width:1250px){.rd-report-product-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.rd-report-product-grid{grid-template-columns:minmax(0,1fr);gap:12px}.rd-report-product-card.ant-btn{padding:16px;min-height:172px}.rd-report-product-heading{align-items:flex-start;flex-direction:column}.rd-report-system li{gap:12px}.rd-report-file{flex-basis:calc(100% - 40px)}.rd-report-system li>.ant-btn{margin-left:auto}}
+@media(max-width:600px){.rd-report-type-filter{width:100%;flex-direction:column;align-items:stretch;gap:6px}.rd-report-type-filter>.select-control{width:100%}.rd-report-directory .rd-flow-tool-actions .rd-search{width:100%;flex:1 1 100%}.rd-report-directory .rd-flow-tool-actions>.rd-button{margin-left:auto}}

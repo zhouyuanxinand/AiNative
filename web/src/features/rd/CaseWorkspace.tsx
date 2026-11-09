@@ -1,4 +1,5 @@
 import { PlatformButton } from '../../components/ui/PlatformButton';
+import { message } from 'antd';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useApplicationLeaveGuard } from '../../hooks/useApplicationLeaveGuard';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
@@ -17,6 +18,7 @@ import { caseJourney, caseStepForSurface, successfulCaseDestination } from './ca
 import type { CasePage } from './platformNavigation';
 import { ScenarioWorkspace } from './ScenarioWorkspace';
 import { scenarioManifest, scenarioStage, type CaseSurface } from './scenarioManifest';
+import { requirementConfirmationBlockers } from './requirementConfirmation';
 import type { Catalog, Project, ResearchCase, AssistantTarget, CaseWorkspaceView, SourceAnalysisRunner, SourceBatchRunner } from './types';
 import type { CommandRunner } from './WorkpackagePanel';
 import './caseOutcome.css';
@@ -50,6 +52,8 @@ export function CaseWorkspace({ project, researchCase, catalog, busy, error, vie
   const pendingClarification = useRef<string>();
   const [clarificationFocus, setClarificationFocus] = useState<{ requirementId: string }>();
   const [transition, setTransition] = useState<{ name: string; data: Record<string, unknown>; before: ResearchCase } | null>(null);
+  const lastCommand = useRef('');
+  const [messageApi, messageContextHolder] = message.useMessage();
   const nativeArea = useRef<HTMLDivElement>(null);
   const [childDirty, setChildDirty] = useState<Record<string, boolean>>({});
   const setPartDirty = useCallback((part: string, dirty: boolean) => setChildDirty(current => current[part] === dirty ? current : { ...current, [part]: dirty }), []);
@@ -64,20 +68,30 @@ export function CaseWorkspace({ project, researchCase, catalog, busy, error, vie
   useApplicationLeaveGuard({ dirty, busyMessage: busy ? '研发操作尚未完成，请等待结果后再离开。' : assistantBusy ? '助手请求尚未完成，请等待回复后再离开。' : undefined });
   const command = useCallback<CommandRunner>(async (name, data, success) => {
     if (sessionBlocked) return false;
+    lastCommand.current = name;
     const payload = { ...(data as Record<string, unknown>), case_id: researchCase.id };
     const succeeded = await onCommand(name, payload, success);
-    if (succeeded) setTransition({ name, data: payload, before: researchCase });
+    if (succeeded) { lastCommand.current = ''; setTransition({ name, data: payload, before: researchCase }); }
     return succeeded;
   }, [onCommand, researchCase, sessionBlocked]);
   useEffect(() => {
     if (!error) return;
+    // Row decisions keep their reading position; a visible notice reports the error
+    // without sending the user to the page-level error panel above a long table.
+    if (lastCommand.current === 'review_requirement') {
+      lastCommand.current = '';
+      void messageApi.open({ key: 'rd-requirement-decision-error', type: 'error', content: <span role="alert">{error}</span>, duration: 5 });
+      return;
+    }
     const frame = requestAnimationFrame(() => {
       if (document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]')) return;
+      const inlineEditor = document.querySelector('.rd-requirement-editing');
+      if (inlineEditor?.getClientRects().length) return;
       const alert = document.getElementById('rd-project-error');
       alert?.focus({ preventScroll: true }); alert?.scrollIntoView({ block: 'nearest' });
     });
     return () => cancelAnimationFrame(frame);
-  }, [error]);
+  }, [error, messageApi]);
   const workface = view === 'current' ? `current:${route.surface ?? surface}:${route.workpackageId ?? ''}` : `${view}:${route.evidence ?? ''}`;
   const focusWorkarea = useCaseWorkfacePosition(reviewActor, workface, nativeArea);
   useEffect(() => {
@@ -154,7 +168,8 @@ export function CaseWorkspace({ project, researchCase, catalog, busy, error, vie
       pendingSurface.current = undefined;
     }
   }, [project.id]);
-  const openSurface = useCallback((target: CaseSurface) => { rememberSurface(target); onNavigate({ caseView: 'current', surface: target }); setSurface(target); focusWorkarea(); }, [onNavigate, focusWorkarea, rememberSurface]);
+  // The committed route owns editor/resume changes, so cancelling navigation changes neither.
+  const openSurface = useCallback((target: CaseSurface) => { onNavigate({ caseView: 'current', surface: target }); }, [onNavigate]);
   useEffect(() => {
     if (view !== 'current' || !route.surface) return;
     const target = allowedSurface(route.surface) ? route.surface : readCaseResume(resumeActor.current, project.id, researchCase.id, researchCase);
@@ -192,22 +207,15 @@ export function CaseWorkspace({ project, researchCase, catalog, busy, error, vie
       ? caseJourney(researchCase).completed ? 'current' : lastEditingSurface.current !== 'current' && allowedSurface(lastEditingSurface.current)
         ? lastEditingSurface.current : readCaseResume(resumeActor.current, project.id, researchCase.id, researchCase)
       : surfaceRequest.target);
-    if (surfaceRequest.target === 'sources') requestAnimationFrame(() => {
-      const field = nativeArea.current?.querySelector<HTMLInputElement>('#rd-source-file');
-      field?.focus(); field?.scrollIntoView({ block: 'center' });
-    });
   }, [surfaceRequest, openSurface]);
   const navigateSurface = useCallback((target: AssistantTarget) => {
     if (target === 'process') { rememberSurface(); onNavigate({ caseView: 'process' }); }
     else if (target === 'artifacts' || target === 'history') { rememberSurface(); onNavigate({ caseView: 'evidence', evidence: target }); setHistoryOpen(target === 'history'); setEvidenceTarget(current => ({ target, serial: (current?.serial ?? 0) + 1 })); }
-    else { rememberSurface(target); onNavigate({ caseView: 'current', surface: target }); setSurface(target); }
-    focusWorkarea();
-  }, [onNavigate, focusWorkarea, rememberSurface]);
+    else openSurface(target);
+  }, [onNavigate, openSurface, rememberSurface]);
   const openWorkpackage = useCallback((id: string) => {
-    rememberSurface('workpackages'); setSurface('workpackages');
-    setWorkpackageFocus(current => ({ id, serial: (current?.serial ?? 0) + 1 }));
-    onNavigate({ caseView: 'current', surface: 'workpackages', workpackageId: id }); focusWorkarea();
-  }, [onNavigate, rememberSurface, focusWorkarea]);
+    onNavigate({ caseView: 'current', surface: 'workpackages', workpackageId: id });
+  }, [onNavigate]);
   const navigateAssistant = useCallback((target: AssistantNavigation) => {
     if (typeof target === 'string') navigateSurface(target);
     else openWorkpackage(target.workpackageId);
@@ -215,10 +223,11 @@ export function CaseWorkspace({ project, researchCase, catalog, busy, error, vie
   const manifest = scenarioManifest(researchCase.scenario_id);
   const stage = scenarioStage(researchCase, manifest);
   const journey = caseJourney(researchCase, manifest);
-  const canReviewClarification = !busy && !sessionBlocked && !journey.completed && researchCase.status !== 'completed' && ['input', 'requirements'].includes(researchCase.stage)
+  // Keep the action mounted during a request; the table disables it without shifting rows.
+  const canReviewClarification = !sessionBlocked && !journey.completed && researchCase.status !== 'completed' && ['input', 'requirements'].includes(researchCase.stage)
     && journey.steps.some(step => step.id === 'requirements' && step.available);
   function reviewRequirementClarification(requirementId: string) {
-    if (!canReviewClarification || !researchCase.requirements.some(row => row.id === requirementId)) return;
+    if (busy || !canReviewClarification || !researchCase.requirements.some(row => row.id === requirementId)) return;
     if (surface === 'requirements') {
       setClarificationFocus({ requirementId });
       return;
@@ -237,13 +246,20 @@ export function CaseWorkspace({ project, researchCase, catalog, busy, error, vie
   const editorTitle = surface === 'decision' ? ['input', 'requirements'].includes(researchCase.stage) ? '确认需求' : researchCase.stage === 'selection' ? '选型确认与研发启动' : '阶段确认' : manifest?.surfaces.find(item => item.id === surface)?.label ?? '办理内容';
   const sourcesOpen = view === 'current' && surface === 'sources';
   const editorOpen = view === 'current' && surface !== 'current';
+  const confirmingRequirements = researchCase.business_lifecycle?.policy_version === 'v2' && ['input', 'requirements'].includes(researchCase.stage);
+  const requirementBlockers = confirmingRequirements ? requirementConfirmationBlockers(researchCase) : [];
   const continuation = view !== 'current' || surface === 'current' || surface === 'decision' ? null
     : journey.completed ? { target: 'current' as CaseSurface, label: '查看生成成果' }
-    : surface === 'sources' && journey.active === 'requirements' ? { target: 'requirements' as CaseSurface, label: '核对需求' }
+    : surface === 'sources' && journey.steps.some(step => step.id === 'requirements' && step.available) ? { target: 'requirements' as CaseSurface, label: '核对需求' }
+    : surface === 'requirements' && confirmingRequirements ? { target: 'decision' as CaseSurface, label: '确认需求并进入选型' }
     : journey.next && journey.next.target !== surface ? journey.next : null;
+  const requirementContinuation = surface === 'requirements' && continuation?.target === 'decision';
+  const sourceContinuation = surface === 'sources' && continuation?.target === 'requirements';
+  const continuationControl = (requirementsDirty = false) => continuation && <div className="rd-case-continuation"><PlatformButton className="rd-button primary" disabled={busy || requirementContinuation && (sessionBlocked || requirementsDirty || requirementBlockers.length > 0 || researchCase.business_lifecycle?.can_confirm_requirements === false)} onClick={() => openSurface(continuation.target)}>{continuation.label} <span aria-hidden="true">→</span></PlatformButton></div>;
   const statusBadge = <span className={`rd-badge ${projectTemplate ? projectStatus ?? 'pending' : researchCase.status === 'completed' ? 'completed' : 'running'}`}>{projectTemplate ? projectStatus === 'completed' ? '流程已完成' : projectStatus && projectStatus !== 'pending' ? projectWorkflowStatusTitle(projectStatus) : stage.title : researchCase.status === 'completed' ? '案例已完成' : stage.title}</span>;
   const heading = <div className="rd-case-heading"><div><h1>{editorOpen ? editorTitle : view === 'process' ? '项目流程' : view === 'evidence' ? '资料与依据' : '当前成果'}</h1><p className="rd-case-kind">{researchCase.title} · {scenarioTitle}{projectTemplateVersion ? ` · V${projectTemplateVersion}` : ''}</p></div><div className="rd-journey-heading-actions">{statusBadge}{!editorOpen && <PlatformButton className="rd-link-button" disabled={busy} onClick={() => openSurface(lastEditingSurface.current !== 'current' && allowedSurface(lastEditingSurface.current) ? lastEditingSurface.current : journey.active)}>返回办理</PlatformButton>}{editorOpen && <PlatformButton className="rd-link-button" disabled={busy} onClick={() => openSurface('current')}>成果概览</PlatformButton>}</div></div>;
   return <div className={`rd-case-workspace rd-focused-case rd-outcome-case rd-journey-workspace${sourcesOpen ? ' rd-source-workspace' : ''}`}>
+    {messageContextHolder}
     {manifest && <CaseJourneyNav steps={journey.steps} active={journey.active} completed={journey.completed} surface={view === 'current' ? surface : undefined} researchCase={researchCase} busy={busy} onOpen={openSurface} />}
     <div className="rd-case-body"><div id="rd-case-workarea" className="rd-native-workarea" tabIndex={-1} ref={nativeArea}>
       {heading}
@@ -252,8 +268,8 @@ export function CaseWorkspace({ project, researchCase, catalog, busy, error, vie
         {researchCase.stage === 'input' && researchCase.decisions.some(decision => !!decision.invalidated_at) && <p className="rd-warning" role="status">资料或需求已变更，原决定与成果已保留，请重新核对。 <PlatformButton type="button" className="rd-link-button" onClick={() => navigateSurface('history')}>查看历史记录</PlatformButton></p>}
         {researchCase.warnings?.map(warning => <p key={warning.code} className="rd-warning" role="status">{warning.message}</p>)}
         <div hidden={surface !== 'current'}><CaseOutcome project={project} researchCase={researchCase} manifest={manifest} onOpen={openSurface} onNavigate={navigateSurface} onOpenWorkpackage={openWorkpackage} /></div>
-        <ScenarioWorkspace project={project} actorId={reviewActor} researchCase={researchCase} catalog={catalog} activeSurface={surface} busy={busy || sessionBlocked} error={error} command={command} onNavigate={openSurface} onAnalyze={onAnalyze} onOpenSources={() => openSurface('sources')} onUpload={onUpload} onBatchUpload={onBatchUpload} onDirtyChange={setScenarioDirty} workpackageFocus={workpackageFocus} clarificationFocus={clarificationFocus} onReviewAnalysisClarification={reviewAnalysisClarification} onReviewRequirementClarification={canReviewClarification ? reviewRequirementClarification : undefined} />
-        {continuation && <div className="rd-case-continuation"><PlatformButton className="rd-button primary" disabled={busy} onClick={() => openSurface(continuation.target)}>{continuation.label} <span aria-hidden="true">→</span></PlatformButton></div>}
+        <ScenarioWorkspace project={project} actorId={reviewActor} researchCase={researchCase} catalog={catalog} activeSurface={surface} busy={busy || sessionBlocked} error={error} command={command} onNavigate={openSurface} onAnalyze={onAnalyze} onOpenSources={() => openSurface('sources')} onUpload={onUpload} onBatchUpload={onBatchUpload} onDirtyChange={setScenarioDirty} workpackageFocus={workpackageFocus} clarificationFocus={clarificationFocus} onReviewAnalysisClarification={reviewAnalysisClarification} onReviewRequirementClarification={canReviewClarification ? reviewRequirementClarification : undefined} requirementAction={requirementContinuation ? continuationControl : undefined} onReviewRequirements={sourceContinuation ? () => openSurface('requirements') : undefined} />
+        {!requirementContinuation && !sourceContinuation && continuationControl()}
       </div>
       <div hidden={view !== 'process'}><CaseProcessPanel researchCase={researchCase} catalog={catalog} busy={busy || sessionBlocked} command={command} onOpenWorkpackage={openWorkpackage} onDirtyChange={setProcessDirty} /></div>
       <div hidden={view !== 'evidence'}><CaseEvidencePanel project={project} researchCase={researchCase} onNavigate={navigateSurface} onOpenWorkpackage={openWorkpackage} historyOpen={historyOpen} focusTarget={view === 'evidence' ? evidenceTarget : undefined} /></div>

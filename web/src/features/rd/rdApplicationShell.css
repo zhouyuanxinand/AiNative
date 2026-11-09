@@ -1,5 +1,5 @@
 /* The application shell owns vertical scrolling; wide work surfaces own horizontal scrolling. */
-.rd-application-shell{height:100vh;height:100dvh;min-height:0;overflow-y:auto;grid-template-columns:var(--rd-sidebar-width,216px) minmax(0,1fr);font-size:14px;line-height:1.6}
+.rd-application-shell{height:100vh;height:100dvh;min-height:0;overflow-y:auto;grid-template-columns:var(--rd-sidebar-width,216px) minmax(0,1fr);font-size:var(--font-size-body);line-height:1.6}
 .rd-application-shell>.rd-main{display:flex;flex-direction:column;min-height:100vh;min-height:100dvh}
 .rd-application-shell>.rd-main>.rd-topbar{flex-shrink:0}
 .rd-application-shell>.rd-main>.rd-page-content{width:100%;box-sizing:border-box;flex-shrink:0}
@@ -7,8 +7,9 @@
 .rd-platform-footer-inner{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:16px;min-height:68px;box-sizing:border-box;border-top:1px solid var(--color-border);padding:16px 0}
 .rd-platform-footer-brand{grid-column:2;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px 16px;min-width:0}
 .rd-platform-footer-brand>img{display:block;width:112px;max-width:100%;height:auto;flex-shrink:0}
-.rd-platform-vision{min-width:0;margin:0;font-size:13px;line-height:1.6;text-align:center;color:var(--color-text-secondary);overflow-wrap:anywhere}
-.rd-back-to-top.ant-btn{justify-self:end;display:inline-flex;align-items:center;gap:6px;height:36px;padding:6px 10px;font-size:13px;color:var(--color-action);white-space:nowrap}
+.rd-platform-vision{min-width:0;margin:0;font-size:var(--font-size-sm);line-height:1.6;text-align:center;color:var(--color-text-secondary);overflow-wrap:anywhere}
+.rd-back-to-top.ant-btn{justify-self:end;display:inline-flex;align-items:center;gap:6px;height:36px;padding:6px 10px;font-size:var(--font-size-sm);color:var(--color-action);white-space:nowrap}
+.rd-back-to-top[aria-hidden="true"]{visibility:hidden;pointer-events:none}
 .rd-back-to-top svg{display:block;width:16px;height:16px}
 .rd-application-shell .rd-sidebar{padding:0 12px 16px;gap:16px;overflow:hidden;background:var(--color-nav-bg,#001529);border-right:1px solid var(--color-nav-border,#20354a);color:var(--color-nav-text,#c8d3df)}
 .rd-sidebar-resizer{position:absolute;top:0;right:0;bottom:0;width:12px;z-index:1;touch-action:none;cursor:col-resize;outline:none}
@@ -40,29 +41,29 @@
 .rd-application-shell .rd-sidebar-case-name{font-size:var(--font-size-body);padding:0 12px;margin:6px 0 12px;line-height:1.6;color:var(--color-bg-surface)}
 .rd-sidebar-context-kind{display:inline-block;margin-right:7px;font-size:var(--font-size-sm);font-weight:400;color:var(--color-nav-text,#c8d3df)}
 .rd-application-shell .rd-sidebar-case-hint{color:var(--color-nav-text,#c8d3df)}
-.rd-application-shell .rd-sidebar-case nav button{font-size:15px;padding:7px 12px 7px 18px;min-height:40px;height:40px}
+.rd-application-shell .rd-sidebar-case nav button{font-size:calc(15px * var(--font-scale));padding:7px 12px 7px 18px;min-height:40px;height:40px}
 .rd-application-shell .rd-sidebar-case nav button>span{width:auto;font-size:inherit;text-align:left}
 .rd-application-shell .rd-topbar{height:64px;min-height:64px;padding:8px 32px;gap:16px;box-shadow:0 1px 0 var(--color-border)}
 .rd-platform-heading{display:flex;flex-direction:column;min-width:0;gap:0}
-.rd-platform-heading strong{font-size:17px;font-weight:600;letter-spacing:0;line-height:1.5}
+.rd-platform-heading strong{font-size:calc(17px * var(--font-scale));font-weight:600;letter-spacing:0;line-height:1.5}
 .rd-platform-heading>span{font-size:12px;line-height:1.5;color:var(--color-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rd-topbar-help{display:flex;gap:8px;flex-shrink:0}
 .rd-application-shell .rd-page-content{padding:28px 32px 48px;max-width:1680px}
-.rd-application-shell h1{font-size:24px;letter-spacing:0;font-weight:600;line-height:1.4}
-.rd-application-shell h2{font-size:20px;letter-spacing:0;font-weight:600}
-.rd-application-shell h3{font-size:16px}
+.rd-application-shell h1{font-size:var(--font-size-title-lg);letter-spacing:0;font-weight:600;line-height:1.4}
+.rd-application-shell h2{font-size:var(--font-size-title-md);letter-spacing:0;font-weight:600}
+.rd-application-shell h3{font-size:var(--font-size-title-sm)}
 .rd-application-shell .rd-page-title{margin:0 0 24px;align-items:center}
 .rd-application-shell .rd-page-title h1{margin:0}
-.rd-application-shell .rd-page-title p{font-size:14px;margin-top:7px;line-height:1.75}
-.rd-application-shell .rd-page-title>.rd-button{margin:0;font-size:14px}
+.rd-application-shell .rd-page-title p{font-size:var(--font-size-body);margin-top:7px;line-height:1.75}
+.rd-application-shell .rd-page-title>.rd-button{margin:0;font-size:var(--font-size-body)}
 .rd-application-shell .rd-page-content.rd-management-page{padding:0;max-width:none}
-.rd-application-shell .rd-management-tools{font-size:14px}
-.rd-application-shell .rd-project-business-context{font-size:13px;padding:16px 0}
+.rd-application-shell .rd-management-tools{font-size:var(--font-size-body)}
+.rd-application-shell .rd-project-business-context{font-size:var(--font-size-sm);padding:16px 0}
 .rd-application-shell .rd-case-heading{margin:16px 0 20px}
-.rd-application-shell .rd-case-kind{font-size:13px}
+.rd-application-shell .rd-case-kind{font-size:var(--font-size-sm)}
 .rd-application-shell .rd-outcome-heading{padding-top:0}
-.rd-application-shell .rd-outcome-heading h2{font-size:20px}
-.rd-application-shell .rd-outcome-statuses dt,.rd-application-shell .rd-outcome-statuses dd{font-size:13px}
+.rd-application-shell .rd-outcome-heading h2{font-size:var(--font-size-title-md)}
+.rd-application-shell .rd-outcome-statuses dt,.rd-application-shell .rd-outcome-statuses dd{font-size:var(--font-size-sm)}
 .rd-application-shell .rd-list-toolbar .rd-search>.ant-btn{padding:0 6px;border:0;box-shadow:none;background:transparent;height:28px}
 .rd-application-shell.is-sidebar-collapsed{grid-template-columns:64px minmax(0,1fr)}
 .rd-application-shell.is-sidebar-collapsed .rd-sidebar{padding-inline:8px}
@@ -88,10 +89,10 @@
   .rd-application-shell .rd-sidebar-case nav{padding-bottom:0}
   .rd-application-shell .rd-topbar{position:static;flex-wrap:nowrap;padding:8px 16px;height:auto;min-height:52px}
   .rd-platform-heading>span{display:none}
-  .rd-platform-heading strong{font-size:17px}
+  .rd-platform-heading strong{font-size:calc(17px * var(--font-scale))}
   .rd-application-shell .rd-page-content{padding:20px 16px 32px}
-  .rd-application-shell h1{font-size:22px}
-  .rd-application-shell h2{font-size:18px}
+  .rd-application-shell h1{font-size:calc(22px * var(--font-scale))}
+  .rd-application-shell h2{font-size:calc(18px * var(--font-scale))}
   .rd-application-shell.is-sidebar-collapsed .rd-brand{display:block}
   .rd-application-shell.is-sidebar-collapsed .rd-brand-row{justify-content:space-between}
   .rd-application-shell.is-sidebar-collapsed .rd-sidebar-navigation{display:none}

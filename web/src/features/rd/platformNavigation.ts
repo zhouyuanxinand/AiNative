@@ -58,7 +58,7 @@ export const DIRECTORY_DEFAULTS: Record<string, Record<string, string>> = {
   projects: { q: '', page: '1', status: 'all', sort: 'recent', layout: 'cards' },
   management: { q: '', kind: 'all', page: '1', tab: 'tasks' },
   management_customer: { q: '', page: '1', item: '' }, management_product: { q: '', page: '1', item: '' },
-  flow: { tab: 'flows', kind: 'research', item: '', version: '', detail: '', q: '', page: '1' },
+  flow: { tab: 'flows', kind: 'research', item: '', version: '', detail: '', product: '', q: '', page: '1' },
   workflow: { category: 'project', q: '', page: '1', item: '', version: '', detail: 'canvas', history_page: '1', compare: '' },
   knowledge: { q: '', kind: 'all', page: '1', tab: 'tasks', item: '' },
   workspace: { q: '', kind: '', item: '', version: '', page: '1' },

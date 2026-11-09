@@ -15,6 +15,7 @@ from dataclasses import asdict, dataclass, replace
 import json
 import hashlib
 import logging
+import math
 import os
 import re
 import threading
@@ -1307,6 +1308,7 @@ def _request_once(
     temperature: float,
     max_tokens: int,
     json_mode: bool,
+    bounded: bool = False,
 ) -> tuple[str, dict[str, Any]]:
     if config.provider in {"openai_compatible", "smartvision", "dashscope"}:
         return _request_compatible(
@@ -1318,6 +1320,10 @@ def _request_once(
             json_mode=json_mode,
         )
     client = _get_azure_client(config)
+    if bounded:
+        # A cached SDK client must not add hidden retries or retain an older
+        # timeout when an interactive caller supplies an overall deadline.
+        client = client.with_options(timeout=config.timeout_seconds, max_retries=0)
     kwargs: dict[str, Any] = {
         "model": config.model or deployment,
         "messages": [
@@ -1362,6 +1368,15 @@ def _is_retryable(exc: Exception) -> bool:
     return True
 
 
+def _remaining_request_time(deadline: float | None) -> float | None:
+    if deadline is None:
+        return None
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("模型处理已达到本次请求的时间预算，请稍后重试。")
+    return remaining
+
+
 def _request_with_retry(
     config: LLMConfig,
     system: str,
@@ -1373,21 +1388,26 @@ def _request_with_retry(
     json_mode: bool,
     retries: int,
     operation: str = "completion",
+    deadline: float | None = None,
 ) -> str:
     last_error: Exception | None = None
     max_attempts = max(1, retries)
     for attempt_index in range(max_attempts):
         attempt = attempt_index + 1
+        remaining = _remaining_request_time(deadline)
+        attempt_config = (replace(config, timeout_seconds=min(config.timeout_seconds, remaining))
+                          if remaining is not None else config)
         started = time.perf_counter()
         try:
             content, metadata = _request_once(
-                config,
+                attempt_config,
                 system,
                 user,
                 deployment=deployment,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 json_mode=json_mode,
+                **({"bounded": True} if deadline is not None else {}),
             )
         except _LLMOutputLimitError as exc:
             # Repeating an identical request cannot fix a known output budget limit.
@@ -1407,11 +1427,13 @@ def _request_with_retry(
                 reasoning_tokens=diagnostics.get("reasoning_tokens", 0),
                 content_chars=diagnostics.get("content_chars", 0),
             )
+            _remaining_request_time(deadline)
             raise
         except Exception as exc:  # SDK 与兼容 HTTP 客户端异常统一在边界判定
             last_error = exc
             retryable = _is_retryable(exc)
-            will_retry = retryable and attempt < max_attempts
+            will_retry = (retryable and attempt < max_attempts
+                          and (deadline is None or time.monotonic() < deadline))
             diagnostics = getattr(exc, "llm_diagnostics", {}) or {}
             _log_llm_event(
                 "retrying" if will_retry else "failed",
@@ -1428,6 +1450,7 @@ def _request_with_retry(
                 reasoning_tokens=diagnostics.get("reasoning_tokens", 0),
                 content_chars=diagnostics.get("content_chars", 0),
             )
+            _remaining_request_time(deadline)
             # 不可重试的错误（鉴权失败、参数错误等）立即抛出，不做无意义等待。
             if not retryable:
                 raise RuntimeError(_redact(exc, config)) from None
@@ -1436,10 +1459,11 @@ def _request_with_retry(
                 max_delay = float(
                     os.getenv("JTB_LLM_RETRY_MAX_DELAY_SECONDS", "20")
                 )
-                time.sleep(
-                    min(max(0.0, max_delay), float(2**attempt_index))
-                )
+                delay = min(max(0.0, max_delay), float(2**attempt_index))
+                remaining = _remaining_request_time(deadline)
+                time.sleep(min(delay, remaining) if remaining is not None else delay)
         else:
+            _remaining_request_time(deadline)
             _log_llm_event(
                 "completed",
                 provider=_provider_kind(config),
@@ -1533,9 +1557,25 @@ def chat_json(
     deployment: str = _DEFAULT_DEPLOYMENT,
     temperature: float = 0.0,
     max_tokens: int = DEFAULT_JSON_MAX_TOKENS,
+    *,
+    deadline: float | None = None,
+    timeout_seconds: float | None = None,
+    retries: int | None = None,
 ) -> Any:
-    """要求模型返回 JSON 并严格解析；不接受无法解析的自然语言兜底。"""
+    """Parse JSON strictly; optional monotonic deadline covers retries and recovery."""
     config = _active_config()
+    if deadline is not None:
+        deadline = float(deadline)
+        if not math.isfinite(deadline):
+            raise ValueError("模型请求截止时间必须是有限数值")
+    if timeout_seconds is not None:
+        timeout = float(timeout_seconds)
+        if not 5 <= timeout <= 600:
+            raise ValueError("模型请求超时应为5至600秒")
+        config = replace(config, timeout_seconds=timeout)
+    attempts = _configured_retries(default=7) if retries is None else retries
+    if not isinstance(attempts, int) or not 1 <= attempts <= 12:
+        raise ValueError("模型请求尝试次数应为1至12次")
     budget = min(int(max_tokens), config.max_tokens)
     while True:
         try:
@@ -1547,10 +1587,13 @@ def chat_json(
                 temperature=temperature,
                 max_tokens=budget,
                 json_mode=True,
-                retries=_configured_retries(default=7),
+                retries=attempts,
                 operation="chat_json",
+                deadline=deadline,
             )
-            return _parse_json(raw)
+            result = _parse_json(raw)
+            _remaining_request_time(deadline)
+            return result
         except _LLMOutputLimitError:
             if budget >= config.max_tokens:
                 raise

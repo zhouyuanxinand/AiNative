@@ -1,4 +1,4 @@
-"""Real uploads delimit what an AI enhancement can propose for a requirement."""
+"""Extraction cannot publish specification recommendations, even with real quotes."""
 from copy import deepcopy
 
 import pytest
@@ -8,6 +8,26 @@ from tests.rd_platform.test_source_analysis import analyze, command, install_mod
 
 
 PRESSURE_CLAUSE = '工作压力：0.3 MPa，保压时间不少于 15 秒。'
+
+
+def test_extraction_drops_self_citation_instead_of_publishing_a_spec_suggestion(tmp_path, monkeypatch):
+    client, project = setup_case(tmp_path)
+    sid = project['cases'][0]['sources'][0]['id']
+    model = install_model(monkeypatch, sid)
+    original = deepcopy(model['requirements'][0])
+    model['requirements'][0]['recommendation'] = {
+        'text': '请核对所引条款的适用条件',
+        'proposed_value': original['content'],
+        'evidence': deepcopy(original['evidence']),
+    }
+    response = analyze(client, project)
+    assert response.status_code == 200, response.text
+    case = response.json()['cases'][0]
+    row = case['source_analysis']['requirements'][0]
+    assert row['content'] == original['content']
+    assert row['evidence'] == original['evidence']
+    assert 'recommendation' not in row
+    assert not case.get('requirement_recommendations')
 
 
 def supplied_documents(tmp_path, monkeypatch):
@@ -29,20 +49,22 @@ def supplied_documents(tmp_path, monkeypatch):
     return client, project, model
 
 
-def test_verified_recommendation_stays_separate_when_original_rows_are_adopted(tmp_path, monkeypatch):
+def test_spec_citation_from_extraction_waits_for_independent_spec_review(tmp_path, monkeypatch):
     client, project, model = supplied_documents(tmp_path, monkeypatch)
     project = analyze(client, project).json()
     proposal = project['cases'][0]['source_analysis']
     row = proposal['requirements'][0]
     assert row['content'] == '工作压力：0.3 MPa。'
-    assert row['recommendation'] == model['requirements'][0]['recommendation']
-    assert row['recommendation']['evidence'][0]['source_id'] in proposal['source_hashes']
+    assert 'recommendation' not in row
+    assert row['evidence'] == model['requirements'][0]['evidence']
     adopted = command(client, project, 'adopt_source_analysis', analysis_id=proposal['id'])['cases'][0]
     assert adopted['requirements'][0]['content'] == '工作压力：0.3 MPa。'
-    assert adopted['source_analysis']['requirements'][0]['recommendation'] == row['recommendation']
+    assert 'recommendation' not in adopted['source_analysis']['requirements'][0]
+    assert not adopted.get('requirement_recommendations')
+    assert not adopted['requirements'][0].get('review')
 
 
-def test_retain_eight_channels_with_cited_independent_circuits_suggestion(tmp_path, monkeypatch):
+def test_retain_eight_channels_without_adopting_extra_circuits_from_extraction(tmp_path, monkeypatch):
     client, project = setup_case(tmp_path, source_text='连接路数：8 路。\n连接路数：8 路，采用独立回路。')
     sid = project['cases'][0]['sources'][0]['id']
     model = install_model(monkeypatch, sid)
@@ -52,7 +74,8 @@ def test_retain_eight_channels_with_cited_independent_circuits_suggestion(tmp_pa
     model['requirements'] = [{'title': '连接路数', 'content': text, 'evidence': [{'source_id': sid, 'quote': text}],
                               'recommendation': rec}]
     row = analyze(client, project).json()['cases'][0]['source_analysis']['requirements'][0]
-    assert row['content'] == text and row['recommendation'] == rec
+    assert row['content'] == text and row['evidence'] == [{'source_id': sid, 'quote': text}]
+    assert 'recommendation' not in row
 
 
 @pytest.mark.parametrize('variant', ['made_up_value', 'incomplete_limit', 'invented_source', 'project_text', 'truncated_quote',
@@ -82,7 +105,7 @@ def test_unverified_enhancement_is_omitted_without_losing_original_row(tmp_path,
     assert any('增强建议' in warning for warning in proposal['warnings'])
 
 
-def test_correction_of_another_row_cannot_replace_verified_enhancement(tmp_path, monkeypatch):
+def test_correction_keeps_verified_originals_and_drops_out_of_stage_suggestions(tmp_path, monkeypatch):
     client, project, model = supplied_documents(tmp_path, monkeypatch)
     row = model['requirements'][0]
     model['requirements'].append({'title': '工作温度', 'content': '5–70度',
@@ -93,5 +116,10 @@ def test_correction_of_another_row_cannot_replace_verified_enhancement(tmp_path,
     responses = iter([model, corrected])
     monkeypatch.setattr(llm_client, 'chat_json', lambda *a, **k: next(responses))
     response = analyze(client, project)
-    assert response.status_code == 422 and '增强建议' in response.text
-    assert not client.get(f"/api/rd/projects/{project['id']}").json()['cases'][0].get('source_analysis')
+    assert response.status_code == 200, response.text
+    proposal = response.json()['cases'][0]['source_analysis']
+    assert [item['content'] for item in proposal['requirements']] == ['工作压力：0.3 MPa。', '工作温度：5℃～70℃。']
+    assert proposal['requirements'][0]['evidence'] == row['evidence']
+    assert all('recommendation' not in item for item in proposal['requirements'])
+    assert proposal['validation']['correction_attempts'] == 1
+    assert response.json()['cases'][0]['requirements'] == []

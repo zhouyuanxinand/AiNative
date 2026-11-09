@@ -34,11 +34,19 @@ def install_word(monkeypatch, *, returns_none=False, close_raises=False):
         return None if returns_none else SimpleNamespace(SaveAs2=save, Close=close)
     def quit_word():
         observed['quit'] += 1
-    word = SimpleNamespace(Documents=SimpleNamespace(Open=open_document), Quit=quit_word,
+    def invoke_open(dispid, lcid, flags, result, path, confirm, readonly, recent, *optional):
+        return open_document(path, ReadOnly=readonly, AddToRecentFiles=recent,
+                             ConfirmConversions=confirm, Visible=optional[-1])
+    documents = SimpleNamespace(GetIDsOfNames=lambda name: 19, Invoke=invoke_open)
+    word = SimpleNamespace(Documents=SimpleNamespace(_oleobj_=documents), Quit=quit_word,
                            Options=SimpleNamespace(UpdateLinksAtOpen=True))
-    monkeypatch.setitem(sys.modules, 'pythoncom', SimpleNamespace(CoInitialize=initialize, CoUninitialize=uninitialize))
-    monkeypatch.setitem(sys.modules, 'win32com', SimpleNamespace(client=SimpleNamespace(DispatchEx=lambda name: word)))
-    monkeypatch.setitem(sys.modules, 'win32com.client', SimpleNamespace(DispatchEx=lambda name: word))
+    monkeypatch.setitem(sys.modules, 'pythoncom', SimpleNamespace(
+        CoInitialize=initialize, CoUninitialize=uninitialize, VT_ERROR=10, DISPATCH_METHOD=1))
+    monkeypatch.setitem(sys.modules, 'winerror', SimpleNamespace(DISP_E_PARAMNOTFOUND=-2147352572))
+    client = SimpleNamespace(dynamic=SimpleNamespace(Dispatch=lambda obj, name: obj), VARIANT=lambda *args: args)
+    monkeypatch.setitem(sys.modules, 'win32com', SimpleNamespace(client=client))
+    monkeypatch.setitem(sys.modules, 'win32com.client', client)
+    monkeypatch.setattr(normalizer, '_create_word_application', lambda: word)
     monkeypatch.setattr(normalizer, 'os', SimpleNamespace(name='nt'))
     monkeypatch.setattr(normalizer.shutil, 'which', lambda name: None)
     return observed, word

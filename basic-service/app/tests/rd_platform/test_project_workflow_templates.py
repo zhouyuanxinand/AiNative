@@ -7,7 +7,7 @@ import pytest
 from service.rd_platform.runtime import Worker
 from service.rd_platform.store import RdError
 from designer_fixture import adopt_plan
-from test_requirement_confirmation import confirm
+from test_requirement_confirmation import confirm, clarify_requirement
 from test_selection_activation import CONTEXT, activate, decide, local_store, prepare
 from test_store import fixture_comparison, issue
 from test_workflow_templates import EDITOR, PUBLISHER
@@ -57,7 +57,7 @@ def activated(store, template=None):
     sid = project['cases'][0]['sources'][0]['id']
     project = issue(store, project, 'save_requirement', {
         'title': '压力', 'content': '0.3 MPa', 'source_ids': [sid]})
-    project = confirm(store, project)
+    project = confirm(store, clarify_requirement(store, project))
     for axis, value in (('product', 'modification'), ('composition', 'direct')):
         project, comparison_id = fixture_comparison(store, project, axis)
         project = issue(store, project, 'record_route_decision', {

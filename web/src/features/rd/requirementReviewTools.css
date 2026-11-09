@@ -2,6 +2,9 @@
 .rd-requirement-review-tools>.ant-input-affix-wrapper {width:min(340px,100%)}
 .rd-requirement-filter-buttons {display:flex;flex-wrap:wrap;gap:6px;min-width:0}
 .rd-requirement-filter-buttons .ant-btn {font-variant-numeric:tabular-nums}
+.rd-review-primary-action {margin-left:auto;max-width:100%}
+.rd-journey-workspace .rd-review-primary-action .rd-case-continuation {margin:0;padding:0;border:0}
+.rd-review-primary-action .rd-button {max-width:100%;white-space:normal;height:auto;min-height:32px}
 .rd-review-result-count {font-size:12px;color:var(--color-text-secondary);margin:8px 0}
 .rd-review-current-row>td {background:var(--color-bg-subtle)!important}
 .rd-req-table tr[data-row-key]:focus-visible {outline:2px solid var(--color-action);outline-offset:-2px}

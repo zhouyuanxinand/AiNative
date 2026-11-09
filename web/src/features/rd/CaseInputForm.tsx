@@ -33,7 +33,7 @@ function shortFileName(name: string) {
   return characters.length > 30 ? characters.slice(0, 21).join('') + '…' + characters.slice(-8).join('') : name;
 }
 
-export function CaseInputForm({ project, researchCase, busy, error, command, onAnalyze, onBatchUpload, onDirtyChange, onReviewClarification }: { project: Project; researchCase: ResearchCase; busy: boolean; error: string; command: CommandRunner; onAnalyze: SourceAnalysisRunner; onBatchUpload: SourceBatchRunner; onUpload: (caseId: string, file: File, role: string, success: () => void) => Promise<void>; onDirtyChange: (dirty: boolean) => void; onReviewClarification?: (requirementId: string) => void }) {
+export function CaseInputForm({ project, researchCase, busy, error, command, onAnalyze, onBatchUpload, onDirtyChange, onReviewClarification, onReviewRequirements }: { project: Project; researchCase: ResearchCase; busy: boolean; error: string; command: CommandRunner; onAnalyze: SourceAnalysisRunner; onBatchUpload: SourceBatchRunner; onUpload: (caseId: string, file: File, role: string, success: () => void) => Promise<void>; onDirtyChange: (dirty: boolean) => void; onReviewClarification?: (requirementId: string) => void; onReviewRequirements?: () => void }) {
   const { state: identityState } = useCurrentUser();
   const [model, setModel] = useState<ModelSelection>(() => normalizeModelSelection(researchCase.model_selection));
   const [modelBase, setModelBase] = useState(modelSelectionKey(model));
@@ -189,7 +189,7 @@ export function CaseInputForm({ project, researchCase, busy, error, command, onA
       {historicalSources.length > 0 && <details className="rd-source-history"><summary>历史资料 <span>{historicalSources.length} 份</span></summary><div className="rd-source-file-grid">{historicalSources.map(renderSource)}</div></details>}
       </div>
     </section>
-    <SourceAnalysisPanel project={project} researchCase={researchCase} busy={busy} error={error} blockedByDraft={modelDirty || queuePending} pendingUpload={queuePending} command={command} onAnalyze={analyzeWithModel} onReviewClarification={onReviewClarification} renderModelControls={analyzeButton => <div className="rd-context-form rd-analysis-model-settings">
+    <SourceAnalysisPanel project={project} researchCase={researchCase} busy={busy} error={error} blockedByDraft={modelDirty || queuePending} pendingUpload={queuePending} command={command} onAnalyze={analyzeWithModel} onReviewClarification={onReviewClarification} onReviewRequirements={onReviewRequirements} renderModelControls={analyzeButton => <div className="rd-context-form rd-analysis-model-settings">
       <div className="rd-analysis-controls"><div className="rd-field rd-analysis-model-field">
         <label id="rd-model-label" htmlFor="rd-model">编制模型</label>
         <StyledSelect id="rd-model" aria-labelledby="rd-model-label" aria-describedby={modelError ? 'rd-model-error' : undefined} value={modelKey} options={modelOptions} onChange={selectModel} disabled={busy} />

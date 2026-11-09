@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Button, Checkbox, Modal, Table } from 'antd';
+import { Button, Modal, Table } from 'antd';
 import { FullscreenOutlined, FullscreenExitOutlined } from '@ant-design/icons';
 import type { TableColumnsType } from 'antd';
 import { isCurrentClarification } from './clarificationReview';
@@ -28,10 +28,9 @@ function LookupNote() {
   </details>;
 }
 
-export function SourceRequirementList({ analysis, requirements, clarifications, inputRevision, stale, evidenceList, onReviewClarification, selectedRows, selectionDisabled, onSelectSuggestion, adoption }: {
+export function SourceRequirementList({ analysis, requirements, clarifications, inputRevision, stale, evidenceList, onReviewClarification, adoption }: {
   analysis: SourceAnalysis; requirements: Requirement[]; clarifications: Clarification[]; inputRevision?: number; stale: boolean;
   evidenceList: (evidence: SourceEvidence[]) => ReactNode; onReviewClarification?: (requirementId: string) => void;
-  selectedRows: number[]; selectionDisabled: boolean; onSelectSuggestion: (index: number) => void;
   adoption?: { disabled: boolean; pending: boolean; error: string; submit: () => Promise<boolean> };
 }) {
   const [open, setOpen] = useState(false);
@@ -61,7 +60,6 @@ export function SourceRequirementList({ analysis, requirements, clarifications, 
     const term = query.trim().toLocaleLowerCase();
     return term ? rows.filter(row => [
     row.original.title, row.original.content, ...row.original.evidence.map(item => item.quote),
-    row.original.recommendation?.text, row.original.recommendation?.proposed_value, ...(row.original.recommendation?.evidence ?? []).map(item => item.quote),
     ...row.clarifications.flatMap(item => [item.question, item.answer, item.adoption?.requirement_content]),
     ].some(value => value?.toLocaleLowerCase().includes(term))) : rows;
   }
@@ -69,7 +67,7 @@ export function SourceRequirementList({ analysis, requirements, clarifications, 
   const hasClarification = (row: Row) => row.clarifications.some(record => record.status !== 'adopted' && isCurrentClarification(record, inputRevision, row.requirement?.revision ?? row.requirement?.version));
   const isPending = (row: Row) => analysis.status !== 'adopted' || !row.requirement?.review || row.requirement.review.requirement_revision !== (row.requirement.revision ?? row.requirement.version ?? 1)
     || !!row.requirement.review.analysis_id && row.requirement.review.analysis_id !== analysis.id;
-  const matches = (row: Row, key: string) => key === 'pending' ? isPending(row) : key === 'selected' ? selectedRows.includes(row.number - 1) : key === 'clarification' ? hasClarification(row) : key === 'stale' ? stale : true;
+  const matches = (row: Row, key: string) => key === 'pending' ? isPending(row) : key === 'clarification' ? hasClarification(row) : key === 'stale' ? stale : true;
   const filtered = searched.filter(row => matches(row, filter));
   const previewSearched = searchRows(previewQuery);
   const previewFiltered = previewSearched.filter(row => matches(row, previewFilter));
@@ -80,7 +78,7 @@ export function SourceRequirementList({ analysis, requirements, clarifications, 
   }
   function tools(fullscreen = false) {
     const pending = (fullscreen ? filtered : previewFiltered).filter(isPending);
-    const filters = [{ key: 'all', label: '全部' }, { key: 'pending', label: '待处理' }, { key: 'selected', label: '已选建议' }, { key: 'clarification', label: '待澄清' }, { key: 'stale', label: '来源待复核' }]
+    const filters = [{ key: 'all', label: '全部' }, { key: 'pending', label: '待处理' }, { key: 'clarification', label: '待澄清' }, { key: 'stale', label: '来源待复核' }]
       .map(item => ({ ...item, count: (fullscreen ? searched : previewSearched).filter(row => matches(row, item.key)).length }));
     return <RequirementReviewTools label="筛选原文需求" searchLabel="搜索需求" query={fullscreen ? query : previewQuery} filters={filters} activeFilter={fullscreen ? filter : previewFilter}
       onQueryChange={value => { (fullscreen ? setQuery : setPreviewQuery)(value); setFocusedNumber(null); if (scroll.current) scroll.current.scrollTop = 0; }}
@@ -116,16 +114,8 @@ export function SourceRequirementList({ analysis, requirements, clarifications, 
     { key: 'metric', title: '指标', width: '18%', render: (_, row) => <div className="rd-req-metric"><span>{String(row.number).padStart(2, '0')}</span><strong>{row.original.title}</strong></div> },
     { key: 'original', title: '原文指标', width: '22%', render: (_, row) => <><p className="rd-req-original">{row.original.content}</p>{row.original.evidence.length > 0 && <details className="rd-req-source"><summary>核对来源原文</summary>{evidenceList(row.original.evidence)}</details>}</> },
     { key: 'company', title: '公司自有组件指标', width: '12%', render: () => <span className="rd-req-muted" aria-label="暂无核实的自有组件指标">—</span> },
-    { key: 'recommendation', title: 'AI 推荐', width: '20%', render: (_, row) => {
-      const suggestion = row.original.recommendation;
-      if (!suggestion) return <span className="rd-req-muted">暂无建议</span>;
-      return <div className="rd-req-record"><strong>{suggestion.text}</strong><p>建议指标：{suggestion.proposed_value}</p>
-        {analysis.status === 'proposed' && <Checkbox checked={selectedRows.includes(row.number - 1)} disabled={selectionDisabled}
-          onChange={() => onSelectSuggestion(row.number - 1)}>选用此建议</Checkbox>}
-      </div>;
-    } },
-    { key: 'basis', title: '证据来源', width: '12%', render: (_, row) => row.original.recommendation?.evidence.length
-      ? <details className="rd-req-source"><summary>建议依据</summary>{evidenceList(row.original.recommendation.evidence)}</details> : <span className="rd-req-muted">—</span> },
+    { key: 'recommendation', title: 'AI 推荐', width: '20%', render: () => <span className="rd-req-muted">待需求确认时核对规范</span> },
+    { key: 'basis', title: '证据来源', width: '12%', render: () => <span className="rd-req-muted">—</span> },
     { key: 'clarification', title: '需求澄清', width: '16%', render: (_, row) => clarificationCell(row) },
   ];
   function table(data: Row[]) {
@@ -165,7 +155,7 @@ export function SourceRequirementList({ analysis, requirements, clarifications, 
       <div className="rd-req-review-filters">{tools(true)}</div>
       <LookupNote />
       <div className="rd-req-review-scroll" ref={scroll}>{table(filtered)}</div>
-      {adoption && <div className="rd-req-review-adopt"><div><p>筛选仅影响显示；确认采用将采用全部 {rows.length} 项原文需求、可采用的识别信息和已选 {selectedRows.length} 条建议。</p>
+      {adoption && <div className="rd-req-review-adopt"><div><p>筛选仅影响显示；确认采用将采用全部 {rows.length} 项原文需求和可采用的识别信息。</p>
         {stale && <p className="rd-warning">来源已变化，请退出全屏并重新分析后再采用。</p>}
         {adoptionFailed && <p className="rd-warning" role="status">{adoption.error || '采用尚未成功。'} 当前选择已保留，请核对错误后重试；也可退出全屏检查资料与模型设置。</p>}</div>
         <Button type="primary" disabled={adoption.disabled} onClick={async () => {

@@ -251,6 +251,35 @@ def _read_images(source: Path, evidence_dir: Path, manifest: dict, ocr_enabled: 
             yield record
 
 
+def _create_word_application():
+    """Own a separate Word instance without consulting pywin32's gen_py cache."""
+    import pythoncom
+    from win32com.client import dynamic
+
+    dispatch = pythoncom.CoCreateInstanceEx(
+        "Word.Application", None, pythoncom.CLSCTX_LOCAL_SERVER, None, (pythoncom.IID_IDispatch,)
+    )[0]
+    return dynamic.Dispatch(dispatch, "Word.Application")
+
+
+def _open_word_document(word, source: Path):
+    """Open read-only; even dynamic Documents.Open otherwise uses gen_py for its return value."""
+    import pythoncom
+    import winerror
+    from win32com.client import VARIANT, dynamic
+
+    documents = word.Documents._oleobj_
+    # IDispatch.Invoke needs an explicit missing-argument VARIANT. pythoncom.Missing
+    # only works with typed invocation. Word's first 12 Open arguments end at Visible.
+    missing = VARIANT(pythoncom.VT_ERROR, winerror.DISP_E_PARAMNOTFOUND)
+    document = documents.Invoke(
+        documents.GetIDsOfNames("Open"), 0, pythoncom.DISPATCH_METHOD, True,
+        str(source), False, True, False,  # FileName, ConfirmConversions, ReadOnly, AddToRecentFiles
+        missing, missing, missing, missing, missing, missing, missing, False,  # Visible
+    )
+    return dynamic.Dispatch(document, "Word.Document") if document is not None else None
+
+
 def _convert_legacy_doc(source: Path, destination: Path) -> str:
     word_error = None
     if os.name == "nt":
@@ -261,7 +290,6 @@ def _convert_legacy_doc(source: Path, destination: Path) -> str:
         com_initialized = False
         try:
             import pythoncom
-            from win32com.client import DispatchEx
 
             # Word COM does not reliably support the long paths used by scoped
             # RD assets. Keep both Office-facing paths short and copy the final
@@ -272,14 +300,13 @@ def _convert_legacy_doc(source: Path, destination: Path) -> str:
             shutil.copy2(source, short_source)
             pythoncom.CoInitialize()
             com_initialized = True
-            word = DispatchEx("Word.Application")
+            word = _create_word_application()
             word.Visible = False
             word.DisplayAlerts = 0
             word.AutomationSecurity = 3
             update_links = word.Options.UpdateLinksAtOpen
             word.Options.UpdateLinksAtOpen = False
-            opened = word.Documents.Open(str(short_source), ReadOnly=True, AddToRecentFiles=False,
-                                         ConfirmConversions=False, Visible=False)
+            opened = _open_word_document(word, short_source)
             if opened is None:
                 raise InputNormalizationError("Word 未返回已打开的旧版 DOC 文档。")
             opened.SaveAs2(str(short_destination), FileFormat=16)
@@ -290,7 +317,7 @@ def _convert_legacy_doc(source: Path, destination: Path) -> str:
             return "word_com"
         except Exception as exc:
             logger.exception("Word COM 旧版 DOC 转换失败，将检查本地 LibreOffice。")
-            word_error = exc
+            word_error = exc.with_traceback(None)
         finally:
             if opened is not None:
                 try:
@@ -309,6 +336,11 @@ def _convert_legacy_doc(source: Path, destination: Path) -> str:
                     logger.warning("旧版 DOC 转换结束时退出 Word 失败。", exc_info=True)
             if com_initialized:
                 try:
+                    # Dynamic COM methods can form reference cycles. Release the
+                    # proxies while this thread's COM apartment still exists.
+                    import gc
+                    opened = word = None
+                    gc.collect()
                     pythoncom.CoUninitialize()
                 finally:
                     if staging is not None:
@@ -333,6 +365,10 @@ def _convert_legacy_doc(source: Path, destination: Path) -> str:
             return "libreoffice"
         except (OSError, subprocess.SubprocessError) as exc:
             raise InputNormalizationError("旧版 DOC 转换失败，请另存为 DOCX 后上传。") from exc
+    if word_error is not None and not isinstance(word_error, ImportError):
+        raise InputNormalizationError(
+            "本地 Word 转换组件调用失败，且未找到可用的 LibreOffice。请检查 Office 转换服务，或将原文件另存为 DOCX 后上传。"
+        ) from word_error
     raise InputNormalizationError("旧版 DOC 转换不可用：需本机安装 Microsoft Word 或 LibreOffice；也可先另存为 DOCX。") from word_error
 
 

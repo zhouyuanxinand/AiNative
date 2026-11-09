@@ -14,6 +14,7 @@ import yaml
 from . import completion, engine_bridge
 from .completion import EvidenceBlocked
 from .business_binding import verify_binding
+from .product_series import filename_series_candidates
 
 
 ACTION_IDS = {"resolve_context", "template_plan", "content_completion", "generate", "verify", "consistency"}
@@ -170,15 +171,20 @@ def _consistency(snapshot, previous, blocks):
     if not snapshot.get("sources"):
         reasons.append("本案例尚无真实来源资料，不能完成资料身份和版本检查")
     for field in ("product_series", "product_type", "product_domain"):
-        for value in completion.labeled_values(blocks, (*completion.FIELD_LABELS[field], field)):
+        candidates = (filename_series_candidates(snapshot) if field == "product_series"
+                      else completion.labeled_values(blocks, (*completion.FIELD_LABELS[field], field)))
+        for value in candidates:
             if value["role"] == "reference":
                 continue
             actual = completion.canonical_value(field, value["value"])
             check = {"field": field, "expected": context[field], "actual": actual,
                      "source_id": value["source_id"], "location": value["location"]}
+            if field == "product_series":
+                check.update({key: value[key] for key in ("kind", "quote", "version", "sha256", "name_sha256")})
             checks.append(check)
             if context[field] and actual != context[field]:
-                reasons.append(f"来源 {value['source_id']} 的 {field}={actual} 与项目参数 {context[field]} 不一致")
+                source_label = f"{value['source_id']}（{value['quote']}）" if field == "product_series" else value['source_id']
+                reasons.append(f"来源 {source_label} 的 {field}={actual} 与项目参数 {context[field]} 不一致")
     # Multiple uploads of one role are not automatically interpreted as revisions
     # of the same document. Require one explicit engine input per role.
     for role in ("tech", "spec"):

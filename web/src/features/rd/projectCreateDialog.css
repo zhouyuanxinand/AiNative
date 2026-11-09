@@ -67,7 +67,7 @@
 .platform-feedback-modal.rd-platform-create .rd-create-options > summary {
   padding: 10px 12px;
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   color: var(--color-text-primary);
 }
 .platform-feedback-modal.rd-platform-create .rd-create-options > summary span {

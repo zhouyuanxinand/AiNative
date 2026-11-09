@@ -18,6 +18,8 @@ from docx.table import Table
 
 from jonhon_taskbook.template_scanner import heading_level, semantic_title, scan_template_tree
 
+from .product_series import filename_series_candidates
+
 
 FIELDS = ("product_type", "product_domain", "development_process", "cover_phase",
           "product_series", "organization_scope")
@@ -172,7 +174,9 @@ def resolve_context(snapshot, blocks):
     provenance, candidates, missing, reasons = {}, {}, [], []
     for field in FIELDS:
         found = []
-        for candidate in labeled_values(blocks, (*FIELD_LABELS[field], field)):
+        field_candidates = (filename_series_candidates(snapshot) if field == "product_series"
+                            else labeled_values(blocks, (*FIELD_LABELS[field], field)))
+        for candidate in field_candidates:
             try:
                 candidate["value"] = canonical_value(field, candidate["value"])
             except ValueError:

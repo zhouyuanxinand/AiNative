@@ -8,14 +8,14 @@ import type {
   TemplateVersion,
   TemplateVersionHistory,
 } from '../types';
-import { getJSON, postForm } from './client';
+import { fetchJSON, getJSON, postForm } from './client';
 
 export function loadRulesSummary(): Promise<RulesSummary> {
   return getJSON<RulesSummary>('/api/rules/summary');
 }
 
-export function loadTemplateDirectory(): Promise<TemplateItem[]> {
-  return getJSON<TemplateItem[]>('/api/templates');
+export function loadTemplateDirectory(signal?: AbortSignal): Promise<TemplateItem[]> {
+  return fetchJSON<TemplateItem[]>('/api/templates', { signal });
 }
 
 export function loadTemplateCandidates(): Promise<TemplateCandidate[]> {

@@ -1,6 +1,7 @@
 import { engineeringState } from './engineeringState';
 import { CONTEXT_FIELDS, isCurrentSource, STAGES } from './presentation';
 import { caseArtifactRecords, summarizeCaseOutcome } from './caseOutcomeModel';
+import { requirementConfirmationBlockers } from './requirementConfirmation';
 import type { ResearchCase, StageId } from './types';
 
 export type CaseSurface = 'current' | 'preparation' | 'sources' | 'requirements' | 'routes' | 'workpackages' | 'delivery' | 'reuse' | 'decision';
@@ -70,7 +71,7 @@ export function nextCaseAction(researchCase: ResearchCase, manifest?: ScenarioMa
   const analysis = researchCase.source_analysis;
   const adoptedAnalysis = analysis?.status === 'adopted' && analysis.adopted_input_revision === researchCase.input_revision;
   if (researchCase.business_lifecycle?.policy_version === 'v2') {
-    if (['input', 'requirements'].includes(researchCase.stage)) return hasRequirements && !requiredClarifications
+    if (['input', 'requirements'].includes(researchCase.stage)) return !requirementConfirmationBlockers(researchCase).length
       ? { target: 'decision', label: '确认需求并进入选型' } : { target: hasRequirements ? 'requirements' : 'sources', label: hasRequirements ? '处理需求与关键澄清' : '分析资料并确认采用' };
     if (researchCase.stage === 'selection') return researchCase.product_route && researchCase.composition_route
       ? { target: 'decision', label: researchCase.business_lifecycle.current_selection_decision_id ? '办理研发启动' : '核对选型报告与决定' }

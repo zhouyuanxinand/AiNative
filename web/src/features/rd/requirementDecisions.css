@@ -1,5 +1,5 @@
 .rd-decision-table .rd-review-hint,.rd-review-old-draft {display:block;font-size:12px;line-height:1.5;color:var(--color-text-secondary);margin-top:4px}
-.rd-review-proof {display:grid;gap:4px;font-size:13px}
+.rd-review-proof {display:grid;gap:4px;font-size:var(--font-size-sm)}
 .rd-review-proof+.rd-review-proof {margin-top:8px}
 .rd-review-proof blockquote {margin:0;border-left:2px solid var(--color-border);padding-left:8px;white-space:pre-wrap;color:var(--color-text-secondary)}
 .rd-review-actions,.rd-review-actual,.rd-review-reason {display:flex;align-items:flex-start;flex-direction:column;gap:6px;min-width:0}
@@ -8,6 +8,20 @@
 .rd-review-actual>.ant-btn-link {padding-inline:0}
 .rd-review-old-draft summary {cursor:pointer}
 .rd-review-old-draft p {margin:4px 0;white-space:pre-wrap}
+.rd-spec-review-toolbar {display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.rd-spec-review-toolbar p {margin:4px 0 0;font-size:var(--font-size-sm);overflow-wrap:anywhere}
+.rd-decision-table .rd-requirement-editing>td {background:var(--color-action-subtle)}
+.rd-decision-table .rd-requirement-editing>td:first-child {box-shadow:inset 3px 0 0 var(--color-action)}
+.rd-inline-field,.rd-inline-content,.rd-inline-actions {display:flex;flex-direction:column;gap:8px;min-width:0;width:100%}
+.rd-inline-field>label {font-size:12px;color:var(--color-text-secondary)}
+.rd-inline-actions>div {display:flex;flex-wrap:wrap;gap:8px}
+.rd-inline-error {margin:0;color:var(--color-error);font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.rd-inline-sources {font-size:12px;min-width:0;overflow-wrap:anywhere}
+.rd-inline-sources>summary {cursor:pointer;color:var(--color-action)}
+.rd-inline-sources .rd-source-picker {min-width:0;margin-top:8px;padding:0;border:0}
+.rd-inline-sources .rd-source-picker label {align-items:flex-start;gap:6px}
+.rd-inline-sources .rd-source-picker input {flex:0 0 auto}
+.rd-inline-sources .rd-source-picker span {min-width:0;overflow-wrap:anywhere}
 @media (max-width:700px) {
   .rd-req-table.rd-decision-table td:nth-child(2)::before {content:'原始指标'}
   .rd-req-table.rd-decision-table td:nth-child(3)::before {content:'AI 推荐'}

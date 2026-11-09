@@ -10,10 +10,10 @@ import { sourceUrl, artifactUrl } from './api';
 import { SelectionDecisionPanel } from './SelectionDecisionPanel';
 import './businessLifecycle.css';
 
-type DecisionProps = { project: Project; researchCase: ResearchCase; busy: boolean; error: string; command: CommandRunner; onDirtyChange: (dirty: boolean) => void };
+type DecisionProps = { project: Project; researchCase: ResearchCase; busy: boolean; error: string; command: CommandRunner; onDirtyChange: (dirty: boolean) => void; requirementsDirty?: boolean; onReturnToRequirements?: () => void };
 export function CaseDecisionForm(props: DecisionProps) {
   return props.researchCase.business_lifecycle?.policy_version === 'v2' && ['input', 'requirements', 'selection', 'planning'].includes(props.researchCase.stage)
-    ? <SelectionDecisionPanel {...props} /> : <StageDecisionForm {...props} />;
+    ? <SelectionDecisionPanel {...props} /> : <StageDecisionForm {...props} busy={props.busy || !!props.requirementsDirty && ['input', 'requirements'].includes(props.researchCase.stage)} />;
 }
 function StageDecisionForm({ project, researchCase, busy, error, command, onDirtyChange }: DecisionProps) {
   const [supplyScope, setSupplyScope] = useState('');

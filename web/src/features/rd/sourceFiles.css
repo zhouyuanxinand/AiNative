@@ -26,7 +26,7 @@
 .rd-source-file-icon.is-sheet { color: var(--color-success); background: var(--color-success-bg); }
 .rd-source-file-icon.is-slides { color: var(--color-warning); background: var(--color-warning-bg); }
 .rd-source-card-content { flex: 1; min-width: 0; }
-.rd-source-file-name { display: inline-block; max-width: 100%; font-size: 14px; font-weight: 500; line-height: 1.6; overflow-wrap: anywhere; color: var(--color-action); }
+.rd-source-file-name { display: inline-block; max-width: 100%; font-size: var(--font-size-body); font-weight: 500; line-height: 1.6; overflow-wrap: anywhere; color: var(--color-action); }
 .rd-source-file-name:hover { text-decoration: underline; }
 .rd-source-file-name:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 3px; border-radius: 2px; }
 .rd-source-file-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-top: 6px; font-size: 12px; color: var(--color-text-secondary); }

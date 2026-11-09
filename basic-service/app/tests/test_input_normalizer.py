@@ -221,10 +221,11 @@ def test_actual_local_ocr_reads_chinese_requirement(tmp_path):
 
 
 @pytest.mark.skipif(os.name != "nt", reason="真实旧 DOC 转换测试需要 Windows Microsoft Word")
-def test_actual_word_converts_legacy_doc_read_only(tmp_path):
+@pytest.mark.parametrize("broken_dispatch_cache", [False, True], ids=["normal-cache", "broken-dispatch-cache"])
+def test_actual_word_converts_legacy_doc_read_only(tmp_path, monkeypatch, broken_dispatch_cache):
     import pythoncom
     from pywintypes import com_error
-    from win32com.client import DispatchEx
+    from win32com.client import gencache
 
     source_docx = tmp_path / "original.docx"
     source = tmp_path / "legacy.doc"
@@ -238,21 +239,28 @@ def test_actual_word_converts_legacy_doc_read_only(tmp_path):
     word = opened = None
     try:
         try:
-            word = DispatchEx("Word.Application")
+            word = input_normalizer._create_word_application()
         except com_error:
             pytest.skip("本机未安装可用 Microsoft Word")
         word.Visible = False
         word.DisplayAlerts = 0
         word.AutomationSecurity = 3
-        opened = word.Documents.Open(str(source_docx.resolve()), ReadOnly=True, AddToRecentFiles=False, Visible=False)
+        opened = input_normalizer._open_word_document(word, source_docx.resolve())
         opened.SaveAs2(str(source.resolve()), FileFormat=0)
     finally:
         if opened is not None:
             opened.Close(False)
         if word is not None:
             word.Quit()
+        import gc
+        opened = word = None
+        gc.collect()
         pythoncom.CoUninitialize()
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    if broken_dispatch_cache:
+        def unusable_generated_cache(*args, **kwargs):
+            raise AttributeError("CLSIDToClassMap")
+        monkeypatch.setattr(gencache, "GetClassForCLSID", unusable_generated_cache)
     normalized = normalize_input(source, tmp_path / "normalized")
     assert normalized.method == "word_com"
     assert "接触电阻≤5mΩ" in _docx_text(normalized.path)

@@ -312,6 +312,43 @@ def _preview(client, project, item, location_id=None, **changes):
     return client.get(_url(project).replace('evidence-locations', 'evidence-preview'), params=params)
 
 
+def test_spec_review_batches_and_review_snapshot_keep_their_own_doc_coordinates(tmp_path):
+    client, project = _case(tmp_path, '规范.doc', b'legacy spec bytes')
+    quote = '工作压力：0.3 MPa。'
+    def update(case):
+        source = case['sources'][0]
+        source['role'] = 'spec'
+        old = {'id': 'spec-old', 'source_hashes': {source['id']: source['sha256']},
+               'items': [{'requirement_id': 'r', 'evidence': [{'source_id': source['id'], 'quote': quote}]}]}
+        new = deepcopy(old)
+        new['id'] = 'spec-new'
+        case['requirement_recommendations_history'] = [old]
+        case['requirement_recommendations'] = new
+        case['requirements'] = [{'id': 'r', 'analysis_id': 'saved-analysis', 'review': {
+            'analysis_id': 'saved-analysis', 'recommendation_batch_id': 'spec-old',
+            'recommendation': deepcopy(old['items'][0])}}]
+    project, _ = _seed(client, project, [], update=update)
+    _normalized_cache(client, project, name='spec-old')
+    folder, _ = _normalized_cache(client, project, name='spec-new')
+    doc = Document()
+    doc.add_paragraph('新版规范说明')
+    doc.add_paragraph('指标正文')
+    doc.add_paragraph(quote)
+    doc.save(folder / 'normalized.docx')
+    response = client.get(_url(project))
+    assert response.status_code == 200, response.text
+    items = response.json()['items']
+    assert len(items) == 2  # A reviewed citation shares its actual batch, not the source analysis.
+    by_batch = {item['analysis_id']: item for item in items}
+    assert by_batch['spec-old']['locations'][0]['id'] == 'B0002'
+    assert by_batch['spec-new']['locations'][0]['id'] == 'B0003'
+    for item in items:
+        assert item['status'] == 'located' and item['coordinate_space'] == 'normalized'
+        preview = _preview(client, project, item)
+        assert preview.status_code == 200, preview.text
+        assert preview.json()['selected_location_id'] == item['locations'][0]['id']
+
+
 @pytest.mark.parametrize('quote,anchor', [
     ('技术要求', 'B0001'), ('工作压力：0.3MPa。', 'B0002'),
     ('工作温度 | 5℃～70℃', 'B0004-R002'), ('重复内容', 'B0006'),

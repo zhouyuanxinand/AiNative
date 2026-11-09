@@ -1,7 +1,7 @@
 .rd-derivation-experience,
 .rd-completion-evidence { min-width: 0; }
 .rd-derivation-experience :where(h4, h5) { margin: 0 0 12px; }
-.rd-derivation-experience h5 { font-size: 14px; }
+.rd-derivation-experience h5 { font-size: var(--font-size-body); }
 .rd-derivation-experience :where(input, textarea) { max-width: 100%; box-sizing: border-box; }
 .rd-derivation-experience :where(code, p, li, summary),
 .rd-completion-evidence :where(p, li, summary) { overflow-wrap: anywhere; }
@@ -38,7 +38,7 @@
 .rd-completion-evidence .rd-completion-round > summary { cursor: pointer; }
 .rd-completion-evidence .rd-completion-round > summary:hover { color: var(--color-action); }
 .rd-completion-evidence .rd-completion-round article { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--color-border); }
-.rd-completion-evidence .rd-completion-round h5 { font-size: 14px; margin: 0 0 12px; }
+.rd-completion-evidence .rd-completion-round h5 { font-size: var(--font-size-body); margin: 0 0 12px; }
 .rd-completion-evidence pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .rd-evidence-list{margin:12px 0;padding-left:24px;max-height:380px;overflow:auto;scrollbar-gutter:stable;overscroll-behavior:contain}
 .rd-evidence-list>li{padding:8px 8px 8px 0;overflow-wrap:anywhere}

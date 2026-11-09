@@ -10,14 +10,14 @@ from jonhon_taskbook import llm_client
 
 
 def setup_case(tmp_path, source_text='工作压力：0.3 MPa。\n工作温度：5℃～70℃。',
-               brief='液冷管路；军品；改型II；S阶段；YLZJ；非中央研究院产品'):
+               brief='液冷管路；军品；改型II；S阶段；YLZJ；非中央研究院产品', source_name='原始要求.txt'):
     client = make_client(tmp_path)
     project = client.post('/api/rd/projects', json={'title': '液冷资料分析', 'brief': brief}).json()
     project = command(client, project, 'create_case', scenario_id='taskbook', title='源资料确认')
     cid = project['cases'][0]['id']
     response = client.post(f"/api/rd/projects/{project['id']}/cases/{cid}/sources",
         data={'expected_version': project['version'], 'role': 'tech'},
-        files={'file': ('原始要求.txt', source_text.encode())},
+        files={'file': (source_name, source_text.encode())},
         headers={'Idempotency-Key': 'upload'})
     assert response.status_code == 200, response.text
     return client, response.json()
@@ -82,7 +82,8 @@ def test_parameter_declaration_ends_before_chinese_period_explanation(tmp_path, 
     brief = ('产品类型：液冷管路；产品领域：军品;研制流程：改型II\n'
              '封面阶段：S；产品系列：YLZJ-3.5/A；产品归属：非中央研究院产品。'
              '采用受控液冷管路模板。工作压力按需求文件0.3 MPa执行。')
-    client, project = setup_case(tmp_path, source_text='产品系列：YLZJ-3.5/A。\n工作压力：0.3 MPa。\n工作温度：5℃～70℃。', brief=brief)
+    client, project = setup_case(tmp_path, source_text='产品系列：YLZJ-3.5/A。\n工作压力：0.3 MPa。\n工作温度：5℃～70℃。',
+                                 brief=brief, source_name='YLZJ-3.5A需求.txt')
     install_model(monkeypatch, project['cases'][0]['sources'][0]['id'])
     response = analyze(client, project)
     assert response.status_code == 200, response.text
@@ -97,14 +98,14 @@ def test_parameter_declaration_ends_before_chinese_period_explanation(tmp_path, 
     assert reference['kind'] == 'project_text'
     assert reference['sha256'] == hashlib.sha256(brief.encode()).hexdigest()
     assert brief[reference['location']['text_offset']:].startswith(scope['evidence'][0]['quote'])
-    assert proposal['context']['product_series']['value'] == 'YLZJ-3.5/A'
+    assert proposal['context']['product_series']['value'] == 'YLZJ'
     assert proposal['context']['development_process']['value'] == '改型II'
     assert proposal['context']['cover_phase']['value'] == 'S'
     assert case['context'] == {} and case['requirements'] == []
 
     adopted = command(client, proposed, 'adopt_source_analysis', analysis_id=proposal['id'])['cases'][0]
     assert adopted['context']['organization_scope'] == 'non_central_research'
-    assert adopted['context']['product_series'] == 'YLZJ-3.5/A'
+    assert adopted['context']['product_series'] == 'YLZJ'
     assert adopted['requirements'][0]['content'] == '工作压力：0.3 MPa。'
     assert adopted['decisions'] == []
 
@@ -204,6 +205,45 @@ def test_docx_extraction_retains_table_text_and_legacy_doc_warning(tmp_path, mon
     monkeypatch.setattr(analysis, 'normalize_input', lambda *a, **k: SimpleNamespace(path=path, requires_review=True, warnings=['旧版DOC已转换，须复核。']))
     text, warnings = analysis._source_text(source, tmp_path / 'converted')
     assert '0.3 MPa' in text and any('不表示' in warning for warning in warnings)
+
+
+def test_reanalysis_conversion_error_keeps_previous_result_and_reports_reason(tmp_path, monkeypatch):
+    from src.service.rd_platform import analysis
+    from jonhon_taskbook.input_normalizer import InputNormalizationError
+
+    client, project = setup_case(tmp_path)
+    sid = project['cases'][0]['sources'][0]['id']
+    install_model(monkeypatch, sid)
+    project = analyze(client, project).json()
+    previous = deepcopy(project['cases'][0]['source_analysis'])
+
+    def fail_extraction(*args):
+        raise InputNormalizationError('本地 Word 转换组件调用失败，请检查 Office 安装或使用 LibreOffice。')
+
+    monkeypatch.setattr(analysis, '_source_text', fail_extraction)
+    monkeypatch.setattr(llm_client, 'chat_json', lambda *a, **k: pytest.fail('conversion failure must precede model call'))
+    response = analyze(client, project, key='conversion-failed-reanalysis')
+    assert response.status_code == 422
+    assert '本地 Word 转换组件调用失败' in response.text
+    current = client.get(f"/api/rd/projects/{project['id']}").json()
+    assert current['cases'][0]['source_analysis'] == previous
+    assert current['cases'][0]['sources'] == project['cases'][0]['sources']
+    assert current['cases'][0]['requirements'] == []
+
+
+def test_unknown_extraction_error_does_not_expose_internal_details(tmp_path, monkeypatch):
+    from src.service.rd_platform import analysis
+
+    client, project = setup_case(tmp_path)
+    install_model(monkeypatch, project['cases'][0]['sources'][0]['id'])
+
+    def fail_extraction(*args):
+        raise RuntimeError('private-internal-path-or-secret')
+
+    monkeypatch.setattr(analysis, '_source_text', fail_extraction)
+    response = analyze(client, project)
+    assert response.status_code == 422
+    assert 'private-internal-path-or-secret' not in response.text
 
 
 def test_replay_does_not_call_model_again_and_spec_is_not_requirement(tmp_path, monkeypatch):

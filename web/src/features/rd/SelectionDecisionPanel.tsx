@@ -6,6 +6,7 @@ import { caseArtifactRecords, latestTaskbookPackage, summarizeCaseOutcome } from
 import { formatTime, isCurrentSource, routeTitle } from './presentation';
 import type { Project, ResearchCase, ReviewBundle } from './types';
 import type { CommandRunner } from './WorkpackagePanel';
+import { requirementConfirmationBlockers } from './requirementConfirmation';
 
 function FixedReport({ bundle, researchCase }: { bundle: ReviewBundle; researchCase: ResearchCase }) {
   const report = bundle.report;
@@ -21,9 +22,10 @@ function FixedReport({ bundle, researchCase }: { bundle: ReviewBundle; researchC
 }
 
 /** Business confirmation stays separate from autonomous package execution. */
-export function SelectionDecisionPanel({ project, researchCase, busy, error, command, onDirtyChange }: {
+export function SelectionDecisionPanel({ project, researchCase, busy, error, command, onDirtyChange, requirementsDirty = false, onReturnToRequirements }: {
   project: Project; researchCase: ResearchCase; busy: boolean; error: string;
   command: CommandRunner; onDirtyChange: (dirty: boolean) => void;
+  requirementsDirty?: boolean; onReturnToRequirements?: () => void;
 }) {
   const [scope, setScope] = useState('');
   const [reason, setReason] = useState('');
@@ -33,6 +35,8 @@ export function SelectionDecisionPanel({ project, researchCase, busy, error, com
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
   const lifecycle = researchCase.business_lifecycle!;
   const requirements = ['input', 'requirements'].includes(researchCase.stage);
+  const requirementBlockers = requirements ? requirementConfirmationBlockers(researchCase) : [];
+  const requirementsBlocked = requirements && (requirementsDirty || requirementBlockers.length > 0);
   const planning = researchCase.stage === 'planning';
   const bundle = [...(researchCase.review_bundles ?? [])].reverse().find(item => item.kind === (planning ? 'taskbook_scope' : 'selection') && !item.invalidated_at && item.input_revision === researchCase.input_revision);
   const decision = researchCase.decisions.find(item => item.id === lifecycle.current_selection_decision_id && item.verdict === 'approved' && !item.invalidated_at);
@@ -46,11 +50,15 @@ export function SelectionDecisionPanel({ project, researchCase, busy, error, com
   const sources = researchCase.sources.filter(item => isCurrentSource(item, researchCase.source_selection));
   const readyForScope = !!completedPackage && quality.verification.kind === 'passed';
   function ask(name: string, title: string, data: Record<string, unknown>) {
+    if (busy || !allowed || requirementsBlocked) return;
     if (!scope.trim() || (!requirements && !reason.trim())) {
       setValidation(requirements ? '请填写此次确认的需求范围。' : '请填写本次决定范围与说明。');
       document.getElementById('rd-business-scope')?.focus(); return;
     }
     setValidation(''); setConfirmation({ title, command: name, data: { ...data, scope: scope.trim(), ...(!requirements ? { rationale: reason.trim() } : {}) } });
+  }
+  function returnToRequirements() {
+    setConfirmation(null); setValidation(''); onReturnToRequirements?.();
   }
   const act = (verdict: 'approved' | 'rejected') => {
     if (!bundle) return;
@@ -67,15 +75,17 @@ export function SelectionDecisionPanel({ project, researchCase, busy, error, com
       {!starting && <PlatformButton type="button" className="rd-button" disabled={busy || (planning && !readyForScope)} onClick={() => void command(planning ? 'prepare_taskbook_scope_review' : 'prepare_selection_review', planning ? { workpackage_id: completedPackage?.id } : { expected_input_revision: researchCase.input_revision })}>{planning ? '形成任务书范围核对包' : bundle ? '重新生成固定选型报告' : '生成固定选型报告'}</PlatformButton>}
     </>}
     {(requirements || starting || !!bundle) && <div className="rd-review-fields">
+      {!!requirementBlockers.length && <div className="rd-warning" role="status"><p>需求尚未完成核对，请返回处理后再确认：</p><ul>{requirementBlockers.slice(0, 5).map((item, index) => <li key={index}>{item.message}</li>)}</ul>{requirementBlockers.length > 5 && <p>另有 {requirementBlockers.length - 5} 项待处理。</p>}</div>}
       <div className="rd-field"><label htmlFor="rd-business-scope">{requirements ? '确认范围' : '决定范围'}</label><textarea id="rd-business-scope" rows={3} className="resize-none" value={scope} disabled={busy || !allowed} onChange={event => setScope(event.target.value)} /></div>
       {!requirements && <div className="rd-field"><label htmlFor="rd-business-reason">决定说明</label><textarea id="rd-business-reason" rows={3} className="resize-none" value={reason} disabled={busy || !allowed} onChange={event => setReason(event.target.value)} /></div>}
       {validation && <p className="rd-error" role="alert">{validation}</p>}
       <div className="rd-actions">
-        {requirements ? <PlatformButton type="button" className="rd-button primary" disabled={busy || !allowed || !researchCase.requirements.length} onClick={() => ask('confirm_requirements', '确认当前需求基线', { expected_input_revision: researchCase.input_revision, source_ids: sources.map(item => item.id) })}>确认需求并进入选型</PlatformButton>
+        {requirements && onReturnToRequirements && <PlatformButton type="button" className="rd-button" disabled={busy} onClick={returnToRequirements}>返回需求与澄清</PlatformButton>}
+        {requirements ? <PlatformButton type="button" className="rd-button primary" disabled={busy || !allowed || requirementsBlocked} onClick={() => ask('confirm_requirements', '确认当前需求基线', { expected_input_revision: researchCase.input_revision, source_ids: sources.map(item => item.id) })}>确认需求并进入选型</PlatformButton>
           : starting ? <PlatformButton type="button" className="rd-button primary" disabled={busy || !allowed} onClick={() => ask('authorize_rd_start', '确认研发启动范围', { selection_decision_id: decision?.id })}>确认研发启动</PlatformButton>
             : <><PlatformButton type="button" className="rd-button" disabled={busy || !allowed} onClick={() => act('rejected')}>{planning ? '退回任务书范围' : '退回选型报告'}</PlatformButton><PlatformButton type="button" className="rd-button primary" disabled={busy || !allowed || (planning && !readyForScope)} onClick={() => act('approved')}>{planning ? '批准任务书范围' : '批准选型报告'}</PlatformButton></>}
       </div>
     </div>}
-    {confirmation && <FeedbackConfirmDialog title={confirmation.title} confirm="保存本地决定" pending={busy} error={error} onCancel={() => setConfirmation(null)} onConfirm={() => void command(confirmation.command, confirmation.data, () => { setConfirmation(null); setScope(''); setReason(''); })}><p>将按当前固定依据保存本次范围、说明、负责人和时间。本地确认不构成企业正式电子审签。</p><p className="rd-prewrap">{confirmation.data.scope as string}</p></FeedbackConfirmDialog>}
+    {confirmation && <FeedbackConfirmDialog title={confirmation.title} confirm="保存本地决定" pending={busy} confirmDisabled={requirementsBlocked} error={error} saveAction={requirements && error && onReturnToRequirements ? { label: '返回需求与澄清', onClick: returnToRequirements } : undefined} onCancel={() => setConfirmation(null)} onConfirm={() => { if (!requirementsBlocked) void command(confirmation.command, confirmation.data, () => { setConfirmation(null); setScope(''); setReason(''); }); }}><p>将按当前固定依据保存本次范围、说明、负责人和时间。本地确认不构成企业正式电子审签。</p><p className="rd-prewrap">{confirmation.data.scope as string}</p></FeedbackConfirmDialog>}
   </section>;
 }

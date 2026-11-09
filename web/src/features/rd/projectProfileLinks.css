@@ -1,9 +1,8 @@
 .rd-profile-links { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
-.rd-profile-links .ant-btn { padding: 0; height: auto; font-size: 13px; }
+.rd-profile-links .ant-btn { padding: 0; height: auto; font-size: var(--font-size-sm); }
 .rd-profile-inspector { max-width: calc(100vw - 32px); top: 32px; }
 .rd-profile-inspector .ant-modal-body { max-height: calc(100vh - 188px); overflow: auto; overscroll-behavior: contain; padding: 8px 4px; }
-.rd-profile-inspector .ant-modal-title { font-size: 18px; }
+.rd-profile-inspector .ant-modal-title { font-size: calc(18px * var(--font-scale)); }
 .rd-profile-inspector .ant-modal-footer { border-top: 1px solid var(--color-border, #d8e3ec); padding-top: 16px; }
-.rd-review-profile-toolbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
 .rd-evidence-status { display: block; color: var(--color-text-secondary); font-size: 12px; margin-top: 4px; }
 @media(max-width:700px) { .rd-profile-inspector { top: 16px; } .rd-profile-inspector .ant-modal-body { max-height: calc(100vh - 160px); } }

@@ -17,7 +17,7 @@
 .rd-project-overview-counts > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 0 16px; }
 .rd-project-overview-counts > div + div { border-left: 1px solid var(--color-border); }
 .rd-project-overview-counts dt { font-size: 12px; line-height: 1.5; color: var(--color-text-secondary); }
-.rd-project-overview-counts dd { margin: 0; font-size: 24px; line-height: 1.3; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--color-text-primary); }
+.rd-project-overview-counts dd { margin: 0; font-size: var(--font-size-title-lg); line-height: 1.3; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--color-text-primary); }
 .rd-project-overview-counts .has-attention dd { color: var(--color-warning); }
 .rd-project-overview-card .rd-project-cases { background: var(--color-bg-subtle); }
 @media(max-width:700px) {
@@ -26,7 +26,7 @@
   .rd-project-overview-card > header > h3 { min-width: 120px; }
   .rd-project-overview-body { padding: 0 18px 16px; }
   .rd-project-overview-counts > div { padding: 0 12px; }
-  .rd-project-overview-counts dd { font-size: 22px; }
+  .rd-project-overview-counts dd { font-size: calc(22px * var(--font-scale)); }
   .rd-project-overview-profile,
   .rd-project-overview-meta { gap: 10px 12px; }
 }

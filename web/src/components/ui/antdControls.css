@@ -19,7 +19,7 @@
 }
 .platform-feedback-modal .ant-modal-header { flex: none; }
 .platform-feedback-modal .ant-modal-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-.platform-feedback-modal .feedback-dialog-title { margin: 0 32px 0 0; font-size: 18px; line-height: 1.5; }
+.platform-feedback-modal .feedback-dialog-title { margin: 0 32px 0 0; font-size: calc(18px * var(--font-scale)); line-height: 1.5; }
 .platform-feedback-modal .feedback-dialog-actions { flex-wrap: wrap; }
 .platform-feedback-modal .feedback-dialog-actions > .ant-btn { flex: 0 0 auto; }
 .platform-feedback-modal-root .ant-modal-wrap { overscroll-behavior: contain; }

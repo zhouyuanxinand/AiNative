@@ -1,5 +1,5 @@
 .rd-project-directory-tools{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:-8px 0 24px}
-.rd-project-directory-tools label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--color-text-secondary)}
+.rd-project-directory-tools label{display:flex;align-items:center;gap:8px;font-size:var(--font-size-sm);color:var(--color-text-secondary)}
 .rd-project-directory-tools label>span{flex-shrink:0;white-space:nowrap}
 .rd-project-directory-tools .select-control{width:156px;min-width:0}
 .rd-project-directory-tools .ant-select{min-width:142px}

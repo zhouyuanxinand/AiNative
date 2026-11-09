@@ -18,7 +18,7 @@ export function ProductSeriesConfirmation({ researchCase, busy, command, onDirty
   useEffect(() => { if (!missing) setValue(''); }, [missing]);
   if (!editable) return null;
   return <section className="rd-section rd-series-confirm" aria-labelledby={`${fieldId}-title`}>
-    <div><h3 id={`${fieldId}-title`}>确认产品系列</h3><p className="rd-muted">尚未识别到产品系列，请核对需求文件后补充。</p></div>
+    <div><h3 id={`${fieldId}-title`}>确认产品系列</h3><p className="rd-muted">主需求文件名未识别到英文字母，请补充产品系列。</p></div>
     <form onSubmit={async event => {
       event.preventDefault();
       if (busy || request.current) return;

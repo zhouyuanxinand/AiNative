@@ -4,7 +4,7 @@
 .rd-account-dock .rd-account-dock-expand{display:none;border:0;padding:0;cursor:pointer}
 .rd-account-dock-identity{flex:1;min-width:0}
 .rd-account-dock-heading{display:flex;align-items:center;gap:6px;min-width:0}
-.rd-account-dock-heading strong{display:block;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:13px;font-weight:600}
+.rd-account-dock-heading strong{display:block;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:var(--font-size-sm);font-weight:600}
 .rd-account-dock-verified{flex-shrink:0;padding:0 4px;border-radius:3px;color:var(--color-success);background:var(--color-success-bg);font-size:9px;font-weight:600}
 .rd-account-dock-identity>span{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--color-text-secondary);font-size:11px}
 .rd-account-dock-account{font-family:var(--font-family-mono)}

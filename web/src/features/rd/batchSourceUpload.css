@@ -1,6 +1,6 @@
 .rd-batch-upload { min-width: 0; margin-top: 12px; }
 .rd-batch-upload-heading, .rd-batch-group h5 { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-.rd-batch-upload-heading h4, .rd-batch-group h5 { margin-top: 0; font-size: 14px; }
+.rd-batch-upload-heading h4, .rd-batch-group h5 { margin-top: 0; font-size: var(--font-size-body); }
 .rd-batch-upload-heading h4 { margin-bottom: 0; }
 .rd-batch-upload-heading > span, .rd-batch-group h5 > span { flex-shrink: 0; font-size: 12px; color: var(--color-text-secondary); font-weight: 400; }
 .rd-batch-dropzone { position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 24px 16px; border: 1px dashed var(--color-border-focus); border-radius: var(--radius-control); background: var(--color-action-subtle); text-align: center; }
@@ -19,7 +19,7 @@
 .rd-batch-file[draggable="true"] { cursor: grab; }
 .rd-batch-file-heading { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
 .rd-batch-file-heading > .anticon { margin-top: 4px; color: var(--color-action); }
-.rd-batch-file-heading strong { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; line-height: 1.6; overflow-wrap: anywhere; }
+.rd-batch-file-heading strong { flex: 1; min-width: 0; font-size: var(--font-size-sm); font-weight: 500; line-height: 1.6; overflow-wrap: anywhere; }
 .rd-batch-file-heading > .ant-btn { width: 28px; min-width: 28px; height: 28px; margin-top: -4px; }
 .rd-batch-file-meta, .rd-batch-file-reason { margin: 6px 0 10px; font-size: 12px; color: var(--color-text-secondary); line-height: 1.6; overflow-wrap: anywhere; }
 .rd-batch-file .ant-select { width: 100%; min-width: 0; margin-bottom: 10px; }

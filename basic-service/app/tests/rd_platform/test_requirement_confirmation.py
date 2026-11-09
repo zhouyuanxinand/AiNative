@@ -24,9 +24,22 @@ def confirm(store, project):
     return issue(store, project, "confirm_requirements", {"expected_input_revision": case["input_revision"], "scope": "当前液冷需求", "source_ids": [case["sources"][0]["id"]]})
 
 
+def clarify_requirement(store, project, index=0, content=None):
+    """Explicitly perform both clarification steps when a fixture needs adopted values."""
+    row = project["cases"][0]["requirements"][index]
+    content = row["content"] if content is None else content
+    project = issue(store, project, "open_clarification", {"requirement_id": row["id"],
+        "source_ids": row["source_ids"], "question": "请根据来源确认当前指标及适用工况"})
+    cid = project["cases"][0]["clarifications"][-1]["id"]
+    project = issue(store, project, "answer_clarification", {"clarification_id": cid,
+        "source_ids": row["source_ids"], "answer": content})
+    return issue(store, project, "adopt_clarification", {"clarification_id": cid, "requirement_content": content})
+
+
 def test_confirmation_fixes_adopted_requirement_and_enters_selection_without_approval(tmp_path):
     store = new_store(tmp_path)
     project = requirements_project(store)
+    project = clarify_requirement(store, project)
     confirmed = confirm(store, project)
     case = confirmed["cases"][0]
     baseline = case["requirement_baselines"][0]

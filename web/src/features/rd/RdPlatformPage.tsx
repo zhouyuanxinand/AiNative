@@ -10,6 +10,7 @@ import { RdAccountDock } from './RdAccountDock';
 import { useSidebarResize } from './useSidebarResize';
 import { RdNavigationIcon } from './RdNavigationIcon';
 import { CaseWorkspace } from './CaseWorkspace';
+import { backwardCaseStep } from './backwardCaseStep';
 import { ProjectCaseCard } from './ProjectCaseCard';
 import { ProjectOverviewCard } from './ProjectOverviewCard';
 import { ProjectDirectoryTable, selectDirectoryProjects } from './ProjectDirectory';
@@ -52,11 +53,29 @@ export function RdPlatformPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const sidebarResize = useSidebarResize(sidebarCollapsed);
   const pageTopRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
+  const [canScrollToTop, setCanScrollToTop] = useState(false);
+  const [location, setLocation] = useState(readLocation);
+  useEffect(() => {
+    const shell = sidebarResize.shellRef.current;
+    const main = mainRef.current;
+    if (!shell || !main) return;
+    const measure = () => setCanScrollToTop(shell.scrollHeight > shell.clientHeight + 1);
+    const observer = new ResizeObserver(measure);
+    observer.observe(shell);
+    observer.observe(main);
+    // The grid can keep main at viewport height while its children overflow.
+    for (const child of main.children) observer.observe(child);
+    // On mobile, the navigation is in normal flow above the main content.
+    const sidebar = shell.querySelector(':scope > .rd-sidebar');
+    if (sidebar) observer.observe(sidebar);
+    measure();
+    return () => observer.disconnect();
+  }, [sidebarResize.shellRef, location.view]);
   function scrollToTop() {
     pageTopRef.current?.focus({ preventScroll: true });
     sidebarResize.shellRef.current?.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
   }
-  const [location, setLocation] = useState(readLocation);
   const caseView = location.caseView;
   const historyIndex = useRef(ensureHistoryIndex(window.history));
   const restoringHistory = useRef<(() => void) | null>(null);
@@ -109,6 +128,7 @@ export function RdPlatformPage() {
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const [editTarget, setEditTarget] = useState<Project | null>(null);
   const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null);
+  const [pendingStepNavigation, setPendingStepNavigation] = useState<{ title: string; proceed: () => void } | null>(null);
   const [query, setQuery] = useState(location.q);
   const [updatedAt, setUpdatedAt] = useState('');
   const mutationLock = useRef(false);
@@ -121,6 +141,24 @@ export function RdPlatformPage() {
   const focusUpload = useRef(false);
   const setChildDirty = useCallback((value: boolean) => setDirty(value), []);
   const selectedCase = location.view === 'projects' && project?.id === location.projectId ? project.cases.find(item => item.id === location.caseId) : undefined;
+  const navigationContext = useRef({ selectedCase, busy, workspaceBusy });
+  navigationContext.current = { selectedCase, busy, workspaceBusy };
+  const lastCaseEditor = useRef<{ caseId: string; page: CasePage }>();
+  useEffect(() => {
+    if (!selectedCase) lastCaseEditor.current = undefined;
+    else if (location.caseView === 'current' && location.surface && location.surface !== 'current') {
+      lastCaseEditor.current = { caseId: selectedCase.id, page: location };
+    }
+    setPendingStepNavigation(null);
+    setPendingNavigation(null);
+  }, [location, selectedCase?.id]);
+  const earlierStep = useCallback((before: ReturnType<typeof readLocation>, after: ReturnType<typeof readLocation>) => {
+    const value = navigationContext.current.selectedCase;
+    if (!value || value.id !== before.caseId || !sameCaseWorkspace(before, after)) return null;
+    const previousEditor = before.caseView === 'current' && before.surface && before.surface !== 'current'
+      ? before : lastCaseEditor.current?.caseId === value.id ? lastCaseEditor.current.page : before;
+    return backwardCaseStep(previousEditor, after, value);
+  }, []);
   const sidebarFlowTitle = selectedCase?.title.trim() === project?.title.trim()
     ? [selectedCase?.workflow_templates?.project?.title, catalog?.scenarios.find(item => item.id === selectedCase?.scenario_id)?.title, '当前业务流程'].find(title => title?.trim() && title.trim() !== project?.title.trim())
     : selectedCase?.title;
@@ -209,10 +247,20 @@ export function RdPlatformPage() {
     document.title = `${selectedCase?.title ?? (location.view === 'projects' ? project?.title ?? VIEW_TITLES.projects : VIEW_TITLES[location.view])} · AI Native研发管理平台`;
   }, [selectedCase?.title, project?.title, location.view]);
 
-  const navigate = useCallback((next: Partial<ReturnType<typeof readLocation>>, replace = false) => {
+  const navigate = useCallback((next: Partial<ReturnType<typeof readLocation>>, replace = false, stepApproved = false): void => {
     const previous = readLocation();
     let merged = { ...previous, ...next };
     const internal = sameCaseWorkspace(previous, merged);
+    const backward = !replace && !stepApproved ? earlierStep(previous, merged) : null;
+    if (backward) {
+      const current = navigationContext.current;
+      if (current.busy || current.workspaceBusy || mutationLock.current || applicationLeaveState().busyMessage) {
+        setNotice('当前操作尚未完成，请等待结果后再切换。'); return;
+      }
+      setPendingNavigation(null);
+      setPendingStepNavigation({ title: backward.title, proceed: () => navigate(next, false, true) });
+      return;
+    }
     if (!internal) {
       merged = { ...merged, caseView: 'current', surface: undefined, evidence: undefined, workpackageId: undefined, ...next };
       setSurfaceRequest(undefined);
@@ -230,7 +278,7 @@ export function RdPlatformPage() {
     window.history[replace ? 'replaceState' : 'pushState']({ ...navigationState, [HISTORY_INDEX]: historyIndex.current }, '', url);
     const resolved = readLocation(); setLocation(resolved); setQuery(resolved.q);
     if (!internal) { setDirty(false); setError(''); setNotice(''); setConflict(false); }
-  }, [setNotice]);
+  }, [setNotice, earlierStep]);
   useEffect(() => {
     const sync = () => setLocation(readLocation());
     window.addEventListener('rd:directory-location', sync);
@@ -242,6 +290,7 @@ export function RdPlatformPage() {
   const requestNavigation = (action: () => void) => {
     if (document.querySelector('.credentials-dialog[open]')) { setNotice('请先关闭设置窗口，再切换页面。'); return; }
     if (busy || workspaceBusy || mutationLock.current || applicationLeaveState().busyMessage) { setNotice('当前操作尚未完成，请等待结果后再切换。'); return; }
+    setPendingStepNavigation(null);
     if (dirty || createDirty || applicationLeaveState().dirty) setPendingNavigation(() => action); else action();
   };
   useEffect(() => {
@@ -259,15 +308,22 @@ export function RdPlatformPage() {
       const locked = busy || workspaceBusy || mutationLock.current || !!applicationLeaveState().busyMessage;
       const internal = sameCaseWorkspace(location, next);
       const leavingDraft = createDirty || !internal && (dirty || applicationLeaveState().dirty);
-      if (!approved && (settingsDialogOpen || locked || leavingDraft)) {
+      const backward = earlierStep(location, next);
+      if (!approved && (settingsDialogOpen || locked || leavingDraft || backward)) {
         const delta = Number.isInteger(targetIndex) ? targetIndex - historyIndex.current : 0;
         const offerNavigation = () => {
+          // A new browser intent supersedes an open in-page navigation question.
+          setPendingStepNavigation(null); setPendingNavigation(null);
           if (settingsDialogOpen) setNotice('请先关闭设置窗口，再切换页面。');
           else if (locked) setNotice('操作尚未完成，请等待结果后再切换。');
-          else setPendingNavigation(() => () => {
-            if (delta) { approvedHistory.current = targetIndex; window.history.go(delta); }
-            else navigate(next, true);
-          });
+          else {
+            const proceed = () => {
+              if (delta) { approvedHistory.current = targetIndex; window.history.go(delta); }
+              else navigate(next, true);
+            };
+            if (backward && !leavingDraft) setPendingStepNavigation({ title: backward.title, proceed });
+            else setPendingNavigation(() => proceed);
+          }
         };
         if (delta) {
           // Restore the existing entry. Pushing here would erase the Forward branch.
@@ -285,7 +341,7 @@ export function RdPlatformPage() {
       setLocation(next); setQuery(next.q);
     };
     window.addEventListener('popstate', onPop); return () => window.removeEventListener('popstate', onPop);
-  }, [dirty, createDirty, busy, workspaceBusy, location, navigate, setNotice]);
+  }, [dirty, createDirty, busy, workspaceBusy, location, navigate, setNotice, earlierStep]);
   useEffect(() => {
     if (pendingScroll.current === null || projectLoading || listLoading || location.projectId && project?.id !== location.projectId) return;
     // Editors focus their own work area; list/detail returns restore the saved scroll.
@@ -360,7 +416,7 @@ export function RdPlatformPage() {
         const createdCase = value.cases.find(item => !project.cases.some(previous => previous.id === item.id));
         if (createdCase) navigate({ view: 'projects', projectId: value.id, caseId: createdCase.id });
       }
-      setNotice('已保存。'); return true;
+      setNotice(command === 'recommend_requirements' ? '规范核对已完成，请逐项查看建议与证据。' : '已保存。'); return true;
     } catch (reason) {
       setError(messageOf(reason)); setConflict(reason instanceof RdApiError && reason.status === 409);
       if (reason instanceof RdApiError && [401,403].includes(reason.status)) { setProject(null); setProjects(current => current.filter(item => item.id !== project.id)); setDirty(false); mutationRetry.current = { fingerprint: '', key: '' }; }
@@ -548,7 +604,7 @@ export function RdPlatformPage() {
     <RdAccountDock onExpand={() => setSidebarCollapsed(false)} onOpenSettings={() => openView('system')} settingsActive={location.view === 'system'} settingsDisabled={busy || workspaceBusy} />
     {sidebarResize.enabled && <div className="rd-sidebar-resizer" {...sidebarResize.separatorProps} />}
   </aside>
-    <div className="rd-main"><header className="rd-topbar"><div ref={pageTopRef} className="rd-platform-heading" tabIndex={-1}><strong>AI Native研发管理平台</strong>{location.view === 'projects' && project ? <nav className="rd-breadcrumb rd-header-breadcrumb" aria-label="当前位置"><Button type="link" htmlType="button" className="rd-link-button" onClick={() => openView('projects')}>项目空间</Button><span aria-hidden="true">/</span>{selectedCase ? <Button type="link" htmlType="button" className="rd-link-button" onClick={() => openProject(project.id)}>{project.title}</Button> : <span aria-current="page">{project.title}</span>}</nav> : <span>{VIEW_TITLES[location.view]}</span>}</div><div className="rd-topbar-help"><a href="/help/manual" onClick={event => legacyNavigation(event, '/help/manual')} title="操作手册" aria-label="操作手册"><RdNavigationIcon name="knowledge" /></a><a href="/help/video" onClick={event => legacyNavigation(event, '/help/video')} title="操作视频" aria-label="操作视频"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3V9Z"/></svg></a></div></header>
+    <div ref={mainRef} className="rd-main"><header className="rd-topbar"><div ref={pageTopRef} className="rd-platform-heading" tabIndex={-1}><strong>AI Native研发管理平台</strong>{location.view === 'projects' && project ? <nav className="rd-breadcrumb rd-header-breadcrumb" aria-label="当前位置"><Button type="link" htmlType="button" className="rd-link-button" onClick={() => openView('projects')}>项目空间</Button><span aria-hidden="true">/</span>{selectedCase ? <Button type="link" htmlType="button" className="rd-link-button" onClick={() => openProject(project.id)}>{project.title}</Button> : <span aria-current="page">{project.title}</span>}</nav> : <span>{VIEW_TITLES[location.view]}</span>}</div><div className="rd-topbar-help"><a href="/help/manual" onClick={event => legacyNavigation(event, '/help/manual')} title="操作手册" aria-label="操作手册"><RdNavigationIcon name="knowledge" /></a><a href="/help/video" onClick={event => legacyNavigation(event, '/help/video')} title="操作视频" aria-label="操作视频"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3V9Z"/></svg></a></div></header>
       {location.view === 'workspace' ? <WorkspacePanel catalog={catalog} onDirtyChange={setChildDirty} onBusyChange={setWorkspaceBusy} onCatalogChange={() => setCatalogRevision(value => value + 1)} /> : <main className={`rd-page-content${location.view === 'projects' && selectedCase ? ' rd-case-page' : ''}`}>
         {catalogError && location.view !== 'flows' && <p className="rd-warning rd-banner" role="alert">业务目录读取失败：{catalogError} <Button type="link" className="rd-link-button" onClick={() => setCatalogRevision(value => value + 1)}>重新读取</Button></p>}
         {messageContextHolder}
@@ -577,7 +633,7 @@ export function RdPlatformPage() {
             <img src="/assets/jonhon-logo.png" alt="中航光电 JONHON" />
             <p className="rd-platform-vision">让知识贯通研发，让智能驱动创新</p>
           </div>
-          <Button type="text" htmlType="button" className="rd-back-to-top" onClick={scrollToTop} icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M5 4h14M12 20V8m-6 6 6-6 6 6" /></svg>}>回到顶部</Button>
+          <Button type="text" htmlType="button" className="rd-back-to-top" aria-hidden={!canScrollToTop} tabIndex={canScrollToTop ? undefined : -1} onClick={scrollToTop} icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M5 4h14M12 20V8m-6 6 6-6 6 6" /></svg>}>回到顶部</Button>
         </div>
       </footer>
     </div>
@@ -616,6 +672,10 @@ export function RdPlatformPage() {
     </form></FeedbackDialog>}
     {deleteTarget && <ProjectDeleteDialog key={deleteTarget.id} project={deleteTarget} onClose={closeDeletion} onDeleted={projectDeleted} onRefresh={applyProject} onPendingChange={setProjectMutationPending} />}
     {editTarget && <ProjectEditDialog key={editTarget.id} project={editTarget} onClose={closeProjectEdit} onSaved={value => { applyEditedProject(value); setEditTarget(null); setNotice('项目修改已保存。'); }} onRefresh={applyEditedProject} onPendingChange={setProjectMutationPending} />}
+    {pendingStepNavigation && <FeedbackConfirmDialog title={`返回${pendingStepNavigation.title}`} confirm="继续返回" cancel="留在当前步骤" confirmDisabled={busy || workspaceBusy} onCancel={() => setPendingStepNavigation(null)} onConfirm={() => {
+      if (mutationLock.current || applicationLeaveState().busyMessage) { setNotice('当前操作尚未完成，请等待结果后再切换。'); return; }
+      const next = pendingStepNavigation; setPendingStepNavigation(null); next.proceed();
+    }}><p>修改并保存前序资料，可能影响后续需求确认、选型及生成结果，需要重新核对。</p><p>仅查看不会改变数据，当前填写和已有成果会保留。</p></FeedbackConfirmDialog>}
     {pendingNavigation && <FeedbackConfirmDialog title="未保存的填写" confirm="放弃填写并切换" cancel="继续编辑" onCancel={() => setPendingNavigation(null)} onConfirm={() => { const next = pendingNavigation; setPendingNavigation(null); setDirty(false); setNewDialog(null); setEditTarget(null); next(); }}><p>当前有未保存的输入、文件选择或计划修改。切换后这些填写会丢失，已保存的项目记录继续保留。</p></FeedbackConfirmDialog>}
     {discardCreate && <FeedbackConfirmDialog title={createProgress ? '稍后建立业务流程' : '关闭当前创建'} confirm={createProgress ? '进入已保存项目' : '关闭创建'} cancel="继续填写" onCancel={() => setDiscardCreate(false)} onConfirm={discardCreation}><p>{createProgress ? '项目已保存。尚未确认建立的业务流程可在项目空间继续添加，项目记录会保留。' : createUncertain ? '请求结果尚未确认。关闭后将重新读取项目核对；首页目标草稿会保留。' : '当前填写尚未保存。首页目标草稿会保留，已保存记录不受影响。'}</p></FeedbackConfirmDialog>}
   </div>;

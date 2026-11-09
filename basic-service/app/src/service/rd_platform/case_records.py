@@ -67,14 +67,14 @@ class CaseRecords:
         return [{"id": item["id"], "revision": item["revision"], "sha256": _hash({key: item[key] for key in ("id", "revision", "title", "content", "source_ids")})}
                 for item in case["requirements"]]
 
-    def save_requirement(self, case, data, actor, *, clarification_id=None, review=None):
+    def save_requirement(self, case, data, actor, *, clarification_id=None, review=None, specification_result=None):
         self.store._evidence(case, data.get("source_ids"))
         rid = data.get("id")
         previous = self._requirement(case, rid) if rid else None
         values = {"title": _text(data.get("title"), "需求标题", 200, True),
                   "content": _text(data.get("content"), "需求内容", 20000, True), "source_ids": list(dict.fromkeys(data["source_ids"]))}
         unchanged = previous and all(previous[key] == values[key] for key in ("title", "content")) and set(previous["source_ids"]) == set(values["source_ids"])
-        if unchanged and clarification_id is None and review is None:
+        if unchanged and clarification_id is None and review is None and specification_result is None:
             return {"requirement_id": previous["id"], "input_revision": case["input_revision"], "invalidated_decision_ids": []}
         history = deepcopy(previous["history"]) if previous else []
         if previous and not history:
@@ -85,6 +85,8 @@ class CaseRecords:
         entry = {"revision": revision, **deepcopy(values), "actor": actor, "created_at": _now(), "source_snapshots": self._sources(case, values["source_ids"])}
         if clarification_id:
             entry["clarification_id"] = clarification_id
+        if specification_result:
+            entry.update(actual_value_source="specification", recommendation_batch_id=specification_result["recommendation_batch_id"])
         history.append(entry)
         requirement = {"id": rid or _id(), **values, "revision": revision, "history": history}
         if previous:
@@ -95,83 +97,250 @@ class CaseRecords:
         else:
             case["requirements"].append(requirement)
         invalidated = self.store._invalidate_inputs(case, "用户明确修改或采用了需求及其依据，需要重新确认。",
-            reviewed_requirement_id=rid if review or clarification_id else None, retain_review_stage=review is not None)
+            reviewed_requirement_id=rid if review or clarification_id or specification_result else None,
+            retain_review_stage=review is not None or specification_result is not None)
         if review:
             decision = {**review, "actor": actor, "created_at": entry["created_at"], "requirement_revision": revision, "input_revision": case["input_revision"]}
             requirement["review"] = decision
             requirement.setdefault("review_history", []).append(deepcopy(decision))
+        if specification_result:
+            requirement["specification_result"] = {**deepcopy(specification_result), "actor": actor,
+                "created_at": entry["created_at"], "requirement_revision": revision, "input_revision": case["input_revision"]}
         return {"requirement_id": requirement["id"], "requirement_revision": revision,
                 "input_revision": case["input_revision"], "invalidated_decision_ids": invalidated}
 
     def review_requirement(self, case, data, actor):
-        if case["stage"] not in {"input", "requirements"}:
+        if (case["stage"] not in {"input", "requirements"} or case["status"] == "completed"
+                or case.get("business_lifecycle", {}).get("current_requirement_baseline_id")):
             raise RdError(409, "需求确认后只读；请先建立新的需求修订。")
-        if set(data) - {"case_id", "requirement_id", "requirement_revision", "analysis_id", "decision", "actual_value", "reason"}:
+        if set(data) - {"case_id", "requirement_id", "requirement_revision", "analysis_id", "recommendation_batch_id", "decision", "actual_value", "reason"}:
             raise RdError(422, "只接受当前需求的逐项决定，原文和推荐依据由服务端读取。")
         row = self._requirement(case, data.get("requirement_id"))
         expected = data.get("requirement_revision")
         if type(expected) is not int or expected != row["revision"]:
             raise RdError(409, "需求版本已变化，请保留草稿并核对新版本。")
         kind = data.get("decision")
-        if kind not in ("accept", "reject", "manual"):
-            raise RdError(422, "请选择采纳、不采纳或手工填写。")
+        if kind == "manual":
+            raise RdError(422, "实际结果不能直接手工填写，请办理澄清、保存有来源的答复后明确采用。")
+        if kind not in ("accept", "reject"):
+            raise RdError(422, "请选择采纳、不采纳；其他实际结果请通过澄清采用。")
         analysis = case.get("source_analysis") or {}
         aid = data.get("analysis_id")
+        batch_id = data.get("recommendation_batch_id")
+        batch = case.get("requirement_recommendations")
+        if batch and not batch_id:
+            raise RdError(409, "请基于当前规范建议批次核对需求，不能使用历史分析建议。")
+        if not batch_id:
+            raise RdError(422, "请先在需求确认中生成独立的规范建议批次，再采纳或不采纳；资料识别结果仅用于提取原文。")
         matches = [item for item in analysis.get("requirements", []) if item.get("requirement_id") == row["id"] and item.get("status") != "rejected"]
-        if aid or kind != "manual" or matches:
+        if aid or batch_id or matches:
             if not aid or aid != analysis.get("id") or analysis.get("status") != "adopted" or analysis.get("adopted_input_revision") != case["input_revision"]:
                 raise RdError(409, "需求分析版本已变更或未采用，请先核对当前资料。")
             if analysis["source_hashes"] != {source["id"]: source["sha256"] for source in self.store._active_sources(case)}:
                 raise RdError(409, "增强建议的来源已变化，请重新分析。")
-        if len(matches) > 1:
-            raise RdError(422, "多条原文指向同一需求，请先澄清对应关系。")
-        recommendation = matches[0].get("recommendation") if matches else None
-        if kind != "manual" and not recommendation:
-            raise RdError(422, "此项没有可核实的增强建议，可直接填写实际结果或办理澄清。")
+        recommendation = None
+        if batch_id:
+            self._check_recommendation_batch(case, batch_id)
+            items = [item for item in batch.get("items", []) if item.get("requirement_id") == row["id"]]
+            recommendation = items[0] if len(items) == 1 else None
+            previous = row.get("review") or {}
+            already_reviewed = (previous.get("recommendation_batch_id") == batch_id
+                                and previous.get("requirement_revision") == row["revision"])
+            if not recommendation or (recommendation.get("requirement_revision") != row["revision"] and not already_reviewed):
+                raise RdError(409, "此项需求已变化，请重新核对规范后再处理建议。")
+            if kind == "accept" and (recommendation.get("status") not in {"matched", "needs_review"}
+                    or (recommendation.get("status") == "matched" and not recommendation.get("proposed_value"))):
+                raise RdError(422, "规范差异或待核对内容不能直接采纳，请办理澄清并明确采用。")
+            if kind == "reject" and recommendation.get("status") == "not_found":
+                raise RdError(422, "规范未找到对应指标，无需拒绝建议，请办理澄清并明确采用。")
+        if not recommendation:
+            raise RdError(422, "此项没有可核实的增强建议，请办理澄清并明确采用。")
         reason = _text(data.get("reason", ""), "不采纳原因" if kind == "reject" else "决定说明", 4000, kind == "reject")
         source_ids = list(row["source_ids"])
         refs = []
         if recommendation:
             refs = list(dict.fromkeys(e["source_id"] for e in recommendation["evidence"]))
-            self.store._evidence(case, refs)
-        if kind == "manual":
-            actual = _text(data.get("actual_value"), "实际结果", 20000, True)
-            if actual == "不适用" and not reason:
-                raise RdError(422, "请说明不适用的原因。")
-        else:
-            actual = recommendation["proposed_value"] if kind == "accept" else row["content"]
-            if "actual_value" in data and data["actual_value"] != actual:
-                raise RdError(422, "此决定不能改写实际结果；如需修改请明确保存手工填写。")
-            if kind == "accept":
-                source_ids = list(dict.fromkeys([*source_ids, *refs]))
+            self.store._evidence(case, refs, required=kind == "accept")
+        original = self._original_requirement(case, row) if kind == "accept" and recommendation.get("status") == "needs_review" else None
+        if kind == "accept" and recommendation.get("status") == "needs_review" and original is None:
+            raise RdError(422, "没有可核实的原始指标，不能直接采纳，请办理澄清并明确采用。")
+        actual = (original["content"] if original else recommendation.get("proposed_value")) if kind == "accept" else None
+        if "actual_value" in data and data["actual_value"] != actual:
+            raise RdError(422, "此决定不能改写实际结果；如需修改请办理澄清并明确采用。")
+        if kind == "accept":
+            source_ids = list(dict.fromkeys([*source_ids, *refs, *((original or {}).get("source_ids", []))]))
         previous = row.get("review") or {}
         review = {"decision": kind, "reason": reason, "actual_value": actual, "analysis_id": aid, "recommendation": deepcopy(recommendation),
                   "recommendation_sources": self._sources(case, refs)}
+        if original:
+            review["actual_value_source"] = "original"
+        if batch_id:
+            review["recommendation_batch_id"] = batch_id
         if previous.get("requirement_revision") == row["revision"] and all(previous.get(k) == v for k, v in review.items()):
             return {"requirement_id": row["id"], "requirement_revision": row["revision"], "decision": kind}
-        result = self.save_requirement(case, {"id": row["id"], "title": row["title"], "content": actual, "source_ids": source_ids}, actor, review=review)
+        result = self.save_requirement(case, {"id": row["id"], "title": row["title"],
+            "content": actual if kind == "accept" else row["content"], "source_ids": source_ids}, actor, review=review)
         return {**result, "decision": kind}
 
-    @staticmethod
-    def check_requirement_reviews(case):
+    def _check_recommendation_batch(self, case, batch_id):
+        batch = case.get("requirement_recommendations") or {}
+        if (batch.get("id") != batch_id or batch.get("status") != "current"
+                or batch.get("input_revision") != case["input_revision"]):
+            raise RdError(409, "规范建议批次已变化或过期，请重新核对当前资料。")
+        sources = self.store._active_sources(case)
+        if batch.get("source_hashes") != {s["id"]: s["sha256"] for s in sources}:
+            raise RdError(409, "规范建议的来源已变化，请重新核对。")
+        for source in sources:
+            self.store._checked_path(source)
+        return batch
+
+    def check_requirement_reviews(self, case):
+        if (case.get("business_lifecycle") or {}).get("policy_version") == "v2":
+            batch = case.get("requirement_recommendations")
+            if batch:
+                self._check_recommendation_batch(case, batch["id"])
+            for row in case["requirements"]:
+                if self.explicit_requirement_result(case, row) is None:
+                    item = next((item for item in (batch or {}).get("items", []) if item.get("requirement_id") == row["id"]), {})
+                    if item.get("status") in {"difference", "needs_review"} and (row.get("review") or {}).get("decision") != "reject":
+                        raise RdError(422, f"「{row['title']}」的规范建议尚未处理，请核对适用性或完成需求澄清。")
+                    raise RdError(422, f"「{row['title']}」缺少明确采用值，请先完成需求澄清。")
+            return
+        self._check_legacy_requirement_reviews(case)
+
+    def _original_requirement(self, case, row):
+        """Return the adopted source snapshot, never a mutable result or model proposal."""
         analysis = case.get("source_analysis") or {}
-        rows = {r["id"]: r for r in case["requirements"]}
-        if analysis.get("status") != "adopted":
-            analyses = [analysis, *reversed(case.get("source_analysis_history", []))]
-            for candidate in analyses:
-                if any(item.get("recommendation") for item in candidate.get("requirements", []) if item.get("status") != "rejected"):
-                    raise RdError(409, "含增强建议的分析尚未采用或来源已变化，请先重新核对。")
-                if candidate.get("adopted_at"):
-                    break
-        for candidate in analysis.get("requirements", []):
-            if candidate.get("status") == "rejected" or not candidate.get("recommendation"):
+        active_hashes = {source["id"]: source["sha256"] for source in self.store._active_sources(case)}
+        if (analysis.get("status") != "adopted" or analysis.get("adopted_input_revision") != case["input_revision"]
+                or analysis.get("source_hashes") != active_hashes):
+            return None
+        originals = [item for item in analysis.get("requirements", [])
+                     if item.get("requirement_id") == row["id"] and item.get("status") != "rejected"]
+        if len(originals) != 1:
+            return None
+        original = originals[0]
+        value = original.get("content", "")
+        source_ids = original.get("source_ids", [])
+        if (not isinstance(value, str) or _is_placeholder(value) or value.strip() == "--" or not source_ids
+                or not set(source_ids).issubset(active_hashes)):
+            return None
+        return original
+
+    def _specification_result(self, case, row, batch, item, active_hashes):
+        """A verified match is ready for unified confirmation without a per-row vote."""
+        value = item.get("proposed_value", "")
+        if item.get("status") != "matched" or not isinstance(value, str) or _is_placeholder(value) or value.strip() == "--":
+            return None
+        review = row.get("review") or {}
+        if (review.get("recommendation_batch_id") == batch.get("id")
+                and review.get("requirement_revision") == row["revision"]
+                and review.get("decision") in {"reject", "manual"}):
+            return None
+        spec_ids = {source["id"] for source in self.store._active_sources(case) if source["role"] == "spec"}
+        evidence = item.get("evidence") or []
+        if not evidence or any(entry.get("source_id") not in spec_ids or not entry.get("quote", "").strip() for entry in evidence):
+            return None
+        persisted = row.get("specification_result") or {}
+        persisted_current = (persisted.get("actual_value_source") == "specification"
+            and persisted.get("recommendation_batch_id") == batch.get("id")
+            and persisted.get("requirement_revision") == row["revision"]
+            and persisted.get("source_requirement_revision") == item.get("requirement_revision")
+            and persisted.get("source_hashes") == active_hashes
+            and persisted.get("actual_value") == row["content"] == value)
+        if item.get("requirement_revision") != row["revision"] and not persisted_current:
+            return None
+        return value
+
+    def explicit_requirement_result(self, case, row):
+        """Resolve clarification, explicit original adoption, or a current verified match."""
+        batch = case.get("requirement_recommendations") or {}
+        review = row.get("review") or {}
+        active_hashes = {source["id"]: source["sha256"] for source in self.store._active_sources(case)}
+        if not set(row.get("source_ids", [])).issubset(active_hashes):
+            return None
+        batch_current = (batch.get("status") == "current" and batch.get("input_revision") == case["input_revision"]
+                         and batch.get("source_hashes") == active_hashes)
+        if batch and not batch_current:
+            return None
+        items = [item for item in batch.get("items", []) if item.get("requirement_id") == row["id"]]
+        item = items[0] if len(items) == 1 else {}
+        for record in case.get("clarifications", []):
+            adoption = record.get("adoption") or {}
+            if (record.get("status") != "adopted" or record.get("requirement_id") != row["id"]
+                    or adoption.get("requirement_revision") != row["revision"]
+                    or adoption.get("requirement_content") != row["content"]
+                    or (batch and adoption.get("recommendation_batch_id") != batch.get("id"))):
                 continue
-            row = rows.get(candidate.get("requirement_id"))
-            review = (row or {}).get("review") or {}
-            if not row or review.get("analysis_id") != analysis["id"] or review.get("requirement_revision") != row["revision"]:
-                raise RdError(422, f"「{candidate['title']}」的增强建议尚未处理，请明确采纳、不采纳或填写实际结果。")
+            if not any(entry.get("revision") == row["revision"] and entry.get("clarification_id") == record.get("id")
+                       for entry in row.get("history", [])):
+                continue
+            if (record.get("answer_source_snapshots") != self._sources(case, record.get("answer_source_ids", []))
+                    or not set(record.get("answer_source_ids", [])).issubset(active_hashes)
+                    or (adoption.get("source_hashes") is not None and adoption["source_hashes"] != active_hashes)):
+                continue
+            if not _is_placeholder(row.get("content", "")) and row["content"].strip() != "--":
+                return row["content"]
+        if (batch_current and review.get("decision") == "accept"
+                and review.get("recommendation_batch_id") == batch.get("id")
+                and review.get("requirement_revision") == row["revision"]
+                and review.get("actual_value") == row["content"]
+                and not _is_placeholder(row["content"]) and row["content"].strip() != "--"):
+            if item.get("status") == "matched" and item.get("proposed_value") == row["content"]:
+                return row["content"]
+            original = self._original_requirement(case, row)
+            if (item.get("status") == "needs_review" and review.get("actual_value_source") == "original"
+                    and review.get("analysis_id") == (case.get("source_analysis") or {}).get("id")
+                    and original is not None and original["content"] == row["content"]):
+                return row["content"]
+        if batch_current:
+            return self._specification_result(case, row, batch, item, active_hashes)
+        return None
+
+    def materialize_specification_results(self, case, actor):
+        """Freeze automatic matches only as part of the owner's unified confirmation."""
+        batch = case.get("requirement_recommendations") or {}
+        if not batch:
+            return
+        active_hashes = {source["id"]: source["sha256"] for source in self.store._active_sources(case)}
+        for row in list(case["requirements"]):
+            items = [item for item in batch.get("items", []) if item.get("requirement_id") == row["id"]]
+            if len(items) != 1:
+                continue
+            item = items[0]
+            value = self._specification_result(case, row, batch, item, active_hashes)
+            review = row.get("review") or {}
+            # An adopted clarification or existing explicit decision is authoritative.
+            if (value is None or self.explicit_requirement_result(case, row) != value
+                    or item.get("requirement_revision") != row["revision"]
+                    or (review.get("recommendation_batch_id") == batch["id"] and review.get("requirement_revision") == row["revision"])
+                    or any(record.get("status") == "adopted" and record.get("requirement_id") == row["id"]
+                           and (record.get("adoption") or {}).get("requirement_revision") == row["revision"]
+                           and (record.get("adoption") or {}).get("recommendation_batch_id") == batch["id"]
+                           for record in case.get("clarifications", []))):
+                continue
+            refs = [entry["source_id"] for entry in item["evidence"]]
+            self.save_requirement(case, {"id": row["id"], "title": row["title"], "content": value,
+                "source_ids": list(dict.fromkeys([*row["source_ids"], *refs]))}, actor, specification_result={
+                    "actual_value_source": "specification", "actual_value": value,
+                    "recommendation_batch_id": batch["id"], "source_requirement_revision": item["requirement_revision"],
+                    "source_hashes": active_hashes})
+
+    def _check_legacy_requirement_reviews(self, case):
+        rows = {r["id"]: r for r in case["requirements"]}
+        batch = case.get("requirement_recommendations")
+        if batch:
+            actionable = [item for item in batch.get("items", []) if item.get("status") != "not_found"]
+            if actionable:
+                self._check_recommendation_batch(case, batch["id"])
+            for item in actionable:
+                row = rows.get(item["requirement_id"])
+                if row is None or self.explicit_requirement_result(case, row) is None:
+                    title = row["title"] if row else "需求"
+                    raise RdError(422, f"「{title}」的规范建议尚未处理，请填写决定或采用澄清结果。")
         for row in rows.values():
-            if _is_placeholder(row.get("content", "")):
+            value = self.explicit_requirement_result(case, row) or row.get("content", "")
+            if _is_placeholder(value) or value.strip() == "--":
                 raise RdError(422, f"「{row['title']}」缺少明确采用值，请先完成需求澄清。")
 
     def open_clarification(self, case, data, actor):
@@ -219,12 +388,28 @@ class CaseRecords:
         if record["status"] != "answered":
             raise RdError(409, "请先保存有来源的澄清答复，再明确采用。")
         content = _text(data.get("requirement_content"), "明确采用的需求正文", 20000, True)
+        batch = case.get("requirement_recommendations") or {}
+        batch_id = None
+        if batch.get("status") == "current" and batch.get("input_revision") == case["input_revision"]:
+            item = next((item for item in batch.get("items", []) if item.get("requirement_id") == requirement["id"]), {})
+            review = requirement.get("review") or {}
+            reviewed_current = (review.get("recommendation_batch_id") == batch["id"]
+                                and review.get("requirement_revision") == requirement["revision"])
+            # A further clarification can continue an already adopted, source-valid
+            # revision of this batch without losing its original comparison binding.
+            adopted_current = self.explicit_requirement_result(case, requirement) is not None
+            if item and (item.get("requirement_revision") == requirement["revision"] or reviewed_current or adopted_current):
+                self._check_recommendation_batch(case, batch["id"])
+                batch_id = batch["id"]
         record["status"] = "adopted"
         result = self.save_requirement(case, {"id": requirement["id"], "title": requirement["title"], "content": content,
             "source_ids": list(dict.fromkeys(requirement["source_ids"] + record["answer_source_ids"]))}, actor, clarification_id=record["id"])
         record["revision"] += 1
         record["adoption"] = {"requirement_revision": result["requirement_revision"], "requirement_content": content,
-                              "input_revision": case["input_revision"], "actor": actor, "created_at": _now()}
+                              "input_revision": case["input_revision"], "actor": actor, "created_at": _now(),
+                              "source_hashes": {source["id"]: source["sha256"] for source in self.store._active_sources(case)}}
+        if batch_id:
+            record["adoption"]["recommendation_batch_id"] = batch_id
         record["history"].append(_version(record))
         return {**result, "clarification_id": record["id"], "clarification_revision": record["revision"]}
 
@@ -450,6 +635,7 @@ class CaseRecords:
             raise RdError(422, "必需澄清尚未明确采用，不能确认需求。")
         if stage == "requirements":
             self.check_requirement_reviews(case)
+            self.materialize_specification_results(case, actor)
         if stage == "delivery":
             current = [record for record in case["deliveries"] if record["input_revision"] == case["input_revision"]]
             if not current or current[-1]["outcome"] != "accepted":

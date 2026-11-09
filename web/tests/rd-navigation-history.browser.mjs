@@ -43,6 +43,20 @@ const sideView = name => page.getByRole('navigation', { name: '当前业务流�
 const overview = () => page.getByRole('button', { name: '成果概览', exact: true });
 const returnToEditor = () => page.getByRole('button', { name: '返回办理', exact: true });
 const leaveDialog = () => page.getByRole('dialog', { name: '未保存的填写', exact: true });
+const backwardDialog = (name = '资料识别') => page.getByRole('dialog', { name: '返回' + name, exact: true });
+async function confirmBackward(name = '资料识别') {
+  await backwardDialog(name).getByRole('button', { name: '继续返回', exact: true }).click();
+  await backwardDialog(name).waitFor({ state: 'hidden' });
+}
+async function navigationState() {
+  return page.evaluate(key => ({ url: location.href, index: history.state.rdNavigationIndex, length: history.length, resume: localStorage.getItem(key) }), resumeKey);
+}
+async function unchangedRequirementEditor(before, draft, text) {
+  await viewed('需求确认');
+  assert.deepEqual(await navigationState(), before, 'pending or cancelled return preserves URL, history entry and recent editor');
+  assert.equal(await draft.inputValue(), text, 'pending or cancelled return preserves the live requirement draft');
+  assert.equal(await leaveDialog().count(), 0, 'returning to a mounted editor does not also offer to discard drafts');
+}
 function routeFacts(url) {
   const path = url.pathname.match(/^\/projects\/([^/]+)(?:\/flows\/([^/]+)(?:\/([^/]+))?)?$/);
   const part = path?.[3], surface = { overview: 'current', materials: 'sources', requirements: 'requirements', selection: 'routes', preparation: 'preparation', execution: 'workpackages', delivery: 'delivery', reuse: 'reuse', decision: 'decision' }[part];
@@ -88,14 +102,64 @@ try {
   checkpoint = 'internal browser back stays in the previous editing step';
   await page.goto(base + '/?rd_view=home');
   await continueCase(); await viewed('需求确认');
-  await step('资料识别').click(); await viewed('资料识别');
+  await page.getByText('补充或修订需求记录', { exact: true }).click();
+  const returnDraft = page.getByRole('textbox', { name: '需求标题', exact: true });
+  const returnDraftText = '返回确认前后均保留的需求草稿';
+  await returnDraft.fill(returnDraftText);
+  await page.waitForFunction(key => localStorage.getItem(key) === 'requirements', resumeKey);
+  const beforeReturn = await navigationState();
+  await step('资料识别').click(); await backwardDialog().waitFor();
+  await unchangedRequirementEditor(beforeReturn, returnDraft, returnDraftText);
+  await capture('00-backward-step-warning');
+  await backwardDialog().getByRole('button', { name: '留在当前步骤', exact: true }).click();
+  await backwardDialog().waitFor({ state: 'hidden' });
+  await unchangedRequirementEditor(beforeReturn, returnDraft, returnDraftText);
+  await step('资料识别').click(); await backwardDialog().waitFor();
+  await page.keyboard.press('Escape'); await backwardDialog().waitFor({ state: 'hidden' });
+  await unchangedRequirementEditor(beforeReturn, returnDraft, returnDraftText);
+  checks.push('backward step cancellation and Escape preserve the URL, current step, recent editor and live draft');
+
+  checkpoint = 'browser Back replaces an already open earlier-step warning with one leave confirmation';
+  await step('资料识别').click(); await backwardDialog().waitFor();
+  await page.goBack(); await leaveDialog().waitFor();
+  await capture('00-navigation-confirmation-exclusive');
+  assert.equal(await backwardDialog().count(), 0, 'cross-module Back replaces the earlier-step warning instead of stacking two confirmations');
+  assert.equal(await page.getByRole('dialog').count(), 1, 'only the most recent navigation confirmation is mounted');
+  assert.deepEqual(await navigationState(), beforeReturn, 'pending cross-module Back restores the original history entry');
+  await leaveDialog().getByRole('button', { name: '继续编辑', exact: true }).click();
+  await leaveDialog().waitFor({ state: 'hidden' });
+  await unchangedRequirementEditor(beforeReturn, returnDraft, returnDraftText);
+  assert.equal(await page.getByRole('dialog').count(), 0, 'cancelling the latest navigation leaves no stale earlier-step warning');
+  checks.push('browser Back replaces an open step warning with one confirmation; cancellation preserves route, recent editor and draft');
+
+  checkpoint = 'confirmed earlier-step navigation and browser history preserve drafts';
+  await step('资料识别').click(); await confirmBackward(); await viewed('资料识别');
+  await assertRoute({ case_view: 'current', step: 'sources' });
+  await page.waitForFunction(key => localStorage.getItem(key) === 'sources', resumeKey);
+  assert.equal((await navigationState()).index, beforeReturn.index + 1, 'confirmed step return commits exactly one history entry');
   await step('需求确认').click(); await viewed('需求确认');
-  await page.goBack();
+  assert.equal(await returnDraft.inputValue(), returnDraftText, 'confirmed viewing of a previous step preserves the draft');
+  const beforeBack = await navigationState();
+  await page.goBack(); await backwardDialog().waitFor();
+  await unchangedRequirementEditor(beforeBack, returnDraft, returnDraftText);
+  await backwardDialog().getByRole('button', { name: '留在当前步骤', exact: true }).click();
+  await backwardDialog().waitFor({ state: 'hidden' });
+  await unchangedRequirementEditor(beforeBack, returnDraft, returnDraftText);
+  await capture('00-history-back-cancelled');
+  await page.goBack(); await confirmBackward();
   await page.waitForFunction(() => !document.querySelector('.rd-case-journey') || document.querySelector('.rd-case-journey [aria-current="step"]')?.getAttribute('aria-label') === '资料识别');
   assert.equal(await step('资料识别').and(page.locator('[aria-current="step"]')).count(), 1, 'Back after opening requirements returns to sources, not out of the case');
   await assertRoute({ case_view: 'current', step: 'sources' });
+  const afterBack = await navigationState();
+  assert.equal(afterBack.index, beforeBack.index - 1, 'confirmed Back returns to the original previous history entry');
+  assert.equal(afterBack.length, beforeBack.length, 'confirming Back does not replace the forward history branch');
   await page.goForward(); await viewed('需求确认'); await assertRoute({ step: 'requirements' });
+  assert.deepEqual(await navigationState(), beforeBack, 'Forward restores the original requirement entry after cancelled and confirmed Back');
+  assert.equal(await returnDraft.inputValue(), returnDraftText);
+  await page.getByRole('button', { name: '取消填写', exact: true }).click();
+  await page.getByRole('dialog', { name: '放弃未保存的需求填写', exact: true }).getByRole('button', { name: '放弃填写', exact: true }).click();
   checks.push('browser Back and Forward traverse actual editing steps');
+  checks.push('confirmed previous-step viewing keeps drafts and browser Back cancellation preserves the original Forward branch');
 
   checkpoint = 'auxiliary views survive browser history, refresh and return-to-editor';
   await sideView('项目流程').click(); await assertRoute({ case_view: 'process' });
@@ -148,13 +212,13 @@ try {
   await page.getByText('补充或修订需求记录', { exact: true }).click();
   const draft = page.getByRole('textbox', { name: '需求标题', exact: true });
   await draft.fill('跨步骤保留但不提交的导航草稿');
-  await step('资料识别').click(); await viewed('资料识别');
+  await step('资料识别').click(); await confirmBackward(); await viewed('资料识别');
   await sideView('项目流程').click(); await sideView('资料与依据').click();
   await returnToEditor().click(); await viewed('资料识别');
   await step('需求确认').click(); await viewed('需求确认');
   assert.equal(await draft.inputValue(), '跨步骤保留但不提交的导航草稿');
   assert.equal(await leaveDialog().count(), 0, 'switching mounted work surfaces does not offer to discard retained fields');
-  await page.goBack(); await viewed('资料识别');
+  await page.goBack(); await confirmBackward(); await viewed('资料识别');
   await page.goForward(); await viewed('需求确认');
   assert.equal(await draft.inputValue(), '跨步骤保留但不提交的导航草稿');
   await capture('02-live-draft-retained');

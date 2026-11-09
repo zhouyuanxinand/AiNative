@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { EngineeringProgress } from './EngineeringProgress';
 import { EvidenceLocationsProvider } from './EvidenceLocations';
 import { TaskbookPreparation } from './TaskbookPreparation';
@@ -20,9 +20,11 @@ interface ScenarioWorkspaceProps {
   onDirtyChange: (dirty: boolean) => void; workpackageFocus?: { id: string; serial: number };
   clarificationFocus?: { requirementId: string };
   onReviewAnalysisClarification?: (requirementId: string) => void; onReviewRequirementClarification?: (requirementId: string) => void;
+  onReviewRequirements?: () => void;
+  requirementAction?: (requirementsDirty: boolean) => ReactNode;
 }
 
-function TaskbookWorkspace({ project, actorId, researchCase, catalog, activeSurface, busy, error, command, onNavigate, onAnalyze, onOpenSources, onUpload, onBatchUpload, onDirtyChange, workpackageFocus, clarificationFocus, onReviewAnalysisClarification, onReviewRequirementClarification }: ScenarioWorkspaceProps) {
+function TaskbookWorkspace({ project, actorId, researchCase, catalog, activeSurface, busy, error, command, onNavigate, onAnalyze, onOpenSources, onUpload, onBatchUpload, onDirtyChange, workpackageFocus, clarificationFocus, onReviewAnalysisClarification, onReviewRequirementClarification, onReviewRequirements, requirementAction }: ScenarioWorkspaceProps) {
   const [parts, setParts] = useState<Record<string, boolean>>({});
   const setPart = useCallback((part: string, dirty: boolean) => setParts(current => current[part] === dirty ? current : { ...current, [part]: dirty }), []);
   const inputDirty = useCallback((value: boolean) => setPart('input', value), [setPart]);
@@ -39,6 +41,7 @@ function TaskbookWorkspace({ project, actorId, researchCase, catalog, activeSurf
   const reuseDirty = useCallback((value: boolean) => setPart('reuse', value), [setPart]);
   const decisionDirty = useCallback((value: boolean) => setPart('decision', value), [setPart]);
   const dirty = Object.values(parts).some(Boolean);
+  const requirementsDirty = !!(parts.requirement || parts.clarification || parts.input || parts.series);
   useLayoutEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
   const decisionPanel = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -49,14 +52,14 @@ function TaskbookWorkspace({ project, actorId, researchCase, catalog, activeSurf
   }, [activeSurface]);
 
   return <EvidenceLocationsProvider actorId={actorId} project={project} researchCase={researchCase}><div className="rd-scenario-editors">
-    <div hidden={activeSurface !== 'sources'}><CaseInputForm project={project} researchCase={researchCase} busy={busy} error={error} command={command} onAnalyze={onAnalyze} onUpload={onUpload} onBatchUpload={onBatchUpload} onDirtyChange={inputDirty} onReviewClarification={onReviewAnalysisClarification} /></div>
-    <div hidden={activeSurface !== 'requirements'}><ProductSeriesConfirmation researchCase={researchCase} busy={busy} command={command} onDirtyChange={seriesDirty} /><CaseRequirementsForm key={JSON.stringify([actorId, project.owner_id === actorId])} actorId={actorId} project={project} researchCase={researchCase} busy={busy} command={command} onOpenSources={onOpenSources} onDirtyChange={requirementDirty} onReviewClarification={onReviewRequirementClarification} /><CaseRecords kind="clarifications" project={project} researchCase={researchCase} busy={busy} error={error} command={command} onDirtyChange={clarificationDirty} focusRequest={activeSurface === 'requirements' ? clarificationFocus : undefined} /></div>
+    <div hidden={activeSurface !== 'sources'}><CaseInputForm project={project} researchCase={researchCase} busy={busy} error={error} command={command} onAnalyze={onAnalyze} onUpload={onUpload} onBatchUpload={onBatchUpload} onDirtyChange={inputDirty} onReviewClarification={onReviewAnalysisClarification} onReviewRequirements={onReviewRequirements} /></div>
+    <div hidden={activeSurface !== 'requirements'}><p hidden={!requirementsDirty} className="rd-warning" role="status">需求或澄清有未保存的填写，请先保存或放弃，再确认需求。</p><ProductSeriesConfirmation researchCase={researchCase} busy={busy} command={command} onDirtyChange={seriesDirty} /><CaseRequirementsForm key={JSON.stringify([actorId, project.owner_id === actorId])} actorId={actorId} project={project} researchCase={researchCase} busy={busy} command={command} onOpenSources={onOpenSources} onDirtyChange={requirementDirty} onReviewClarification={onReviewRequirementClarification} reviewAction={requirementAction?.(requirementsDirty)} /><CaseRecords kind="clarifications" project={project} researchCase={researchCase} busy={busy} error={error} command={command} onDirtyChange={clarificationDirty} focusRequest={activeSurface === 'requirements' ? clarificationFocus : undefined} /></div>
     <div hidden={activeSurface !== 'routes'}><CaseRecords kind="comparisons" project={project} researchCase={researchCase} busy={busy} error={error} command={command} onDirtyChange={comparisonDirty} /><section className="rd-section"><h3>产品研制分类与任务书编制策略</h3><p className="rd-muted">同一业务流程中的两个独立决策项，分别保留理由与证据。</p><div className="rd-route-grid"><RouteEditor axis="product" researchCase={researchCase} busy={busy} command={command} onDirtyChange={productDirty} /><RouteEditor axis="composition" researchCase={researchCase} busy={busy} command={command} onDirtyChange={compositionDirty} /></div></section></div>
     <div hidden={activeSurface !== 'preparation'}>{!researchCase.context.product_series?.trim() && <p className="rd-warning">产品系列尚未确认。<button type="button" className="rd-link-button" onClick={() => onNavigate('requirements')}>前往确认产品系列 →</button></p>}<TaskbookPreparation researchCase={researchCase} catalog={catalog} busy={busy} command={command} onDirtyChange={preparationDirty} onOpenWorkpackages={() => onNavigate('workpackages')} /></div>
     <div hidden={activeSurface !== 'workpackages'}><p className="rd-notice">{researchCase.workflow_templates?.project ? '本流程以研制任务书生成为终点。工作包提交后按固定流程执行，并保留质量校验和运行记录。' : '任务书是本项目研发流程中的成果节点。工作包提交后包内动作自主执行；完成编制不会自动完成后续专业设计、业务审签或交付。'}</p><WorkpackagePanel project={project} researchCase={researchCase} catalog={catalog} busy={busy} error={error} command={command} onDirtyChange={packageDirty} focusRequest={workpackageFocus} />{(researchCase.business_lifecycle?.policy_version !== 'v2' || ['design', 'verification', 'delivery', 'knowledge'].includes(researchCase.stage)) && <EngineeringProgress project={project} researchCase={researchCase} busy={busy} command={command} onUpload={onUpload} onDirtyChange={engineeringDirty} />}</div>
     <div hidden={activeSurface !== 'delivery'}><div className="rd-field"><label htmlFor="rd-receipt-upload">上传实际交付回执或反馈资料</label><input id="rd-receipt-upload" type="file" disabled={busy || researchCase.stage !== 'delivery'} onChange={event => { const field = event.currentTarget; const file = field.files?.[0]; if (file) void onUpload(researchCase.id, file, 'reference', () => { field.value = ''; }); }} /></div><CaseRecords kind="delivery" project={project} researchCase={researchCase} busy={busy} error={error} command={command} onDirtyChange={deliveryDirty} /></div>
     <div hidden={activeSurface !== 'reuse'}><CaseRecords kind="reuse" project={project} researchCase={researchCase} busy={busy} error={error} command={command} onDirtyChange={reuseDirty} /></div>
-    <div hidden={activeSurface !== 'decision'} ref={decisionPanel}>{researchCase.workflow_templates?.project && researchCase.stage === 'planning' ? <p className="rd-notice">本流程以任务书生成为终点，请查看工作包的编制和质量校验记录。</p> : <><p hidden={!parts.requirement || !['input', 'requirements'].includes(researchCase.stage)} className="rd-warning">需求清单有未保存的更改，请先保存或放弃草稿，再确认需求。</p><CaseDecisionForm project={project} researchCase={researchCase} busy={busy || (parts.requirement && ['input', 'requirements'].includes(researchCase.stage))} error={error} command={command} onDirtyChange={decisionDirty} /></>}</div>
+    <div hidden={activeSurface !== 'decision'} ref={decisionPanel}>{researchCase.workflow_templates?.project && researchCase.stage === 'planning' ? <p className="rd-notice">本流程以任务书生成为终点，请查看工作包的编制和质量校验记录。</p> : <><p hidden={!requirementsDirty || !['input', 'requirements'].includes(researchCase.stage)} className="rd-warning">需求或澄清有未保存的填写，请先保存或放弃，再确认需求。</p><CaseDecisionForm project={project} researchCase={researchCase} busy={busy} requirementsDirty={requirementsDirty} onReturnToRequirements={() => onNavigate('requirements')} error={error} command={command} onDirtyChange={decisionDirty} /></>}</div>
   </div></EvidenceLocationsProvider>;
 }
 

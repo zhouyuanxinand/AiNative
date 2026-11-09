@@ -44,10 +44,14 @@ def _references(case):
                     group['references'].append(ref)
             for key, item in value.items():
                 if key != 'evidence':
-                    walk(item, aid)
+                    walk(item, (value.get('recommendation_batch_id') or aid) if key == 'recommendation' else aid)
 
     analysis = case.get('source_analysis') or {}
     walk(analysis, analysis.get('id'))
+    recommendations = case.get('requirement_recommendations') or {}
+    walk(recommendations, recommendations.get('id'))
+    for batch in case.get('requirement_recommendations_history', []):
+        walk(batch, batch.get('id'))
     walk(case.get('context_provenance', {}))
     walk(case.get('requirements', []))
     return list(grouped.values())
@@ -155,7 +159,8 @@ def _resolve_evidence(case, analysis_root, checked_path, groups=None):
 
     sources = {source['id']: source for source in [*case.get('sources', []), *case.get('deleted_sources', [])]}
     current = case.get('source_analysis') or {}
-    analyses = {analysis['id']: analysis for analysis in [current, *case.get('source_analysis_history', [])] if analysis.get('id')}
+    analyses = {analysis['id']: analysis for analysis in [current, *case.get('source_analysis_history', []),
+        case.get('requirement_recommendations') or {}, *case.get('requirement_recommendations_history', [])] if analysis.get('id')}
     source_errors, source_paths, indices = {}, {}, {}
     items = []
     for group in _references(case) if groups is None else groups:

@@ -2,7 +2,7 @@
 .rd-project-edit-form{display:flex;flex-direction:column;min-height:0;overflow:hidden}
 .rd-project-edit-body{display:flex;flex-direction:column;gap:16px;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:2px 8px 2px 2px}
 .rd-project-edit-field{display:flex;flex-direction:column;gap:6px;min-width:0}
-.rd-project-edit-field>label{font-size:13px;font-weight:600;color:var(--color-text-primary)}
+.rd-project-edit-field>label{font-size:var(--font-size-sm);font-weight:600;color:var(--color-text-primary)}
 .rd-project-edit-field>label>span{color:var(--color-error)}
 .rd-project-edit-field textarea.ant-input{resize:vertical;min-height:88px;max-height:240px}
 .rd-project-edit-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}

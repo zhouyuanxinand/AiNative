@@ -4,8 +4,7 @@ import { applicationLeaveState } from '../../hooks/useApplicationLeaveGuard';
 import { ActionTemplateDetail } from './ActionTemplateDetail';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyledSelect } from '../../components/ui/StyledSelect';
-import { templateDownloadUrl } from '../../api/templates';
-import type { TemplateItem } from '../../types';
+import { ReportTemplateDirectory } from './ReportTemplateDirectory';
 import { RdApiError, rdCatalogItems, rdCatalogResources } from './api';
 import { useDirectoryState } from './useDirectoryState';
 import { messageOf, stageTitle, statusTitle } from './presentation';
@@ -30,13 +29,12 @@ export function FlowManagement({ catalog, onRefreshCatalog, projects, onOpenCase
   onOpenCase: (projectId: string, caseId: string, target?: CaseWorkspaceView) => void; onOpenWorkspace: () => void;
   onStartWorkflow?: (template: BusinessWorkflowTemplate) => void;
 }) {
-  const directory = useDirectoryState('flow', { tab: 'flows', kind: 'research', item: '', version: '', detail: '', q: '', page: '1' });
+  const directory = useDirectoryState('flow', { tab: 'flows', kind: 'research', item: '', version: '', detail: '', product: '', q: '', page: '1' });
   const { state: rawState, page, update: updateDirectory } = directory;
   const state = { ...rawState, tab: (rawState.tab === 'derivation' ? 'reports' : CATEGORIES.some(item => item.id === rawState.tab) ? rawState.tab : 'flows') as Category, kind: rawState.kind === 'workpackage' ? 'workpackage' : 'research', query: rawState.q, selected: rawState.item };
   const [pendingTab, setPendingTab] = useState<Partial<{ tab: string; kind: string; selected: string; query: string }> | null>(null);
   const [nodeId, setNodeId] = useState('');
   const [resources, setResources] = useState<ResourceSummary[]>([]);
-  const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [definitions, setDefinitions] = useState<WorkpackageDefinition[]>([]);
   const [workflows, setWorkflows] = useState<ResearchWorkflowTemplate[]>([]);
   const [visibleActions, setVisibleActions] = useState<Action[]>([]);
@@ -52,7 +50,7 @@ export function FlowManagement({ catalog, onRefreshCatalog, projects, onOpenCase
     if (leaveState.busyMessage) return;
     if ((next.tab && next.tab !== state.tab || next.kind && next.kind !== state.kind) && !confirmed && leaveState.dirty) { setPendingTab(next); return; }
     const patch: Record<string, string> = {};
-    if (next.tab !== undefined) { patch.tab = next.tab; patch.detail = ''; patch.version = ''; }
+    if (next.tab !== undefined) { patch.tab = next.tab; patch.detail = ''; patch.version = ''; patch.product = ''; }
     if (next.kind !== undefined) patch.kind = next.kind;
     if (next.selected !== undefined) patch.item = next.selected;
     if (next.query !== undefined) { patch.q = next.query; directory.setInput(next.query); }
@@ -60,13 +58,12 @@ export function FlowManagement({ catalog, onRefreshCatalog, projects, onOpenCase
   }
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError('');
-    if (state.tab === 'flows' && state.kind === 'research') { setLoading(false); setTotal(0); return () => controller.abort(); }
+    if (state.tab === 'reports' || state.tab === 'flows' && state.kind === 'research') { setLoading(false); setTotal(0); return () => controller.abort(); }
     const query = { q: state.query, page };
     const category = state.tab === 'flows' ? state.kind === 'research' ? 'research' : 'workpackages' : state.tab;
     void (state.tab === 'resources' ? rdCatalogResources(query, controller.signal) : rdCatalogItems<unknown>(category, query, controller.signal)).then(response => {
       if (controller.signal.aborted) return;
       setResources(state.tab === 'resources' ? response.items as ResourceSummary[] : []);
-      setTemplates(state.tab === 'reports' ? response.items as TemplateItem[] : []);
       setVisibleActions(state.tab === 'actions' ? response.items as Action[] : []);
       setDefinitions(category === 'workpackages' ? response.items as WorkpackageDefinition[] : []);
       setWorkflows(category === 'research' ? response.items as ResearchWorkflowTemplate[] : []);
@@ -75,7 +72,7 @@ export function FlowManagement({ catalog, onRefreshCatalog, projects, onOpenCase
     }).catch(reason => {
       if (controller.signal.aborted) return;
       setError(messageOf(reason));
-      if (reason instanceof RdApiError && [401, 403, 404].includes(reason.status)) { setResources([]); setTemplates([]); setVisibleActions([]); setDefinitions([]); setWorkflows([]); setTotal(0); }
+      if (reason instanceof RdApiError && [401, 403, 404].includes(reason.status)) { setResources([]); setVisibleActions([]); setDefinitions([]); setWorkflows([]); setTotal(0); }
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [state.tab, state.kind, state.query, page, revision, updateDirectory]);
@@ -99,8 +96,8 @@ export function FlowManagement({ catalog, onRefreshCatalog, projects, onOpenCase
       if (target >= 0) { event.preventDefault(); tabButtons.current[target]?.focus(); }
     }}>{item.label}</button>)}</div>
     <section role="tabpanel" id={`flow-panel-${state.tab}`} aria-labelledby={`flow-tab-${state.tab}`}>
-      {!actionDetail && <div className="rd-flow-tools"><div><h2>{CATEGORIES.find(item => item.id === state.tab)?.label}</h2><p>{description}</p></div>{directoryTab && <div className="rd-flow-tool-actions"><div className="rd-search"><label htmlFor="flow-search" className="rd-visually-hidden">搜索{CATEGORIES.find(item => item.id === state.tab)?.label}</label><input ref={search} id="flow-search" type="search" value={directory.input} placeholder="搜索名称或关键词" onCompositionStart={() => directory.setComposing(true)} onCompositionEnd={event => { directory.setComposing(false); directory.setInput(event.currentTarget.value); }} onChange={event => directory.setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing && !directory.composing) { event.preventDefault(); directory.commit(); } }} />{directory.input && <button type="button" aria-label="清空搜索" onClick={() => { directory.commit(''); search.current?.focus(); }}>×</button>}</div><Button autoInsertSpace={false} htmlType="button" className="rd-button" disabled={loading} onClick={refresh}>{loading ? '读取中…' : '刷新目录'}</Button></div>}</div>}
-      {!actionDetail && loading && <p className="rd-loading" role="status">正在读取目录…</p>}{!actionDetail && error && <div className="rd-error rd-banner" role="alert"><p>目录读取失败：{error}。请重试读取后核对当前可用目录。</p><Button autoInsertSpace={false} type="link" htmlType="button" className="rd-link-button" onClick={refresh}>重试读取</Button></div>}
+      {state.tab !== 'reports' && !actionDetail && <div className="rd-flow-tools"><div><h2>{CATEGORIES.find(item => item.id === state.tab)?.label}</h2><p>{description}</p></div>{directoryTab && <div className="rd-flow-tool-actions"><div className="rd-search"><label htmlFor="flow-search" className="rd-visually-hidden">搜索{CATEGORIES.find(item => item.id === state.tab)?.label}</label><input ref={search} id="flow-search" type="search" value={directory.input} placeholder="搜索名称或关键词" onCompositionStart={() => directory.setComposing(true)} onCompositionEnd={event => { directory.setComposing(false); directory.setInput(event.currentTarget.value); }} onChange={event => directory.setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing && !directory.composing) { event.preventDefault(); directory.commit(); } }} />{directory.input && <button type="button" aria-label="清空搜索" onClick={() => { directory.commit(''); search.current?.focus(); }}>×</button>}</div><Button autoInsertSpace={false} htmlType="button" className="rd-button" disabled={loading} onClick={refresh}>{loading ? '读取中…' : '刷新目录'}</Button></div>}</div>}
+      {state.tab !== 'reports' && !actionDetail && loading && <p className="rd-loading" role="status">正在读取目录…</p>}{state.tab !== 'reports' && !actionDetail && error && <div className="rd-error rd-banner" role="alert"><p>目录读取失败：{error}。请重试读取后核对当前可用目录。</p><Button autoInsertSpace={false} type="link" htmlType="button" className="rd-link-button" onClick={refresh}>重试读取</Button></div>}
       {state.tab === 'flows' && <>
         <div className="rd-flow-subnav" aria-label="模板层级"><button type="button" aria-pressed={state.kind === 'research'} onClick={() => update({ kind: 'research', selected: '', query: '' })}>流程编排与版本</button><button type="button" aria-pressed={state.kind === 'workpackage'} onClick={() => update({ kind: 'workpackage', selected: '', query: '' })}>可调用工作包</button></div>
         {state.kind === 'research' ? <WorkflowTemplateWorkbench onOpenCase={(projectId, caseId) => onOpenCase(projectId, caseId, 'process')} onStartWorkflow={onStartWorkflow} /> : <>
@@ -120,9 +117,9 @@ export function FlowManagement({ catalog, onRefreshCatalog, projects, onOpenCase
         const status = typeof action.status === 'string' ? action.status : '';
         return <article key={fixed} className="rd-flow-resource-card"><Button autoInsertSpace={false} htmlType="button" className="rd-action-card-button" aria-label={`打开${title}画布`} onClick={() => openAction(action)}><span className="rd-action-card-heading"><span className="rd-flow-card-icon" aria-hidden="true">↗</span><span><span className="rd-eyebrow">动作模板 · v{action.version}</span><strong className="rd-action-card-title">{title}</strong></span></span><span className="rd-action-card-description">{action.description ?? ACTION_DESCRIPTIONS[action.id] ?? '查看固定版本的执行步骤与前后依赖。'}</span><span className="rd-action-card-open"><span>{size === undefined ? '查看完整画布' : size === 1 ? '单动作封装 · 1 个执行步骤' : size ? `多步骤编排 · ${size} 个执行步骤` : '查看动作配置'}</span><span aria-hidden="true">→</span></span></Button><div className="rd-flow-card-status">{status && <Tag className={`rd-badge ${status}`}>{statusTitle(status)}</Tag>}<span>{action.executable ? '已绑定执行能力' : '定义尚未绑定执行能力'}</span></div><details><summary>查看适用工作包</summary><ul>{(catalog?.workpackage_definitions ?? []).filter(item => [...item.required_actions ?? [], ...item.optional_actions ?? []].includes(action.id)).map(item => <li key={`${item.id}@${item.version}`}><Button autoInsertSpace={false} type="link" htmlType="button" className="rd-link-button" onClick={() => update({ tab: 'flows', kind: 'workpackage', selected: `${item.id}@${item.version ?? '1'}`, query: '' })}>{item.title} · {item.required_actions?.includes(action.id) ? '必需动作' : '可选动作'} →</Button></li>)}</ul><code>{action.id}</code></details></article>;
       })}</div>)}
-      {state.tab === 'reports' && <div className="rd-flow-card-grid">{templates.map(template => <article key={`${template.product_type_id}/${template.product_domain_id}`} className="rd-flow-resource-card"><header><span className="rd-flow-card-icon" aria-hidden="true">文</span><div><span className="rd-eyebrow">{template.product_domain} · 研制任务书</span><h3>{template.product_type}</h3></div></header><p>{template.filename}</p><div className="rd-flow-card-status"><Tag className="rd-badge">版本 {template.version}</Tag></div><a className="rd-link-button" href={templateDownloadUrl(template)}>下载当前模板 ↗</a></article>)}</div>}
-      {!actionDetail && state.tab !== 'flows' && !loading && !error && !total && <div className="rd-management-empty">{state.query ? '没有匹配的记录，请调整关键词。' : '当前目录暂无记录。'}</div>}
-      {directoryTab && !actionDetail && <div className="rd-flow-directory-footer"><span>{total} 项 · 第 {page} / {totalPages} 页 · 每页 5 项</span><div><Button autoInsertSpace={false} htmlType="button" className="rd-button compact" disabled={loading || page <= 1} onClick={() => updateDirectory({ page: String(page - 1), item: '' }, false)}>上一页</Button><Button autoInsertSpace={false} htmlType="button" className="rd-button compact" disabled={loading || page >= totalPages} onClick={() => updateDirectory({ page: String(page + 1), item: '' }, false)}>下一页</Button></div>{state.tab === 'resources' && <Button autoInsertSpace={false} type="link" htmlType="button" className="rd-link-button" onClick={onOpenWorkspace}>在资源工作台查看 →</Button>}</div>}
+      {state.tab === 'reports' && <ReportTemplateDirectory directory={directory} />}
+      {!actionDetail && state.tab !== 'flows' && state.tab !== 'reports' && !loading && !error && !total && <div className="rd-management-empty">{state.query ? '没有匹配的记录，请调整关键词。' : '当前目录暂无记录。'}</div>}
+      {state.tab !== 'reports' && directoryTab && !actionDetail && <div className="rd-flow-directory-footer"><span>{total} 项 · 第 {page} / {totalPages} 页 · 每页 5 项</span><div><Button autoInsertSpace={false} htmlType="button" className="rd-button compact" disabled={loading || page <= 1} onClick={() => updateDirectory({ page: String(page - 1), item: '' }, false)}>上一页</Button><Button autoInsertSpace={false} htmlType="button" className="rd-button compact" disabled={loading || page >= totalPages} onClick={() => updateDirectory({ page: String(page + 1), item: '' }, false)}>下一页</Button></div>{state.tab === 'resources' && <Button autoInsertSpace={false} type="link" htmlType="button" className="rd-link-button" onClick={onOpenWorkspace}>在资源工作台查看 →</Button>}</div>}
     </section>
     {pendingTab && <FeedbackConfirmDialog title="放弃未保存的流程修改" confirm="放弃修改并切换" cancel="继续编辑" onCancel={() => setPendingTab(null)} onConfirm={() => { const next = pendingTab; setPendingTab(null); update(next, true); }}><p>切换后将放弃尚未保存的画布配置，已保存的版本保持不变。</p></FeedbackConfirmDialog>}
   </div>;

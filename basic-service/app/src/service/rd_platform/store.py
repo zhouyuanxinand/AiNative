@@ -436,6 +436,10 @@ class Store:
         actor = _actor(actor)
         if not isinstance(data, dict):
             raise RdError(422, "命令数据必须是对象。")
+        if command == "recommend_requirements":
+            if set(data) != {"case_id"}:
+                raise RdError(422, "规范核对只接受案例标识，需求和规范由服务端读取。")
+            return self.recommend_requirements(actor, pid, data["case_id"], expected_version, key)
         with self._transaction() as db:
             project = self._load(db, pid, actor)
             event_extra = {}
@@ -585,8 +589,15 @@ class Store:
     def _invalidate_inputs(self, case, reason, *, reviewed_requirement_id=None, retain_review_stage=False):
         analysis = case.get("source_analysis")
         keep_analysis = reviewed_requirement_id and analysis and analysis["status"] == "adopted" and analysis.get("adopted_input_revision") == case["input_revision"]
+        recommendations = case.get("requirement_recommendations")
+        keep_recommendations = (reviewed_requirement_id and recommendations and recommendations["status"] == "current"
+                                and recommendations.get("input_revision") == case["input_revision"])
         self.lifecycle.invalidate(case, reason)
         case["input_revision"] = case.get("input_revision", 1) + 1
+        if keep_recommendations:
+            recommendations["input_revision"] = case["input_revision"]
+        elif recommendations:
+            recommendations.update(status="stale", invalidated_reason=reason)
         if keep_analysis:
             # Reviewing one result changes the downstream baseline, not the source text of the other rows.
             analysis.setdefault("initial_adopted_input_revision", analysis["adopted_input_revision"])
@@ -748,6 +759,60 @@ class Store:
             self._save(db, project, "source_analysis_proposed", actor, case_id=cid, analysis_id=aid)
             return self._save_receipt(db, actor, project, key, fingerprint)
 
+    def recommend_requirements(self, actor, pid, cid, expected_version, key):
+        """Bind slow specification comparison to a checked, immutable input snapshot."""
+        from .requirement_recommendations import propose
+        actor = _actor(actor)
+        payload = {"command": "recommend_requirements", "data": {"case_id": cid}}
+        with self._transaction() as db:
+            project = self._load(db, pid, actor)
+            key, fingerprint, replay = self._receipt(db, actor, pid, key, payload)
+            if replay is not None:
+                return replay
+            self._cas(project, expected_version)
+            case = self._case(project, cid)
+            if (case["status"] == "completed" or case["stage"] not in {"input", "requirements"}
+                    or case.get("business_lifecycle", {}).get("current_requirement_baseline_id")):
+                raise RdError(409, "需求阶段已确认，不能生成新的规范建议；请先建立需求修订。")
+            analysis = case.get("source_analysis") or {}
+            if (not case["requirements"] or analysis.get("status") != "adopted"
+                    or analysis.get("adopted_input_revision") != case["input_revision"]):
+                raise RdError(422, "请先核对并采用资料分析的需求清单。")
+            sources = self._active_sources(case)
+            if not any(source["role"] == "spec" for source in sources):
+                raise RdError(422, "请先选择一份主产品规范，再生成需求建议。")
+            hashes = {source["id"]: source["sha256"] for source in sources}
+            if hashes != analysis.get("source_hashes"):
+                raise RdError(409, "采用需求的来源已变化，请重新分析并核对。")
+            for source in sources:
+                self._checked_path(source)
+            snapshot = deepcopy(case)
+            snapshot["sources"] = deepcopy(sources)
+        batch_id = _id()
+        directory = self.asset_root / "source_analysis" / pid / cid / batch_id
+        directory.mkdir(parents=True, exist_ok=True)
+        proposal = propose(snapshot, directory, actor)
+        with self._transaction() as db:
+            project = self._load(db, pid, actor)
+            key, fingerprint, replay = self._receipt(db, actor, pid, key, payload)
+            if replay is not None:
+                return replay
+            self._cas(project, expected_version)
+            case = self._case(project, cid)
+            current_sources = self._active_sources(case)
+            if hashes != {source["id"]: source["sha256"] for source in current_sources}:
+                raise RdError(409, "规范核对期间来源版本已变化，请重新核对。")
+            for source in current_sources:
+                self._checked_path(source)
+            previous = case.get("requirement_recommendations")
+            if previous:
+                case.setdefault("requirement_recommendations_history", []).append(deepcopy(previous))
+            case["requirement_recommendations"] = {**proposal, "id": batch_id, "status": "current",
+                "input_revision": case["input_revision"], "source_hashes": hashes, "created_at": _now(), "actor": actor}
+            self._save(db, project, "requirement_recommendations_proposed", actor, case_id=cid,
+                       recommendation_batch_id=batch_id)
+            return self._save_receipt(db, actor, project, key, fingerprint)
+
     def _adopt_source_analysis(self, case, data, actor):
         proposal = case.get("source_analysis")
         if not proposal or proposal["id"] != data.get("analysis_id"):
@@ -755,10 +820,8 @@ class Store:
         if proposal["status"] != "proposed" or proposal["input_revision"] != case["input_revision"]:
             raise RdError(409, "分析提案已采用或输入已变化，请重新分析。")
         selected = data.get("accept_recommendations", [])
-        candidates = proposal["requirements"]
-        if (not isinstance(selected, list) or any(type(index) is not int or not 0 <= index < len(candidates)
-                or not candidates[index].get("recommendation") for index in selected) or len(set(selected)) != len(selected)):
-            raise RdError(422, "选中的增强建议与本次分析不符，请重新核对。")
+        if not isinstance(selected, list) or selected:
+            raise RdError(422, "资料识别只采用原文需求。请在需求确认中生成独立的规范建议批次后，再逐项采纳建议。")
         sources = self._active_sources(case)
         if proposal["source_hashes"] != {source["id"]: source["sha256"] for source in sources}:
             raise RdError(409, "来源已变化，请重新分析。")
@@ -805,23 +868,9 @@ class Store:
             invalidated.extend(result["invalidated_decision_ids"])
         proposal.update(status="adopted", adopted_at=_now(), adopted_by=actor, adopted_input_revision=case["input_revision"])
         proposal.pop("invalidated_reason", None)
-        # Apply only opt-ins alongside the originals, in the enclosing command transaction.
-        # A re-analysis must not replace a previous human decision or clarified value.
-        by_id = {item["id"]: item for item in case["requirements"]}
-        for index in selected:
-            candidate = candidates[index]
-            requirement = by_id.get(candidate.get("requirement_id"))
-            if (not requirement or requirement.get("review") or requirement["content"] != candidate["content"]
-                    or requirement.get("revision", 1) > 1):
-                raise RdError(409, "此项已修订、已办理或原文对应不唯一。请取消勾选，在需求确认中单独核对。")
-            result = self.records.review_requirement(case, {
-                "analysis_id": proposal["id"], "requirement_id": requirement["id"],
-                "requirement_revision": requirement.get("revision", requirement.get("version", 1)), "decision": "accept",
-            }, actor)
-            invalidated.extend(result.get("invalidated_decision_ids", []))
         self._warnings(case)
         return {"analysis_id": proposal["id"], "changed_fields": changed, "requirement_ids": requirements,
-                "accepted_recommendation_ids": [candidates[index]["requirement_id"] for index in selected],
+                "accepted_recommendation_ids": [],
                 "input_revision": case["input_revision"], "invalidated_decision_ids": list(dict.fromkeys(invalidated))}
 
     def _route_decision(self, case, data, actor):

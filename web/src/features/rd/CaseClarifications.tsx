@@ -4,6 +4,7 @@ import { FeedbackConfirmDialog } from '../../components/feedback/FeedbackDialog'
 import { StyledSelect } from '../../components/ui/StyledSelect';
 import { SourcePicker } from './CaseFields';
 import { isCurrentClarification } from './clarificationReview';
+import { isAdoptedRequirementClarification } from './requirementActualResult';
 import { formatTime } from './presentation';
 import type { Clarification, ResearchCase } from './types';
 import type { CommandRunner } from './WorkpackagePanel';
@@ -15,7 +16,9 @@ function ClarificationItem({ record, researchCase, busy, error, command, onDirty
   const [validation, setValidation] = useState('');
   const [confirm, setConfirm] = useState(false);
   const requirement = researchCase.requirements.find(item => item.id === record.requirement_id);
-  const current = isCurrentClarification(record, researchCase.input_revision, requirement?.revision ?? requirement?.version);
+  const current = record.status === 'adopted' && requirement
+    ? isAdoptedRequirementClarification(researchCase, requirement, record)
+    : isCurrentClarification(record, researchCase.input_revision, requirement?.revision ?? requirement?.version);
   const editable = record.status !== 'adopted' && ['input', 'requirements'].includes(researchCase.stage);
   useEffect(() => { onDirtyChange(record.id, !!answer || !!sources.length || !!content); }, [record.id, answer, sources, content, onDirtyChange]);
   function saveAnswer(event: FormEvent) {
@@ -35,6 +38,7 @@ export function CaseClarifications({ researchCase, busy, error, command, onDirty
   const section = useRef<HTMLElement>(null);
   const newQuestion = useRef<HTMLDetailsElement>(null);
   const handled = useRef<typeof focusRequest>();
+  const returnPosition = useRef<{ requirementId: string; top: number }>();
   const [draftNotice, setDraftNotice] = useState<{ recordId?: string; text: string }>();
   const [question, setQuestion] = useState('');
   const [sources, setSources] = useState<string[]>([]);
@@ -53,6 +57,9 @@ export function CaseClarifications({ researchCase, busy, error, command, onDirty
     handled.current = focusRequest;
     const target = researchCase.requirements.find(item => item.id === focusRequest.requirementId);
     if (!target) return;
+    const row = Array.from(section.current?.closest('.rd-case-workspace')?.querySelectorAll<HTMLElement>('.rd-decision-table tr[data-row-key]') ?? [])
+      .find(element => element.dataset.rowKey === target.id && element.getClientRects().length);
+    returnPosition.current = row ? { requirementId: target.id, top: row.getBoundingClientRect().top } : undefined;
     const retainedId = questionDirty ? undefined : dirtyRecordId;
     let recordId: string | undefined;
     if (questionDirty || retainedId) {
@@ -75,6 +82,17 @@ export function CaseClarifications({ researchCase, busy, error, command, onDirty
     field?.scrollIntoView({ block: 'center', behavior: 'auto' });
   }, [focusRequest, editable, questionDirty, dirtyRecordId, requirement, researchCase]);
 
+  function returnToRequirement() {
+    const origin = returnPosition.current;
+    if (!origin) return;
+    const row = Array.from(section.current?.closest('.rd-case-workspace')?.querySelectorAll<HTMLElement>('.rd-decision-table tr[data-row-key]') ?? [])
+      .find(element => element.dataset.rowKey === origin.requirementId && element.getClientRects().length);
+    const scroller = row?.closest<HTMLElement>('.rd-application-shell');
+    if (!row || !scroller) return;
+    scroller.scrollBy({ top: row.getBoundingClientRect().top - origin.top, behavior: 'auto' });
+    row.focus({ preventScroll: true });
+  }
+
   function create(event: FormEvent) { event.preventDefault(); if (!requirement || !question.trim() || !sources.length) { setValidation('请选择需求、填写澄清问题，并关联依据。'); document.getElementById(!requirement ? 'rd-clar-requirement' : 'rd-clar-question')?.focus(); return; } setValidation(''); void command('open_clarification', { requirement_id: requirement, question, source_ids: sources }, () => { setSelection({ id: '', manual: false }); setQuestion(''); setSources([]); }); }
-  return <section ref={section} className="rd-section"><div className="rd-section-head"><div><h3>需求澄清</h3><p>问题、实际答复与明确采用分别保存。必需澄清未闭合时保留阻断。</p></div></div>{(researchCase.clarifications ?? []).map(record => <ClarificationItem key={record.id} record={record} researchCase={researchCase} busy={busy} error={error} command={command} notice={draftNotice?.recordId === record.id && recordDirty[record.id] ? draftNotice.text : undefined} onDirtyChange={setChildDirty} />)}<details className="rd-record-new" ref={newQuestion}><summary>提出澄清问题</summary>{draftNotice && !draftNotice.recordId && questionDirty && <p role="status" className="rd-warning">{draftNotice.text}</p>}<form noValidate onSubmit={create}><div className="rd-field"><label id="rd-clar-requirement-label">对应需求</label><StyledSelect id="rd-clar-requirement" aria-labelledby="rd-clar-requirement-label" value={requirement} options={[{ value: '', label: '选择当前需求' }, ...researchCase.requirements.map(item => ({ value: item.id, label: `${item.title} · v${item.revision ?? 1}` }))]} onChange={id => setSelection({ id, manual: !!id })} disabled={busy || !editable} /></div><div className="rd-field"><label htmlFor="rd-clar-question">需要澄清的问题</label><textarea id="rd-clar-question" rows={3} className="resize-none" value={question} onChange={event => setQuestion(event.target.value)} disabled={busy || !editable} /></div><SourcePicker sources={researchCase.sources} sourceSelection={researchCase.source_selection} value={sources} onChange={setSources} disabled={busy || !editable} />{validation && <p className="rd-error" role="alert">{validation}</p>}<PlatformButton type="submit" className="rd-button primary" disabled={busy || !editable}>保存澄清问题</PlatformButton>{!editable && <p className="rd-muted">当前阶段只读；在资料澄清或需求确认阶段提出问题。</p>}</form></details></section>;
+  return <section ref={section} className="rd-section"><div className="rd-section-head"><div><h3>需求澄清</h3><p>问题、实际答复与明确采用分别保存。必需澄清未闭合时保留阻断。</p></div>{focusRequest && returnPosition.current && <PlatformButton className="rd-link-button" disabled={busy} onClick={returnToRequirement}>返回对应需求 ↑</PlatformButton>}</div>{(researchCase.clarifications ?? []).map(record => <ClarificationItem key={record.id} record={record} researchCase={researchCase} busy={busy} error={error} command={command} notice={draftNotice?.recordId === record.id && recordDirty[record.id] ? draftNotice.text : undefined} onDirtyChange={setChildDirty} />)}<details className="rd-record-new" ref={newQuestion}><summary>提出澄清问题</summary>{draftNotice && !draftNotice.recordId && questionDirty && <p role="status" className="rd-warning">{draftNotice.text}</p>}<form noValidate onSubmit={create}><div className="rd-field"><label id="rd-clar-requirement-label">对应需求</label><StyledSelect id="rd-clar-requirement" aria-labelledby="rd-clar-requirement-label" value={requirement} options={[{ value: '', label: '选择当前需求' }, ...researchCase.requirements.map(item => ({ value: item.id, label: `${item.title} · v${item.revision ?? 1}` }))]} onChange={id => setSelection({ id, manual: !!id })} disabled={busy || !editable} /></div><div className="rd-field"><label htmlFor="rd-clar-question">需要澄清的问题</label><textarea id="rd-clar-question" rows={3} className="resize-none" value={question} onChange={event => setQuestion(event.target.value)} disabled={busy || !editable} /></div><SourcePicker sources={researchCase.sources} sourceSelection={researchCase.source_selection} value={sources} onChange={setSources} disabled={busy || !editable} />{validation && <p className="rd-error" role="alert">{validation}</p>}<PlatformButton type="submit" className="rd-button primary" disabled={busy || !editable}>保存澄清问题</PlatformButton>{!editable && <p className="rd-muted">当前阶段只读；在资料澄清或需求确认阶段提出问题。</p>}</form></details></section>;
 }

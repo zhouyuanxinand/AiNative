@@ -22,7 +22,7 @@ def source(tmp_path, text, role="tech", sid="s1", **extra):
     for line in text.splitlines():
         doc.add_paragraph(line)
     doc.save(path)
-    return {"id": sid, "name": path.name, "role": role, "path": str(path),
+    return {"id": sid, "name": "测试资料.docx", "role": role, "path": str(path),
             "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "version": 1, **extra}
 
 
@@ -47,14 +47,52 @@ def test_blank_context_is_blocked_without_business_defaults(tmp_path):
 
 
 def test_context_resolves_only_explicit_local_evidence_with_locations(tmp_path):
-    doc = source(tmp_path, "产品类型：低频连接器-矩形低频\n产品领域：军品\n研制流程：全新\n研制阶段：S\n产品系列：TEST-A\n组织范围：非中央研究院产品")
+    name = "YLZJ-BG-469液冷组件规格书(JONHON受控).docx"
+    doc = source(tmp_path, "产品类型：低频连接器-矩形低频\n产品领域：军品\n研制流程：全新\n研制阶段：S\n产品系列：TEST-A\n组织范围：非中央研究院产品",
+                 name=name)
     result = run("resolve_context", snapshot([doc], {}), tmp_path)
     assert result["status"] == "completed"
-    assert result["result"]["context"] == CONTEXT
-    for evidence in result["result"]["context_provenance"].values():
+    assert result["result"]["context"] == {**CONTEXT, "product_series": "YLZJ"}
+    for field, evidence in result["result"]["context_provenance"].items():
         assert evidence["source_id"] == "s1"
-        assert evidence["location"]["body_index"] >= 0
         assert evidence["quote"]
+        if field == "product_series":
+            assert evidence["kind"] == "source_filename"
+            assert evidence["location"] == {"filename": name}
+            assert evidence["quote"] == name
+            assert evidence["sha256"] == doc["sha256"]
+            assert evidence["version"] == doc["version"]
+            assert evidence["name_sha256"] == hashlib.sha256(name.encode("utf-8")).hexdigest()
+        else:
+            assert evidence["location"]["body_index"] >= 0
+
+
+def test_series_body_specification_and_supplement_cannot_fill_generic_main_filename(tmp_path):
+    docs = [source(tmp_path, "产品系列：YLZJ\n产品型号：YLZJ-BG-469", name="需求文件.docx"),
+            source(tmp_path, "产品系列：YLZJ", role="spec", sid="spec", name="YLZJ产品规范.docx"),
+            source(tmp_path, "产品系列：YLZJ", role="reference", sid="extra", name="YLZJ补充要求.docx",
+                   document_category="tech")]
+    snap = snapshot(docs, {**CONTEXT, "product_series": ""})
+    snap["source_selection"] = {"tech": "s1", "spec": "spec"}
+    result = run("resolve_context", snap, tmp_path)
+    assert result["status"] == "blocked"
+    assert result["result"]["context"] == {**CONTEXT, "product_series": ""}
+    assert result["result"]["candidates"]["product_series"] == []
+    assert "product_series" not in result["result"]["context_provenance"]
+    assert [item["field"] for item in result["obligations"]] == ["product_series"]
+
+
+def test_series_resolution_uses_selected_main_filename_only(tmp_path):
+    docs = [source(tmp_path, "产品系列：OTHER", sid="old", name="OTHER-100旧需求.docx"),
+            source(tmp_path, "产品系列：OTHER", sid="current", name="YLZJ-BG-469需求.docx")]
+    snap = snapshot(docs, {**CONTEXT, "product_series": ""})
+    snap["source_selection"] = {"tech": "current"}
+    result = run("resolve_context", snap, tmp_path)
+    assert result["status"] == "completed"
+    assert result["result"]["context"] == {**CONTEXT, "product_series": "YLZJ"}
+    candidates = result["result"]["candidates"]["product_series"]
+    assert [(item["source_id"], item["value"]) for item in candidates] == [("current", "YLZJ")]
+    assert result["result"]["context_provenance"]["product_series"] == candidates[0]
 
 
 def test_ambiguous_context_remains_unresolved(tmp_path):
@@ -79,10 +117,64 @@ def test_cross_case_evidence_is_blocked(tmp_path):
 
 
 def test_product_identity_mismatch_blocks_consistency(tmp_path):
-    doc = source(tmp_path, "产品系列：OTHER-B")
-    result = run("consistency", snapshot([doc]), tmp_path)
+    doc = source(tmp_path, "产品系列：TEST-A", name="OTHER-B技术要求.docx")
+    snap = snapshot([doc])
+    before = deepcopy(snap)
+    resolved = run("resolve_context", snap, tmp_path)
+    assert resolved["status"] == "completed"
+    assert resolved["result"]["context"] == CONTEXT
+    assert resolved["result"]["context_provenance"]["product_series"] == {
+        "kind": "submitted_context", "value": "TEST-A"}
+    result = run("consistency", snap, tmp_path, {"resolve_context": resolved})
     assert result["status"] == "blocked"
     assert "OTHER-B" in str(result["blocked_reasons"])
+    checks = [item for item in result["result"]["checks"] if item.get("field") == "product_series"]
+    assert len(checks) == 1
+    assert checks[0]["expected"] == "TEST-A" and checks[0]["actual"] == "OTHER"
+    assert checks[0]["kind"] == "source_filename"
+    assert checks[0]["source_id"] == doc["id"]
+    assert checks[0]["location"] == {"filename": doc["name"]}
+    assert checks[0]["sha256"] == doc["sha256"]
+    assert checks[0]["version"] == doc["version"]
+    assert checks[0]["name_sha256"] == hashlib.sha256(doc["name"].encode("utf-8")).hexdigest()
+    assert snap == before
+
+
+def test_full_models_in_main_body_and_other_sources_do_not_conflict_with_filename_series(tmp_path):
+    docs = [source(tmp_path, "产品系列：YLZJ-BG-469", name="YLZJ-BG-469液冷组件规格书(JONHON受控).docx"),
+            source(tmp_path, "产品系列：OLD-500", role="spec", sid="spec", name="OLD-500产品规范.docx"),
+            source(tmp_path, "产品系列：OTHER-B", role="reference", sid="extra", name="OTHER-B补充要求.docx")]
+    snap = snapshot(docs, {**CONTEXT, "product_series": ""})
+    snap["source_selection"] = {"tech": "s1", "spec": "spec"}
+    resolved = run("resolve_context", snap, tmp_path)
+    assert resolved["status"] == "completed"
+    assert resolved["result"]["context"] == {**CONTEXT, "product_series": "YLZJ"}
+    result = run("consistency", snap, tmp_path, {"resolve_context": resolved})
+    assert result["status"] == "completed"
+    assert result["result"]["consistent"] is True
+    assert result["blocked_reasons"] == []
+    checks = [item for item in result["result"]["checks"] if item.get("field") == "product_series"]
+    assert len(checks) == 1
+    assert checks[0]["actual"] == checks[0]["expected"] == "YLZJ"
+    assert checks[0]["source_id"] == "s1" and checks[0]["kind"] == "source_filename"
+    assert checks[0]["location"] == {"filename": docs[0]["name"]}
+    assert {item["source_id"] for item in result["result"]["checks"] if item.get("bytes_verified")} == {
+        "s1", "spec", "extra"}
+
+
+def test_submitted_series_remains_usable_when_main_filename_is_unresolved(tmp_path):
+    doc = source(tmp_path, "产品系列：OTHER-B", name="需求文件.docx")
+    snap = snapshot([doc])
+    result = run("resolve_context", snap, tmp_path)
+    assert result["status"] == "completed"
+    assert result["result"]["context"] == CONTEXT
+    assert result["result"]["candidates"]["product_series"] == []
+    assert result["result"]["context_provenance"]["product_series"] == {
+        "kind": "submitted_context", "value": "TEST-A"}
+    consistent = run("consistency", snap, tmp_path, {"resolve_context": result})
+    assert consistent["status"] == "completed"
+    assert consistent["result"]["consistent"] is True
+    assert not any(item.get("field") == "product_series" for item in consistent["result"]["checks"])
 
 
 def test_product_route_conflict_is_not_repaired_using_composition_route(tmp_path):
@@ -206,7 +298,7 @@ def test_unknown_action_cannot_report_completed(tmp_path):
 
 
 def test_uploaded_source_blob_without_suffix_uses_original_name(tmp_path):
-    doc = source(tmp_path, "产品系列：TEST-A")
+    doc = source(tmp_path, "产品系列：TEST-A", name="需求文件.docx")
     blob = tmp_path / "source-opaque-id"
     Path(doc["path"]).rename(blob)
     doc["path"] = str(blob)

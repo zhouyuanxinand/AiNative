@@ -4,7 +4,7 @@ import json
 import pytest
 
 from service.rd_platform.store import Store
-from test_requirement_confirmation import requirements_project, confirm
+from test_requirement_confirmation import requirements_project, confirm, clarify_requirement
 from test_store import issue, fixture_comparison
 
 
@@ -16,7 +16,7 @@ def local_store(tmp_path):
 
 
 def selection_project(store, route="modification"):
-    project = confirm(store, requirements_project(store, CONTEXT))
+    project = confirm(store, clarify_requirement(store, requirements_project(store, CONTEXT)))
     sid = project["cases"][0]["sources"][0]["id"]
     for axis, value in (("product", route), ("composition", "direct")):
         project, comparison_id = fixture_comparison(store, project, axis)

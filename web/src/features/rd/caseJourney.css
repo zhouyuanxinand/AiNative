@@ -6,7 +6,7 @@
 .rd-journey-step-hint[tabindex] { cursor: help; }
 .rd-journey-step-hint[tabindex]:focus-visible { outline: 2px solid var(--color-action); outline-offset: 1px; }
 .rd-journey-step-hint[tabindex] > button:disabled { pointer-events: none; }
-.rd-application-shell .rd-case-journey .rd-journey-step { display: flex; width: 100%; height: 58px; padding: 8px 12px; justify-content: flex-start; gap: 10px; border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; box-shadow: none; color: var(--color-text-secondary); font-size: 14px; text-align: left; white-space: normal; }
+.rd-application-shell .rd-case-journey .rd-journey-step { display: flex; width: 100%; height: 58px; padding: 8px 12px; justify-content: flex-start; gap: 10px; border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; box-shadow: none; color: var(--color-text-secondary); font-size: var(--font-size-body); text-align: left; white-space: normal; }
 .rd-case-journey .rd-journey-number { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 26px; height: 26px; border: 1px solid var(--color-border); border-radius: 50%; font-size: 12px; font-variant-numeric: tabular-nums; background: var(--color-bg-surface); }
 .rd-case-journey .rd-journey-label { min-width: 0; line-height: 1.4; }
 .rd-case-journey .rd-journey-label small { display: block; margin-top: 2px; font-size: 11px; font-weight: 400; color: var(--color-action); }
@@ -19,7 +19,7 @@
 .rd-application-shell .rd-journey-workspace .rd-native-workarea { scroll-margin-top: 168px; }
 .rd-application-shell .rd-journey-workspace .rd-case-heading { align-items: center; gap: 16px 24px; margin: 0 0 20px; }
 .rd-application-shell .rd-journey-workspace .rd-case-heading > div:first-child { min-width: 0; }
-.rd-application-shell .rd-journey-workspace .rd-case-heading h1 { font-size: 22px; margin: 0; }
+.rd-application-shell .rd-journey-workspace .rd-case-heading h1 { font-size: calc(22px * var(--font-scale)); margin: 0; }
 .rd-application-shell .rd-journey-workspace .rd-case-kind { margin: 4px 0 0; font-size: 12px; overflow-wrap: anywhere; }
 .rd-journey-heading-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px 16px; }
 .rd-journey-heading-actions .rd-badge { white-space: normal; }
@@ -38,7 +38,7 @@
 @media (max-width: 700px) {
   .rd-case-journey { position: static; margin-bottom: 20px; padding: 6px; }
   .rd-case-journey ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .rd-application-shell .rd-case-journey .rd-journey-step { height: 52px; font-size: 13px; }
+  .rd-application-shell .rd-case-journey .rd-journey-step { height: 52px; font-size: var(--font-size-sm); }
   .rd-application-shell .rd-journey-workspace .rd-native-workarea { scroll-margin-top: 84px; }
   .rd-application-shell .rd-journey-workspace .rd-case-heading { flex-direction: column; align-items: stretch; gap: 10px; }
   .rd-journey-heading-actions { justify-content: space-between; gap: 8px; }

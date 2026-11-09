@@ -10,7 +10,7 @@
 .rd-analysis-context-item{padding:18px 0;border-top:1px solid var(--color-border);min-width:0}
 .rd-analysis-context dt{font-size:12px;color:var(--color-text-secondary);margin-bottom:8px}
 .rd-analysis-context dd{margin:0;overflow-wrap:anywhere}
-.rd-analysis-context strong{font-size:15px}
+.rd-analysis-context strong{font-size:calc(15px * var(--font-scale))}
 .rd-analysis-field-state{display:inline-block;font-size:11px;color:var(--color-text-secondary);margin-left:10px}
 .rd-analysis-context dd>p{font-size:12px;line-height:1.7;color:var(--color-text-secondary);margin:8px 0}
 .rd-source-analysis details{font-size:12px}
@@ -24,7 +24,7 @@
 .rd-analysis-requirements{border-top:1px solid var(--color-border);padding-top:22px;margin-top:20px}
 .rd-analysis-pagination{display:flex;justify-content:flex-end;align-items:center;gap:14px;margin-top:18px;font-size:12px;color:var(--color-text-secondary)}
 .rd-requirement-supplement{border-top:1px solid var(--color-border);padding-top:18px;margin-top:20px}
-.rd-requirement-supplement>summary{cursor:pointer;color:var(--color-text-secondary);font-size:13px}
+.rd-requirement-supplement>summary{cursor:pointer;color:var(--color-text-secondary);font-size:var(--font-size-sm)}
 .rd-requirement-supplement>form{margin-top:20px}
 @media(max-width:700px){.rd-analysis-context{grid-template-columns:1fr}.rd-source-analysis>.rd-section-head{flex-direction:column;align-items:stretch}.rd-analysis-pagination{justify-content:space-between}}
 @media(max-width:700px){.rd-analysis-controls{flex-direction:column;align-items:stretch}.rd-source-analysis .rd-analysis-controls>.rd-analysis-model-field{flex:auto}}

@@ -85,6 +85,8 @@ class Lifecycle:
             self.store._evidence(case, requirement["source_ids"])
         source_ids = set(data["source_ids"]) | {sid for row in case["requirements"] for sid in row["source_ids"]}
         scope = _text(data.get("scope"), "需求确认范围", 4000, True)
+        self.store.records.materialize_specification_results(case, actor)
+        source_ids |= {sid for row in case["requirements"] for sid in row["source_ids"]}
         self.invalidate(case, "需求已形成新的固定确认基线。")
         fixed = {"input_revision": case["input_revision"], "items": deepcopy(case["requirements"]),
                  "source_refs": self.store.records._sources(case, source_ids), "scope": scope}

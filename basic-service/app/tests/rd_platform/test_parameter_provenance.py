@@ -12,7 +12,7 @@ from tests.rd_platform.test_source_analysis import analyze, command, setup_case
 
 
 def case_with_text(tmp_path, text):
-    path = tmp_path / 'requirements.txt'
+    path = tmp_path / '需求文件.txt'
     path.write_text(text, encoding='utf-8')
     source = {'id': 'tech', 'name': path.name, 'role': 'tech', 'path': str(path),
               'version': 2, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
@@ -29,6 +29,7 @@ def proposal_model(monkeypatch, context=None):
 def test_explicit_source_parameters_show_current_refs_without_retyping(tmp_path, monkeypatch):
     case = case_with_text(tmp_path, '产品类型：液冷产品-液冷管路\n质量管理体系：军品\n'
                                    '研制流程：改型II\n封面阶段：S\n产品系列：YLZJ\n产品归属：非中央研究院产品')
+    case['sources'][0]['name'] = 'YLZJ-BG-469需求文件.txt'
     proposal_model(monkeypatch)
     result = analysis.propose(case, tmp_path / 'analysis', 'local:test')
     expected = {'product_type': 'liquid_cooling_pipeline', 'product_domain': 'military',
@@ -40,8 +41,12 @@ def test_explicit_source_parameters_show_current_refs_without_retyping(tmp_path,
         assert item['source_refs'][0]['source_id'] == 'tech'
         assert item['source_refs'][0]['sha256'] == case['sources'][0]['sha256']
         assert item['source_refs'][0]['version'] == 2
-        assert item['source_refs'][0]['location']['line'] > 0
-        assert item['evidence'][0]['quote'] in Path(case['sources'][0]['path']).read_text(encoding='utf-8')
+        if field == 'product_series':
+            assert item['source_refs'][0]['location'] == {'filename': case['sources'][0]['name']}
+            assert item['evidence'][0] == {'source_id': 'tech', 'kind': 'source_filename', 'quote': case['sources'][0]['name']}
+        else:
+            assert item['source_refs'][0]['location']['line'] > 0
+            assert item['evidence'][0]['quote'] in Path(case['sources'][0]['path']).read_text(encoding='utf-8')
         assert item['decision_ref'] is None
     assert result['context']['product_type']['rule_refs']
     assert len(result['context']['product_type']['rule_refs'][0]['sha256']) == 64
